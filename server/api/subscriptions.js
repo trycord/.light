@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireAuth } from '../auth.js';
+import config from '../config.js';
 import { audit } from '../audit.js';
-import { asyncRoute, badRequest, notFound, conflict, id, now, str, int } from '../util.js';
+import { asyncRoute, badRequest, forbidden, notFound, conflict, id, now, str, int } from '../util.js';
 import { pricingConfig, calculatePrice, validateResources, getPlan, publicPlan, planPrice } from '../pricing.js';
 
 export function subscriptionsRoutes() {
@@ -32,6 +33,7 @@ export function subscriptionsRoutes() {
       if (!plan.available || plan.status !== 'published') throw badRequest('plan_unavailable');
       planId = plan.id; price = planPrice(plan, b.interval || 'monthly'); currency = plan.currency || 'USD';
     } else if (b.custom) {
+      if (!config.allowCustomPlans) throw forbidden('custom_plans_disabled');
       const cfg = pricingConfig();
       const resources = validateResources(cfg, b.custom);
       const estimate = calculatePrice(cfg, resources, b.interval || 'monthly');

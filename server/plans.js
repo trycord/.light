@@ -34,6 +34,7 @@ export function checkQuota(teamId, extraMemory = 0, extraDisk = 0, excludeInstan
     const row = getDb().prepare('SELECT memory_mb, disk_gb FROM instances WHERE id = ?').get(excludeInstanceId);
     if (row) { usage.memoryMb -= row.memory_mb; usage.diskGb -= row.disk_gb; }
   }
+  if (usage.instances + 1 > (plan.instances || 3)) throw conflict('instance_quota_exceeded');
   if (usage.memoryMb + extraMemory > plan.memory_mb) throw conflict('memory_quota_exceeded');
   if (usage.diskGb + extraDisk > plan.disk_gb) throw conflict('storage_quota_exceeded');
   return plan;

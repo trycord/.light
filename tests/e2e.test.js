@@ -19,7 +19,7 @@ test('E2E: register -> create server -> provisioned by integrated agent -> lifec
   const token = reg.body.token;
 
   const created = await req('/api/instances', { method: 'POST', token, body: {
-    name: 'e2e-nginx', image: 'nginx:alpine', category: 'web', ports: [{ container: 80 }], memoryMb: 128, cpuCores: 1, diskGb: 1,
+    name: 'e2e-nginx', environmentId: 'static-site', category: 'web', ports: [{ container: 80 }], memoryMb: 128, cpuCores: 1, diskGb: 1,
   } });
   assert.equal(created.status, 201);
   const iid = created.body.instance.id;
@@ -49,7 +49,7 @@ test('E2E: register -> create server -> provisioned by integrated agent -> lifec
 test('tenant isolation: a second user cannot see the first user instance', async () => {
   const a = await req('/api/auth/register', { method: 'POST', body: { email: `iso-a-${Date.now()}@test.dev`, password: 'test-password-123' } });
   const b = await req('/api/auth/register', { method: 'POST', body: { email: `iso-b-${Date.now()}@test.dev`, password: 'test-password-123' } });
-  const created = await req('/api/instances', { method: 'POST', token: a.body.token, body: { name: 'iso-test', image: 'nginx:alpine', memoryMb: 128, diskGb: 1 } });
+  const created = await req('/api/instances', { method: 'POST', token: a.body.token, body: { name: 'iso-test', environmentId: 'static-site', memoryMb: 128, diskGb: 1 } });
   if (created.status === 201) {
     const iid = created.body.instance.id;
     const visible = await req(`/api/instances/${iid}`, { token: b.body.token });

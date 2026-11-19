@@ -198,7 +198,8 @@ const TABLES = {
   domains: `CREATE TABLE IF NOT EXISTS domains (
     id TEXT PRIMARY KEY, team_id TEXT NOT NULL, instance_id TEXT NOT NULL, domain TEXT NOT NULL,
     verified INTEGER NOT NULL DEFAULT 0, ssl_status TEXT NOT NULL DEFAULT 'pending',
-    status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL)`,
+    status TEXT NOT NULL DEFAULT 'active', tunnel_id TEXT, tunnel_token TEXT NOT NULL DEFAULT '',
+    tunnel_status TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL, updated_at INTEGER)`,
   sessions: `CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
@@ -242,6 +243,7 @@ const LEGACY_COLUMNS = {
   metric_samples: { instance_id: 'TEXT', temp: 'REAL NOT NULL DEFAULT 0' },
   instances: { volumes_json: "TEXT NOT NULL DEFAULT '[]'", category: "TEXT NOT NULL DEFAULT 'web'", type: "TEXT NOT NULL DEFAULT 'custom'", container_id: 'TEXT', environment_id: 'TEXT', environment_version: 'TEXT', source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", build_command: "TEXT NOT NULL DEFAULT ''", install_command: "TEXT NOT NULL DEFAULT ''", health_status: "TEXT NOT NULL DEFAULT 'unknown'", provision_attempts: 'INTEGER NOT NULL DEFAULT 0', generation: 'INTEGER NOT NULL DEFAULT 1' },
   environments: { version_images: "TEXT NOT NULL DEFAULT '{}'" },
+  domains: { tunnel_id: 'TEXT', tunnel_token: "TEXT NOT NULL DEFAULT ''", tunnel_status: "TEXT NOT NULL DEFAULT 'pending'", updated_at: 'INTEGER' },
 };
 
 const INDEXES = [
@@ -365,52 +367,52 @@ function seed() {
   };
   const persistent = { persistent: true };
   const envs = [
-    E('node','Node.js','runtime','JavaScript and TypeScript on Debian','◈',['18','20','22','24'],'22',
-      {18:'node:18-bookworm',20:'node:20-bookworm',22:'node:22-bookworm',24:'node:24-bookworm'},'npm start',['3000'],{build:1,pm:['npm','yarn','pnpm'],featured:1,order:1}),
-    E('bun','Bun','runtime','Fast JavaScript runtime on Debian','◈',['1.1','1.2'],'1.2',
-      {'1.1':'oven/bun:1.1-slim','1.2':'oven/bun:1.2-slim'},'bun run start',['3000'],{build:1,pm:['bun','npm'],order:2}),
-    E('deno','Deno','runtime','Secure TypeScript runtime on Debian','◈',['1.46','2.0'],'2.0',
-      {'1.46':'denoland/deno:1.46.3','2.0':'denoland/deno:2.0.0'},'deno run --allow-net --allow-env main.ts',['8000'],{build:1,pm:['deno'],order:3}),
-    E('python','Python','runtime','Python with pip, Poetry and uv on Debian','◈',['3.11','3.12','3.13'],'3.12',
-      {'3.11':'python:3.11-slim-bookworm','3.12':'python:3.12-slim-bookworm','3.13':'python:3.13-slim-bookworm'},'python main.py',['8000'],{build:1,pm:['pip','pipx','poetry','uv'],featured:1,order:4}),
-    E('java','Java / JVM','runtime','Java with Maven and Gradle on Debian','◈',['17','21'],'21',
-      {17:'openjdk:17-slim',21:'openjdk:21-slim'},'java -jar application.jar',['8080'],{build:1,pm:['maven','gradle'],order:5}),
-    E('dotnet','.NET','runtime','.NET SDK and ASP.NET Core on Debian','◈',['8','9'],'8',
-      {8:'mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim',9:'mcr.microsoft.com/dotnet/sdk:9.0-bookworm-slim'},'dotnet run',['8080'],{build:1,pm:['dotnet','nuget'],order:6}),
-    E('go','Go','runtime','Go applications on Debian','◈',['1.22','1.23'],'1.23',
-      {'1.22':'golang:1.22-bookworm','1.23':'golang:1.23-bookworm'},'go run .',['8080'],{build:1,pm:['go'],order:7}),
-    E('rust','Rust','runtime','Rust applications on Debian','◈',['1.75','1.82'],'1.82',
-      {'1.75':'rust:1.75-slim-bookworm','1.82':'rust:1.82-slim-bookworm'},'./application',['8080'],{build:1,pm:['cargo'],order:8}),
-    E('php','PHP','runtime','PHP applications and frameworks on Debian','◈',['8.2','8.3'],'8.3',
-      {'8.2':'php:8.2-cli-bookworm','8.3':'php:8.3-cli-bookworm'},'php -S 0.0.0.0:8080 -t public',['8080'],{build:1,pm:['composer'],order:9}),
-    E('ruby','Ruby','runtime','Ruby and Rails on Debian','◈',['3.2','3.3'],'3.3',
-      {'3.2':'ruby:3.2-slim-bookworm','3.3':'ruby:3.3-slim-bookworm'},'bundle exec ruby app.rb',['8080'],{build:1,pm:['bundler','gem'],order:10}),
-    E('cpp','C / C++','runtime','C and C++ compiled applications on Debian','◈',['12','13','14'],'14',
-      {12:'gcc:12-bookworm',13:'gcc:13-bookworm',14:'gcc:14-bookworm'},'./application',['8080'],{build:1,pm:['gcc','g++','make'],order:11}),
-    E('zig','Zig','runtime','Zig applications built on Debian','◈',['0.13','0.14'],'0.13',
-      {'0.13':'debian:bookworm-slim','0.14':'debian:bookworm-slim'},'./application',['8080'],{build:1,pm:['zig'],order:12}),
-    E('lua','Lua','runtime','Lua applications on Debian','◈',['5.1','5.4'],'5.4',
-      {'5.1':'lua:5.1-bookworm','5.4':'lua:5.4-bookworm'},'lua main.lua',['8080'],{build:1,pm:['luarocks'],order:13}),
-    E('perl','Perl','runtime','Perl applications on Debian','◈',['5.36','5.38'],'5.38',
-      {'5.36':'perl:5.36-slim-bookworm','5.38':'perl:5.38-slim-bookworm'},'perl app.pl',['8080'],{build:1,pm:['cpanm'],order:14}),
-    E('elixir','Elixir','runtime','Elixir / BEAM applications on Debian','◈',['1.15','1.16'],'1.16',
-      {'1.15':'elixir:1.15-slim','1.16':'elixir:1.16-slim'},'mix run --no-halt',['4000'],{build:1,pm:['mix','hex'],order:15}),
-    E('erlang','Erlang','runtime','Erlang / OTP applications on Debian','◈',['25','26'],'26',
-      {25:'erlang:25-slim',26:'erlang:26-slim'},'erl -noshell -s main start',['8080'],{build:1,pm:['rebar3'],order:16}),
-    E('swift','Swift','runtime','Swift applications on Debian','◈',['5.9','5.10'],'5.10',
-      {'5.9':'swift:5.9-slim','5.10':'swift:5.10-slim'},'./application',['8080'],{build:1,pm:['swiftpm'],order:17}),
-    E('postgres','PostgreSQL','database','PostgreSQL relational database','▤',['14','15','16'],'16',
-      {14:'postgres:14-bookworm',15:'postgres:15-bookworm',16:'postgres:16-bookworm'},'',['5432'],{dir:'/var/lib/postgresql/data',env:{POSTGRES_PASSWORD:''},storage:persistent,featured:1,order:18,lifecycle:['start','stop','restart','backup','restore']}),
-    E('mariadb','MariaDB','database','MariaDB relational database','▤',['10','11'],'11',
-      {10:'mariadb:10',11:'mariadb:11'},'',['3306'],{dir:'/var/lib/mysql',env:{MARIADB_ROOT_PASSWORD:''},storage:persistent,order:19,lifecycle:['start','stop','restart','backup','restore']}),
-    E('mongodb','MongoDB','database','MongoDB document database','▤',['6','7'],'7',
-      {6:'mongo:6',7:'mongo:7'},'',['27017'],{dir:'/data/db',storage:persistent,order:20,lifecycle:['start','stop','restart','backup','restore']}),
-    E('redis','Redis','database','Redis in-memory data store','▤',['6','7'],'7',
-      {6:'redis:6-bookworm',7:'redis:7-bookworm'},'',['6379'],{dir:'/data',storage:persistent,featured:1,order:21,lifecycle:['start','stop','restart','backup','restore']}),
+    E('node','Node.js','runtime','JavaScript and TypeScript on Debian','◈',['22'],'22',
+      {22:'node:22-bookworm'},'npm start',['3000'],{build:1,pm:['npm','yarn','pnpm'],featured:1,order:1}),
+    E('bun','Bun','runtime','Fast JavaScript runtime on Debian','◈',['1.2'],'1.2',
+      {'1.2':'oven/bun:1.2-slim'},'bun run start',['3000'],{build:1,pm:['bun','npm'],order:2}),
+    E('deno','Deno','runtime','Secure TypeScript runtime on Debian','◈',['2.0'],'2.0',
+      {'2.0':'denoland/deno:2.0.0'},'deno run --allow-net --allow-env main.ts',['8000'],{build:1,pm:['deno'],order:3}),
+    E('python','Python','runtime','Python with pip, Poetry and uv on Debian','◈',['3.12'],'3.12',
+      {'3.12':'python:3.12-slim-bookworm'},'python main.py',['8000'],{build:1,pm:['pip','pipx','poetry','uv'],featured:1,order:4}),
+    E('java','Java / JVM','runtime','Java with Maven and Gradle on Debian','◈',['17'],'17',
+      {17:'openjdk:17-slim'},'java -jar application.jar',['8080'],{build:1,pm:['maven','gradle'],order:5}),
+    E('dotnet','.NET','runtime','.NET SDK and ASP.NET Core on Debian','◈',['8'],'8',
+      {8:'mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim'},'dotnet run',['8080'],{build:1,pm:['dotnet','nuget'],order:6}),
+    E('go','Go','runtime','Go applications on Debian','◈',['1.23'],'1.23',
+      {'1.23':'golang:1.23-bookworm'},'go run .',['8080'],{build:1,pm:['go'],order:7}),
+    E('rust','Rust','runtime','Rust applications on Debian','◈',['1.84'],'1.84',
+      {'1.84':'rust:1.84-slim-bookworm'},'./application',['8080'],{build:1,pm:['cargo'],order:8}),
+    E('php','PHP','runtime','PHP applications and frameworks on Debian','◈',['8.2'],'8.2',
+      {'8.2':'php:8.2-cli-bookworm'},'php -S 0.0.0.0:8080 -t public',['8080'],{build:1,pm:['composer'],order:9}),
+    E('ruby','Ruby','runtime','Ruby and Rails on Debian','◈',['3.1'],'3.1',
+      {'3.1':'ruby:3.1-slim-bookworm'},'bundle exec ruby app.rb',['8080'],{build:1,pm:['bundler','gem'],order:10}),
+    E('cpp','C / C++','runtime','C and C++ compiled applications on Debian','◈',['12'],'12',
+      {12:'gcc:12-bookworm'},'./application',['8080'],{build:1,pm:['gcc','g++','make'],order:11}),
+    E('zig','Zig','runtime','Zig applications built on Debian','◈',['0.13'],'0.13',
+      {'0.13':'debian:bookworm-slim'},'./application',['8080'],{build:1,pm:['zig'],order:12}),
+    E('lua','Lua','runtime','Lua applications on Debian','◈',['5.4'],'5.4',
+      {'5.4':'lua:5.4-bookworm'},'lua main.lua',['8080'],{build:1,pm:['luarocks'],order:13}),
+    E('perl','Perl','runtime','Perl applications on Debian','◈',['5.36'],'5.36',
+      {'5.36':'perl:5.36-slim-bookworm'},'perl app.pl',['8080'],{build:1,pm:['cpanm'],order:14}),
+    E('elixir','Elixir','runtime','Elixir / BEAM applications on Debian','◈',['1.14'],'1.14',
+      {'1.14':'elixir:1.14-slim'},'mix run --no-halt',['4000'],{build:1,pm:['mix','hex'],order:15}),
+    E('erlang','Erlang','runtime','Erlang / OTP applications on Debian','◈',['25'],'25',
+      {25:'erlang:25-slim'},'erl -noshell -s main start',['8080'],{build:1,pm:['rebar3'],order:16}),
+    E('swift','Swift','runtime','Swift applications on Debian','◈',['5.10'],'5.10',
+      {'5.10':'swift:5.10-slim'},'./application',['8080'],{build:1,pm:['swiftpm'],order:17}),
+    E('postgres','PostgreSQL','database','PostgreSQL relational database','▤',['16'],'16',
+      {16:'postgres:16-bookworm'},'',['5432'],{dir:'/var/lib/postgresql/data',env:{POSTGRES_PASSWORD:''},storage:persistent,featured:1,order:18,lifecycle:['start','stop','restart','backup','restore']}),
+    E('mariadb','MariaDB','database','MariaDB relational database','▤',['11'],'11',
+      {11:'mariadb:11'},'',['3306'],{dir:'/var/lib/mysql',env:{MARIADB_ROOT_PASSWORD:''},storage:persistent,order:19,lifecycle:['start','stop','restart','backup','restore']}),
+    E('mongodb','MongoDB','database','MongoDB document database','▤',['7'],'7',
+      {7:'mongo:7'},'',['27017'],{dir:'/data/db',storage:persistent,order:20,lifecycle:['start','stop','restart','backup','restore']}),
+    E('redis','Redis','database','Redis in-memory data store','▤',['7'],'7',
+      {7:'redis:7-bookworm'},'',['6379'],{dir:'/data',storage:persistent,featured:1,order:21,lifecycle:['start','stop','restart','backup','restore']}),
     E('valkey','Valkey','database','Valkey open-source Redis alternative','▤',['8'],'8',
       {8:'valkey/valkey:8-bookworm'},'',['6379'],{dir:'/data',storage:persistent,order:22,lifecycle:['start','stop','restart','backup','restore']}),
-    E('minecraft-java','Minecraft Java','game','Minecraft Java Edition server','◆',['1.20.6','1.21.4'],'1.21.4',
-      {'1.20.6':'itzg/minecraft-server:java21','1.21.4':'itzg/minecraft-server:java21'},'',['25565'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,featured:1,order:23,lifecycle:['start','stop','restart','backup','restore']}),
+    E('minecraft-java','Minecraft Java','game','Minecraft Java Edition server','◆',['1.21.4'],'1.21.4',
+      {'1.21.4':'itzg/minecraft-server:java21'},'',['25565'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,featured:1,order:23,lifecycle:['start','stop','restart','backup','restore']}),
     E('minecraft-bedrock','Minecraft Bedrock','game','Minecraft Bedrock Edition server','◆',['latest'],'latest',
       'itzg/minecraft-bedrock-server','',['19132/udp'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,order:24,lifecycle:['start','stop','restart','backup','restore']}),
     E('discord-bot','Discord Bot','general','Discord bots and background workers','◇',['node','python'],'node',
@@ -418,7 +420,20 @@ function seed() {
     E('static-site','Static Site','web','Static websites served by Nginx','◇',['latest'],'latest',
       'nginx:bookworm','',['80'],{dir:'/usr/share/nginx/html',featured:1,order:26}),
   ];
-  for (const e of envs) insertEnv.run(e);
+  // Refresh the built-in catalog once on upgrade so existing installs migrate
+  // off legacy images; after that, administrator edits to environments persist.
+  const refreshCatalog = !db.prepare("SELECT name FROM migrations WHERE name = 'debian_runtime_catalog'").get();
+  const updateEnv = db.prepare(`UPDATE environments SET name=@name, category=@category, description=@description, icon=@icon,
+    versions=@versions, default_version=@default_version, image=@image, image_digest=@image_digest,
+    default_command=@default_command, working_dir=@working_dir, exposed_ports=@exposed_ports,
+    healthcheck=@healthcheck, storage=@storage, security=@security, version_images=@version_images,
+    featured=@featured, sort_order=@sort_order, updated_at=@updated_at WHERE id=@id`);
+  for (const e of envs) {
+    if (!e.image) throw new Error(`runtime ${e.id} resolved to an empty image`);
+    insertEnv.run(e);
+    if (refreshCatalog) updateEnv.run(e);
+  }
+  if (refreshCatalog) db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('debian_runtime_catalog', ?)").run(ts);
 
   // Official Trycord release (only when a real image is configured by the operator).
   const trycordImage = process.env.TRYCORD_IMAGE || '';

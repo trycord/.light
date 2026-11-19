@@ -1,7 +1,33 @@
 // .light — approved runtime catalogue.
 // Debian is a fixed platform decision: there is deliberately NO operating-system
 // selection anywhere. The only configurable dimension is runtime + version.
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { badRequest, json } from './util.js';
+
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const CUSTOM_MODE = String(process.env.LIGHT_RUNTIME_IMAGE_MODE || 'approved').toLowerCase() === 'custom';
+const CUSTOM_IMAGE = process.env.LIGHT_RUNTIME_IMAGE || 'trycord/light-runtime';
+const CUSTOM_VERSION = process.env.LIGHT_RUNTIME_IMAGE_VERSION || '1.0.0';
+
+function readJson(relative) {
+  try { return JSON.parse(fs.readFileSync(path.join(ROOT, relative), 'utf8')); } catch { return null; }
+}
+
+/** Resolve the exact image reference used by Shade for a custom-mode service. */
+export function customImageRef(environmentId, version) {
+  const manifest = readJson('runtime/manifest.json');
+  const mapping = manifest?.runtimes?.[environmentId]?.versions?.[version];
+  if (!mapping) throw badRequest('runtime_version_not_in_image');
+  const digestFile = path.join(ROOT, 'runtime', '.image-digest');
+  let digest = '';
+  try { digest = fs.readFileSync(digestFile, 'utf8').trim(); } catch { /* no pinned digest yet */ }
+  const ref = `${CUSTOM_IMAGE}:${CUSTOM_VERSION}`;
+  return { image: ref, digest: /^[0-9a-f]{64}$/i.test(digest) ? digest : '',
+    imageRef: /^[0-9a-f]{64}$/i.test(digest) ? `${ref}@sha256:${digest}` : ref,
+    runtimeEnv: { LT_RUNTIME: environmentId, LT_RUNTIME_VERSION: String(version) } };
+}
 
 // Official images whose default tags are Debian-derived (no explicit marker).
 const DEBIAN_BASED_REPOS = new Set([
@@ -44,14 +70,19 @@ function validate(env, requestedVersion) {
   if (!isDebianImage(ref)) throw badRequest('runtime_must_be_debian');
   const at = ref.indexOf('@sha256:');
   const digest = at >= 0 ? ref.slice(at + 8) : String(env.image_digest || '');
+  // In custom mode every service runs our universal Debian image; the runtime
+  // and exact version are injected as environment variables and validated by
+  // the image launcher against its manifest (no silent substitution).
+  const custom = CUSTOM_MODE ? customImageRef(env.id, version) : null;
   return {
     environmentId: env.id,
     environmentName: env.name,
     category: env.category,
     version,
-    image: at >= 0 ? ref.slice(0, at) : ref,
-    digest,
-    imageRef: ref,
+    image: custom ? custom.image : (at >= 0 ? ref.slice(0, at) : ref),
+    digest: custom ? custom.digest : digest,
+    imageRef: custom ? custom.imageRef : ref,
+    runtimeEnv: custom ? custom.runtimeEnv : {},
     command: env.default_command || '',
     workingDir: env.working_dir || '/app',
     exposedPorts: json(env.exposed_ports, []),

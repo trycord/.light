@@ -74,9 +74,12 @@ test('node agent auth is enforced', async () => {
   }
 });
 
-test('quota prevents exceeding free plan', async () => {
-  const r = await request('/api/instances', { method: 'POST', token, body: { name: 'too-big', image: 'nginx:alpine', memoryMb: 99999, diskGb: 1 } });
-  assert.equal(r.status, 409);
+test('plan grants fixed resources; client overrides are ignored', async () => {
+  const r = await request('/api/instances', { method: 'POST', token, body: { name: 'plan-resources', environmentId: 'static-site', memoryMb: 99999, cpuCores: 32, diskGb: 2000 } });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.instance.memoryMb, 512);
+  assert.equal(r.body.instance.cpuCores, 1);
+  assert.equal(r.body.instance.diskGb, 4);
 });
 
 test('instance list requires auth and returns array', async () => {

@@ -40,6 +40,18 @@ test('platform offers only the Free plan', async () => {
   assert.deepEqual([...new Set(catalog.body.plans.map((p) => p.id))], ['free']);
 });
 
+test('BYOP is opt-in and Cloudflare reports honest unconfigured state', async () => {
+  const token = await adminLogin();
+  const estimate = await req('/api/catalog/pricing/estimate', { method: 'POST', token, body: { resources: { cpuCores: 4, memoryMb: 8192, diskGb: 100 } } });
+  assert.equal(estimate.status, 403);
+  assert.equal(estimate.body.message, 'custom_plans_disabled');
+  const activate = await req('/api/subscriptions/activate', { method: 'POST', token, body: { custom: { cpuCores: 4, memoryMb: 8192, diskGb: 100 } } });
+  assert.equal(activate.status, 403);
+  const cfg = await req('/api/features/cloudflare', { token });
+  assert.equal(cfg.status, 200);
+  assert.equal(cfg.body.configured, Boolean(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_ZONE_ID));
+});
+
 test('setup: admin and customer credentials', async () => {
   adminToken = await adminLogin();
   const reg = await req('/api/auth/register', { method: 'POST', body: { email, password, name: 'Ops Test', username: `ops_${suffix}`, acceptTerms: true } });

@@ -97,29 +97,32 @@ async function ensureImage(image) {
   });
 }
 
-export async function createInstance(payload) {
-  const { instanceId, teamId, name, image, command, env, ports, volumes, cpu, memory, disk } = payload;
-  const d = getDocker();
-  // Ensure the image exists locally before creating the container.
-  await ensureImage(image || 'nginx:alpine');
-  await ensureNetwork(teamId || 'default');
+/**
+ * Build (and security-check) the Docker create options for one service.
+ * Pure so it can be unit-tested without a Docker daemon.
+ */
+export function buildContainerConfig(payload) {
+  const { instanceId, teamId, name, image, command, env, ports, volumes, cpu, memory, disk,
+    environmentId, environmentVersion, healthcheck, security } = payload || {};
   const binds = [];
   (volumes || []).forEach((volume, index) => {
-    const hostPath = volumeDir(instanceId, index);
-    fs.mkdirSync(hostPath, { recursive: true });
+    const hostPath = volumeDir(instanceId, String(index));
     binds.push(`${hostPath}:${volume.path}`);
   });
   const { exposedPorts, portBindings } = buildPortBindings(ports);
-  // A failed previous attempt can leave a created-but-unstarted container behind.
-  const stale = d.getContainer(containerName(instanceId));
-  try { await stale.inspect(); try { await stale.remove({ force: true }); } catch { /* ignore */ } } catch { /* none */ }
-  const container = await d.createContainer({
+  const config = {
     Image: image,
     name: containerName(instanceId),
     Cmd: command ? ['/bin/sh', '-c', command] : undefined,
     Env: envArray(env),
     ExposedPorts: exposedPorts,
-    Labels: { 'lt.instance': instanceId, 'lt.team': teamId || 'default', 'lt.name': String(name).slice(0, 100) },
+    Labels: {
+      'lt.instance': instanceId, 'lt.team': teamId || 'default',
+      'lt.name': String(name || '').slice(0, 100),
+      'lt.environment': String(environmentId || ''),
+      'lt.environment.version': String(environmentVersion || ''),
+      'lt.os': 'debian',
+    },
     HostConfig: {
       NetworkMode: networkName(teamId || 'default'),
       PortBindings: portBindings,
@@ -133,8 +136,42 @@ export async function createInstance(payload) {
       CapAdd: ['CHOWN', 'SETUID', 'SETGID', 'NET_BIND_SERVICE'],
       SecurityOpt: ['no-new-privileges:true'],
       PidsLimit: 512,
+      Init: true,
+      StopTimeout: 10,
     },
-  });
+  };
+  if (security?.rootless) config.User = '10001:10001';
+  if (healthcheck && Object.keys(healthcheck).length) config.Healthcheck = healthcheck;
+  assertContainerConfig(config);
+  return config;
+}
+
+function assertContainerConfig(config) {
+  const ref = String(config.Image || '').toLowerCase();
+  if (!ref || /alpine|scratch|busybox/.test(ref)) throw Object.assign(new Error('unapproved_image'), { status: 400 });
+  const hc = config.HostConfig || {};
+  if (hc.Privileged) throw Object.assign(new Error('privileged_containers_forbidden'), { status: 400 });
+  if (['host', 'none'].includes(hc.NetworkMode)) throw Object.assign(new Error('host_namespace_forbidden'), { status: 400 });
+  for (const bind of hc.Binds || []) {
+    const src = String(bind).split(':')[0];
+    if (['/', '/var/run/docker.sock', '/proc', '/sys', '/dev'].includes(src)) throw Object.assign(new Error('host_mount_forbidden'), { status: 400 });
+  }
+  if (!(hc.CapDrop || []).includes('ALL')) throw Object.assign(new Error('capdrop_all_required'), { status: 400 });
+  if (!(hc.SecurityOpt || []).includes('no-new-privileges:true')) throw Object.assign(new Error('no_new_privileges_required'), { status: 400 });
+}
+
+export async function createInstance(payload) {
+  const { instanceId, teamId, name, image, command, env, ports, volumes, cpu, memory, disk } = payload;
+  const d = getDocker();
+  const config = buildContainerConfig(payload);
+  // Ensure the image exists locally before creating the container.
+  await ensureImage(image || 'nginx:bookworm');
+  await ensureNetwork(teamId || 'default');
+  for (let i = 0; i < (volumes || []).length; i++) fs.mkdirSync(volumeDir(instanceId, String(i)), { recursive: true });
+  // A failed previous attempt can leave a created-but-unstarted container behind.
+  const stale = d.getContainer(containerName(instanceId));
+  try { await stale.inspect(); try { await stale.remove({ force: true }); } catch { /* ignore */ } } catch { /* none */ }
+  const container = await d.createContainer(config);
   await container.start();
   // Report the real host ports allocated by Docker back to the control plane.
   const info = await container.inspect();

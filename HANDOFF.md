@@ -145,6 +145,14 @@ start.js            - process supervisor
 **Platform decisions applied this session:**
 - Only the `free` plan exists. A one-time migration (`only_free_plan`) reassigned all subscriptions/teams to Free and deleted every other plan; the seed now inserts only Free.
 
+**Per-service provisioning added this session:**
+- Debian-only universal runtime image definition (`runtime/`, `scripts/build-runtime-image.sh`, `npm run build:runtime`). `LIGHT_RUNTIME_IMAGE_MODE=custom` switches Shade from approved external Debian images to our image with exact runtime/version injected via env.
+- Runtime catalog now uses explicit per-version images (`version_images`); one tested version per runtime aligned with `runtime/manifest.json`. One-time `debian_runtime_catalog` migration upgrades existing installs.
+- Shade adds `instance.reprovision`, security-checked container config, auto-assigned host ports reported to the panel, and data-preserving runtime migration.
+- Customers no longer pick CPU/RAM/disk — plan-granted resources only; admin **Plan maker** defines plans; BYOP gated behind `ALLOW_CUSTOM_PLANS`.
+- Right-side server info panel shows runtime, randomized port mappings, project domain, SSL and plan resources.
+- Cloudflare Tunnel provisioning (`server/cloudflare.js`) with honest `configuration_required` state.
+
 **Still outstanding:**
 - ACME certificate issuance delegated to Caddy (not native).
 - Payment methods beyond Stripe not added (PayPal etc listed as possibilities only).

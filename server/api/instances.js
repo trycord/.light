@@ -4,7 +4,9 @@ import config from '../config.js';
 import { requireAuth } from '../auth.js';
 import { dispatch, queueCommand } from '../commands.js';
 import { audit } from '../audit.js';
-import { checkQuota, teamUsage } from '../plans.js';
+import { checkQuota, teamUsage, planFor } from '../plans.js';
+import { resolveRuntime } from '../runtime-catalog.js';
+import { provisionTunnel, isCloudflareConfigured } from '../cloudflare.js';
 import { asyncRoute, badRequest, notFound, forbidden, conflict, id, now, json, str, int, num } from '../util.js';
 
 const CATEGORIES = ['game', 'web', 'app', 'database'];
@@ -34,11 +36,20 @@ export function instancesRoutes() {
     const name = str(b.name).trim();
     if (!name) throw badRequest('name_required');
     const category = CATEGORIES.includes(b.category) ? b.category : 'web';
-    const image = str(b.image || 'nginx:alpine', 300);
-    if (!image) throw badRequest('image_required');
-    const cpu = Math.min(32, Math.max(1, int(b.cpuCores, 1)));
-    const memory = Math.min(65536, Math.max(128, int(b.memoryMb, 512)));
-    const disk = Math.min(2000, Math.max(1, int(b.diskGb, 4)));
+    // Runtime + version are resolved against the approved catalogue. The client
+    // never chooses an OS or an arbitrary image; Debian is fixed.
+    const runtime = resolveRuntime(getDb(), {
+      environmentId: b.environmentId || b.runtimeId,
+      version: b.version || b.runtimeVersion,
+      image: b.image,
+    });
+    const image = runtime.imageRef;
+    // Resources are granted by the plan, never chosen by the customer.
+    // A single service may use the whole allowance; quota blocks a second one.
+    const plan = planFor(req.teamId);
+    const cpu = Math.max(1, int(plan.cpu_cores, 1));
+    const memory = Math.max(128, int(plan.memory_mb, 512));
+    const disk = Math.max(1, int(plan.disk_gb, 4));
     checkQuota(req.teamId, memory, disk);
 
     // Assign any registered node (online or not). Creation is queued and the
@@ -50,23 +61,37 @@ export function instancesRoutes() {
     const ts = now();
     const ports = normalizePorts(b.ports);
     const volumes = normalizeVolumes(b.volumes);
+    const command = str(b.command || runtime.command, 1000);
+    const env = { ...sanitizeEnv(b.env), ...(runtime.runtimeEnv || {}) };
     getDb().prepare(`
-      INSERT INTO instances (id, team_id, node_id, name, category, type, status, image, command, version, env_json, ports_json, volumes_json, cpu_cores, memory_mb, disk_gb, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(iid, req.teamId, node.id, name, category, str(b.game || b.type || 'custom', 80), 'pending', image,
-      str(b.command || '', 1000), str(b.version || 'latest', 100), JSON.stringify(sanitizeEnv(b.env)),
-      JSON.stringify(ports), JSON.stringify(volumes), cpu, memory, disk, ts, ts);
+      INSERT INTO instances (id, team_id, node_id, name, category, type, status, image, command, version, env_json, ports_json, volumes_json, cpu_cores, memory_mb, disk_gb, environment_id, environment_version, source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(iid, req.teamId, node.id, name, category, str(b.game || b.type || runtime.environmentName, 80), 'pending', image,
+      command, runtime.version, JSON.stringify(env), JSON.stringify(ports), JSON.stringify(volumes),
+      cpu, memory, disk, runtime.environmentId, runtime.version, 'environment', ts, ts);
 
     queueCommand(node.id, 'instance.create', {
-      instanceId: iid, teamId: req.teamId, name, image, command: str(b.command || '', 1000), env: sanitizeEnv(b.env),
-      ports, volumes, cpu, memory, disk, version: str(b.version || 'latest', 100),
+      instanceId: iid, teamId: req.teamId, name, image, command, env,
+      ports, volumes, cpu, memory, disk, version: runtime.version,
+      environmentId: runtime.environmentId, environmentVersion: runtime.version,
+      digest: runtime.digest, runtimeEnv: runtime.runtimeEnv || {}, workingDir: runtime.workingDir,
     }, iid);
 
     // Every instance gets a free public project subdomain on the universal domain.
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'app';
     const subdomain = `${slug}-${iid.slice(-6)}.${config.platformDomain}`;
+    const domainId = id('dom');
     getDb().prepare("INSERT OR IGNORE INTO domains (id, team_id, instance_id, domain, verified, ssl_status, created_at) VALUES (?, ?, ?, ?, 1, 'active', ?)")
-      .run(id('dom'), req.teamId, iid, subdomain, ts);
+      .run(domainId, req.teamId, iid, subdomain, ts);
+    const domainRow = getDb().prepare('SELECT * FROM domains WHERE id = ?').get(domainId);
+    if (domainRow && isCloudflareConfigured()) {
+      provisionTunnel(domainRow, req).catch((error) => {
+        getDb().prepare('UPDATE domains SET tunnel_status = ?, updated_at = ? WHERE id = ?')
+          .run(`failed: ${error.message.slice(0, 120)}`, now(), domainId);
+      });
+    } else if (domainRow) {
+      getDb().prepare("UPDATE domains SET tunnel_status = 'configuration_required', updated_at = ? WHERE id = ?").run(now(), domainId);
+    }
 
     audit(req, 'instance.create', 'instance', iid, { name, image, node: node.id });
     res.status(201).json({ instance: view(getDb().prepare('SELECT i.*, n.name AS node_name FROM instances i LEFT JOIN nodes n ON n.id = i.node_id WHERE i.id = ?').get(iid)) });
@@ -78,7 +103,7 @@ export function instancesRoutes() {
     const b = req.body || {};
     const updates = [];
     const values = [];
-    for (const key of ['name', 'image', 'command', 'version', 'category', 'type']) {
+    for (const key of ['name', 'command', 'category', 'type']) {
       if (b[key] !== undefined) {
         if (key === 'category' && !CATEGORIES.includes(b[key])) throw badRequest('invalid_category');
         updates.push(`${key} = ?`); values.push(str(b[key], key === 'command' ? 1000 : 200));
@@ -86,15 +111,13 @@ export function instancesRoutes() {
     }
     if (b.env !== undefined) { updates.push('env_json = ?'); values.push(JSON.stringify(sanitizeEnv(b.env))); }
     if (b.ports !== undefined) { updates.push('ports_json = ?'); values.push(JSON.stringify(normalizePorts(b.ports))); }
-    if (b.cpuCores !== undefined) { updates.push('cpu_cores = ?'); values.push(Math.min(32, Math.max(1, int(b.cpuCores, 1)))); }
-    if (b.memoryMb !== undefined) { const m = Math.min(65536, Math.max(128, int(b.memoryMb, row.memory_mb))); checkQuota(req.teamId, m - row.memory_mb, 0, row.id); updates.push('memory_mb = ?'); values.push(m); }
-    if (b.diskGb !== undefined) { const d = Math.min(2000, Math.max(1, int(b.diskGb, row.disk_gb))); checkQuota(req.teamId, 0, d - row.disk_gb, row.id); updates.push('disk_gb = ?'); values.push(d); }
+    // CPU / RAM / disk are plan-granted and cannot be raised by the customer.
     if (!updates.length) throw badRequest('nothing_to_update');
     updates.push('updated_at = ?'); values.push(now()); values.push(row.id);
     getDb().prepare(`UPDATE instances SET ${updates.join(', ')} WHERE id = ?`).run(...values);
     audit(req, 'instance.update', 'instance', row.id, b);
     const updated = getDb().prepare('SELECT * FROM instances WHERE id = ?').get(row.id);
-    res.json({ instance: view(updated), restartRequired: ['image','command','env','ports','cpuCores','memoryMb'].some((k) => b[k] !== undefined) });
+    res.json({ instance: view(updated), restartRequired: ['command','env','ports'].some((k) => b[k] !== undefined) });
   }));
 
   router.delete('/:id', asyncRoute(async (req, res) => {
@@ -113,6 +136,41 @@ export function instancesRoutes() {
     })();
     audit(req, 'instance.delete', 'instance', row.id, { name: row.name });
     res.json({ ok: true });
+  }));
+
+  // Re-provision an existing service. Idempotent: Shade removes any stale
+  // container before creating a fresh one with the same config and volumes.
+  router.post('/:id/reprovision', asyncRoute(async (req, res) => {
+    const row = owned(req, req.params.id);
+    if (!row) throw notFound();
+    const payload = provisionPayload(row);
+    const generation = (row.generation || 1) + 1;
+    getDb().prepare("UPDATE instances SET status = 'pending', generation = ?, provision_attempts = COALESCE(provision_attempts,0)+1, updated_at = ? WHERE id = ?")
+      .run(generation, now(), row.id);
+    queueCommand(row.node_id, 'instance.reprovision', { ...payload, generation, preserveData: true }, row.id);
+    audit(req, 'instance.reprovision', 'instance', row.id, { generation });
+    res.json({ ok: true, generation, status: 'pending' });
+  }));
+
+  // Explicit runtime/version migration. Never silently swaps the environment;
+  // the caller must confirm and customer data volumes are preserved.
+  router.post('/:id/runtime', asyncRoute(async (req, res) => {
+    const row = owned(req, req.params.id);
+    if (!row) throw notFound();
+    const b = req.body || {};
+    if (str(b.confirm) !== 'MIGRATE') throw badRequest('migration_confirmation_required');
+    const runtime = resolveRuntime(getDb(), { environmentId: b.environmentId, version: b.version });
+    const env = { ...json(row.env_json, {}), ...(runtime.runtimeEnv || {}) };
+    const generation = (row.generation || 1) + 1;
+    const ts = now();
+    getDb().prepare(`UPDATE instances SET environment_id = ?, environment_version = ?, image = ?, command = ?, version = ?, env_json = ?,
+      status = 'pending', generation = ?, provision_attempts = COALESCE(provision_attempts,0)+1, updated_at = ? WHERE id = ?`)
+      .run(runtime.environmentId, runtime.version, runtime.imageRef,
+        str(b.command || runtime.command, 1000), runtime.version, JSON.stringify(env), generation, ts, row.id);
+    const fresh = getDb().prepare('SELECT * FROM instances WHERE id = ?').get(row.id);
+    queueCommand(row.node_id, 'instance.reprovision', { ...provisionPayload(fresh), generation, preserveData: true }, row.id);
+    audit(req, 'instance.runtime.change', 'instance', row.id, { from: row.environment_id, to: runtime.environmentId, version: runtime.version });
+    res.json({ ok: true, instance: view(fresh), generation, dataPreserved: true });
   }));
 
   router.post('/:id/action', asyncRoute(async (req, res) => {
@@ -314,6 +372,16 @@ function normalizeVolumes(volumes) {
   return volumes.slice(0, 20).map((v) => ({ path: str(v.path ?? v.container, 300), size: Math.min(2000, int(v.size, 1)) })).filter((v) => v.path.startsWith('/'));
 }
 
+function provisionPayload(row) {
+  return {
+    instanceId: row.id, teamId: row.team_id, name: row.name, image: row.image, command: row.command,
+    env: json(row.env_json, {}), ports: json(row.ports_json, []), volumes: json(row.volumes_json, []),
+    cpu: row.cpu_cores, memory: row.memory_mb, disk: row.disk_gb, version: row.version,
+    environmentId: row.environment_id, environmentVersion: row.environment_version,
+    runtimeEnv: json(row.env_json, {}), workingDir: '/app',
+  };
+}
+
 export function view(row) {
   if (!row) return null;
   return {
@@ -321,6 +389,8 @@ export function view(row) {
     status: row.status, image: row.image, command: row.command, version: row.version, env: json(row.env_json, {}),
     ports: json(row.ports_json, []), volumes: json(row.volumes_json, []), cpuCores: row.cpu_cores, memoryMb: row.memory_mb,
     diskGb: row.disk_gb, containerId: row.container_id, nodeName: row.node_name, teamName: row.team_name,
+    environmentId: row.environment_id, environmentVersion: row.environment_version, source: row.source,
+    healthStatus: row.health_status || 'unknown',
     createdAt: row.created_at, updatedAt: row.updated_at, startedAt: row.started_at, finishedAt: row.finished_at,
   };
 }

@@ -4,6 +4,16 @@ import { getDb } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { audit } from '../audit.js';
 import { asyncRoute, badRequest, notFound, conflict, id, now, str } from '../util.js';
+import { provisionTunnel, deleteTunnel, isCloudflareConfigured } from '../cloudflare.js';
+
+// Tunnel provisioning happens in the background so DNS/API latency never
+// blocks a customer action. Failures are recorded on the domain row.
+function startTunnel(domain, req) {
+  provisionTunnel(domain, req).catch((error) => {
+    getDb().prepare('UPDATE domains SET tunnel_status = ?, updated_at = ? WHERE id = ?')
+      .run(`failed: ${error.message.slice(0, 120)}`, now(), domain.id);
+  });
+}
 
 export function domainsRoutes() {
   const router = Router();
@@ -23,6 +33,9 @@ export function domainsRoutes() {
     const did = id('dom');
     getDb().prepare('INSERT INTO domains (id, team_id, instance_id, domain, created_at) VALUES (?, ?, ?, ?, ?)').run(did, req.teamId, instanceId, domain, now());
     audit(req, 'domain.create', 'domain', did, { domain, instanceId });
+    const row = getDb().prepare('SELECT * FROM domains WHERE id = ?').get(did);
+    if (isCloudflareConfigured()) startTunnel(row, req);
+    else getDb().prepare("UPDATE domains SET tunnel_status = 'configuration_required' WHERE id = ?").run(did);
     res.status(201).json({ domain: getDb().prepare('SELECT * FROM domains WHERE id = ?').get(did) });
   }));
 
@@ -42,6 +55,7 @@ export function domainsRoutes() {
   router.delete('/:id', asyncRoute(async (req, res) => {
     const domain = getDb().prepare('SELECT * FROM domains WHERE id = ? AND team_id = ?').get(req.params.id, req.teamId);
     if (!domain) throw notFound();
+    if (domain.tunnel_id) deleteTunnel(domain).catch(() => {});
     getDb().prepare('DELETE FROM domains WHERE id = ?').run(domain.id);
     audit(req, 'domain.delete', 'domain', domain.id, { domain: domain.domain });
     res.json({ ok: true });

@@ -52,6 +52,12 @@ const streaming = new Set();
 async function execute(command) {
   const payload = command.payload || {};
   switch (command.type) {
+    case 'instance.reprovision': {
+      // Remove the previous container (if any) then recreate with the same
+      // persistent volume paths. This is idempotent and data-preserving.
+      try { await removeInstance(command.instanceId); } catch { /* nothing to remove */ }
+      return createInstance({ ...payload, instanceId: command.instanceId });
+    }
     case 'instance.create': {
       const result = await createInstance({ ...payload, instanceId: command.instanceId });
       // If this is a Steam game, install it into the persistent volume first.

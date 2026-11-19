@@ -92,6 +92,23 @@ Legacy `.html` URLs still redirect to the same pages.
 When any provider is unconfigured, the platform reports an honest configuration-required
 state and never pretends an operation succeeded.
 
+## Service provisioning
+
+- Every service runs in its own Debian-based container. There is **no OS selection** — Debian is fixed; customers choose a runtime and an exact version.
+- `runtime/` defines our universal image `trycord/light-runtime:1.0.0`: a pinned `debian:bookworm-slim` base with Node, Bun, Deno, Python, Java, PHP, Ruby, Go, Rust, C/C++, Zig, Lua, Perl, Elixir, Erlang, .NET and (optionally) Swift. The launcher rejects any runtime/version not listed in `runtime/manifest.json`.
+- Build it with `npm run build:runtime` (set `PUSH=true` to publish). The script pins and records the image digest in `runtime/.image-digest`. Set `LIGHT_RUNTIME_IMAGE_MODE=custom` to make Shade use it; the default mode uses approved per-runtime Debian images.
+- Shade enforces no privileged containers, no host namespaces, no Docker socket mounts, dropped capabilities and per-team networks. Host ports are auto-assigned and reported back to the panel.
+- Runtime/version changes require an explicit migration (`POST /api/instances/:id/runtime` with `confirm: MIGRATE`) and preserve data volumes.
+
+## Plans & resources
+
+- CPU, RAM and disk are granted by the plan — customers cannot choose or raise them. Only the Free plan ships by default; define others in the admin **Plan maker**.
+- Build Your Own Plan is off by default (`ALLOW_CUSTOM_PLANS=false`).
+
+## Cloudflare Tunnels
+
+- Setting `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ZONE_ID` (and optional `CLOUDFLARE_DOMAIN`) makes each project subdomain provision a named Cloudflare Tunnel plus a proxied CNAME automatically. Without credentials the domain reports `configuration_required` — nothing is faked.
+
 ## Known limitations
 
 - ACME certificate issuance is delegated to Caddy (not implemented natively in the control plane).

@@ -10,6 +10,7 @@
     "agent": "node agent/index.js",
     "migrate": "node server/migrate.js",
     "setup": "node setup.js",
+    "build:runtime": "bash scripts/build-runtime-image.sh",
     "test": "node --test tests/*.test.js"
   },
   "engines": {

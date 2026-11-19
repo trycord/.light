@@ -5,9 +5,16 @@ import { audit } from '../audit.js';
 import { asyncRoute, badRequest, unauthorized, id, now, str, json } from '../util.js';
 import * as twofactor from '../twofactor.js';
 import * as proxy from '../proxy.js';
+import { isCloudflareConfigured, cloudflareConfig } from '../cloudflare.js';
 
 export function featuresRoutes() {
   const router = Router();
+
+  router.get('/cloudflare', requireAuth, asyncRoute(async (req, res) => {
+    const c = cloudflareConfig();
+    res.json({ configured: isCloudflareConfigured(), domain: c.domain,
+      detail: isCloudflareConfigured() ? 'tunnels are provisioned for project subdomains' : 'configuration_required' });
+  }));
 
   /* ---------- Two-factor authentication ---------- */
   router.get('/2fa/status', requireAuth, asyncRoute(async (req, res) => res.json(twofactor.status(req.user.id))));

@@ -25,6 +25,7 @@ const config = {
   jwtSecret: process.env.JWT_SECRET || 'dev-insecure-jwt-secret-change-me',
   nodeToken: process.env.NODE_TOKEN || null,
   allowSignup: bool(process.env.ALLOW_SIGNUP, true),
+  allowCustomPlans: bool(process.env.ALLOW_CUSTOM_PLANS, false),
 
   // Branding — fully configurable by the self-hoster
   brand: {

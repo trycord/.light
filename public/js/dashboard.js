@@ -203,7 +203,7 @@ async function renderOverview(){const v=app.querySelector('#view');const [st,ins
 
 async function renderServers(category='all'){
   if(category!=='all')serversState.category=category;
-  const v=app.querySelector('#view');const [list,templates]=await Promise.all([api.instances(),api.templates()]);
+  const v=app.querySelector('#view');const [list,templates,sub]=await Promise.all([api.instances(),api.environments(),api.subscription().catch(()=>({}))]);
   let rows=list.instances.filter(i=>serversState.category==='all'||i.category===serversState.category||(serversState.category==='website'&&i.category==='web'));
   if(serversState.status!=='all')rows=rows.filter(i=>i.status===serversState.status);
   if(serversState.search)rows=rows.filter(i=>(i.name+' '+i.image).toLowerCase().includes(serversState.search.toLowerCase()));
@@ -224,38 +224,50 @@ async function renderServers(category='all'){
   v.querySelectorAll('[data-sort]')?.forEach(th=>th.addEventListener('click',()=>{serversState.dir=serversState.sort===th.dataset.sort?-serversState.dir:1;serversState.sort=th.dataset.sort;renderServers(serversState.category);}));
   v.querySelector('#prev')?.addEventListener('click',()=>{serversState.page--;renderServers(serversState.category);});
   v.querySelector('#next')?.addEventListener('click',()=>{serversState.page++;renderServers(serversState.category);});
-  const create=()=>openCreate(templates);
+  const create=()=>openCreate(templates,sub);
   v.querySelector('#createBtn')?.addEventListener('click',create);v.querySelector('#createBtn2')?.addEventListener('click',create);
 }
 
-async function openCreate(templates){
-  const t=templates.templates||[];const gameOpts=[{value:'',label:'Custom image…'},...t.filter(x=>x.category==='game').map(x=>({value:x.id,label:x.name}))];
-  const webOpts=[{value:'',label:'Custom image…'},...t.filter(x=>x.category!=='game').map(x=>({value:x.id,label:`${x.category}: ${x.name}`}))];
+async function openCreate(envData,sub){
+  const envs=envData.environments||[];const plan=sub?.plan||{};
+  // Debian is fixed — customers pick a runtime + exact version, never an OS.
+  const runtimeOpts=envs.flatMap(e=>(e.versions||[]).map(v=>({value:`${e.id}|${v}`,label:`${e.name} ${v} · ${e.category}`})));
   const d=await modal('Create Server',`<form id="cf">
+    <p class="lt-meta" style="margin-bottom:12px">Plan: <strong>${esc(plan.name||'Free')}</strong> · ${esc(plan.memoryMb||512)} MB RAM · ${esc(plan.cpuCores||1)} vCPU · ${esc(plan.diskGb||4)} GB disk · ${esc(plan.instances||3)} services. Resources are set by your plan.</p>
     ${field('Server name','name','text','','required')}
-    ${selectField('Template','templateId',[...gameOpts,...webOpts])}
-    ${field('Docker image','image','text','nginx:alpine','required')}
+    ${selectField('Runtime & version','runtime',runtimeOpts)}
     ${selectField('Category','category',[['web','Web application'],['game','Game server'],['website','Website'],['database','Database'],['bot','Bot'],['app','Application']])}
-    ${field('Steam game (optional)','game','text','','placeholder="rust, valheim, cs2…"')}
-    ${field('Startup command','command','text','')}
+    ${field('Startup command (optional)','command','text','','placeholder="Leave blank to use the runtime default"')}
     ${field('Ports (comma separated)','ports','text','80')}
-    ${field('CPU cores','cpuCores','number','1','min="1" max="32"')}${field('Memory (MB)','memoryMb','number','512','min="128"')}${field('Storage (GB)','diskGb','number','4','min="1"')}
     ${textarea('Environment (KEY=value per line)','env')}
   </form>`,{confirm:'Create'});
   if(!d)return;
-  const tpl=t.find(x=>x.id===d.templateId);const image=d.image||tpl?.image||'nginx:alpine';
+  const [environmentId,version]=String(d.runtime||'').split('|');
+  if(!environmentId||!version){toast('Choose a runtime and version','error');return;}
   const ports=String(d.ports||'').split(',').map(p=>p.trim()).filter(Boolean).map(p=>({container:Number(p)||80}));
   const env={};for(const line of String(d.env||'').split('\n')){const m=line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/);if(m)env[m[1]]=m[2];}
-  try{await api.createInstance({name:d.name,image,category:d.category,game:d.game||undefined,command:d.command,ports,env,cpuCores:+d.cpuCores,memoryMb:+d.memoryMb,diskGb:+d.diskGb});toast('Server created — provisioning started','success');navigate();}catch(e){toast(e.message,'error');}
+  try{await api.createInstance({name:d.name,environmentId,version,category:d.category,command:d.command,ports,env});toast('Server created — provisioning started','success');navigate();}catch(e){toast(e.message,'error');}
 }
 
 async function renderServer(id){
-  const v=app.querySelector('#view');const [{instance:i},logs,metrics]=await Promise.all([api.instance(id),api.logs(id,200),api.metrics(id,60)]);
+  const v=app.querySelector('#view');const [{instance:i},logs,metrics,domainData]=await Promise.all([api.instance(id),api.logs(id,200),api.metrics(id,60),api.domains().catch(()=>({domains:[]}))]);
+  const domains=(domainData.domains||[]).filter(d=>d.instance_id===id);
   const tab=currentServerTab||'overview';const tabs=['overview','console','files','configuration','startup','networking','domains','backups','schedules','monitoring','activity'];
   v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">${esc(i.name)}</h1><p class="lt-page-subtitle">${esc(i.image)} · ${badge(i.status)}</p></div><div class="lt-page-actions">
     ${i.status==='running'?'<button class="lt-btn lt-btn-secondary" data-a="stop">Stop</button>':'<button class="lt-btn lt-btn-secondary" data-a="start">Start</button>'}
     <button class="lt-btn lt-btn-secondary" data-a="restart">Restart</button><button class="lt-btn lt-btn-secondary" data-a="deploy">Deploy</button><button class="lt-btn lt-btn-danger" data-a="delete">Delete</button></div></div>
-    <div class="lt-tabs">${tabs.map(t=>`<button class="lt-tab ${t===tab?'active':''}" data-tab="${t}">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join('')}</div><div id="tabView"></div>`;
+    <div class="lt-tabs">${tabs.map(t=>`<button class="lt-tab ${t===tab?'active':''}" data-tab="${t}">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join('')}</div>
+    <div class="lt-grid lt-grid-2" style="grid-template-columns:minmax(0,2fr) minmax(260px,1fr);align-items:start"><div id="tabView"></div>
+      <aside class="lt-card" style="padding:16px"><h3 class="lt-h3" style="margin-bottom:12px">Server info</h3>
+        <div class="lt-meta">Service ID</div><div class="lt-td-mono" style="font-size:12px;margin-bottom:10px">${esc(i.id)}</div>
+        <div class="lt-meta">Runtime</div><div style="font-weight:700;margin-bottom:10px">${esc(i.environmentId||i.image)} ${i.environmentVersion?badge(i.environmentVersion):''}</div>
+        <div class="lt-meta">Ports (auto-assigned host mapping)</div><div class="lt-td-mono" style="font-size:12px;margin-bottom:10px">${(i.ports||[]).map(p=>`${p.container}/${esc(p.protocol||'tcp')} → ${p.host?p.host:'pending'}`).join('<br>')||'none'}</div>
+        <div class="lt-meta">Project domain</div><div class="lt-td-mono" style="font-size:12px;margin-bottom:6px">${domains.map(d=>esc(d.domain)).join('<br>')||'—'}</div>
+        <div class="lt-meta">SSL</div><div style="margin-bottom:10px">${domains.map(d=>badge(d.ssl_status)).join(' ')||badge('pending')}</div>
+        <div class="lt-meta">Resources (plan)</div><div style="font-weight:700;margin-bottom:10px">${i.cpuCores} vCPU · ${i.memoryMb} MB RAM · ${i.diskGb} GB disk</div>
+        <div class="lt-meta">Node</div><div style="font-weight:700;margin-bottom:10px">${esc(i.nodeName||i.nodeId||'—')}</div>
+        <div class="lt-meta">Created</div><div style="font-weight:700">${fmtTime(i.createdAt)}</div>
+      </aside></div>`;
   v.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{currentServerTab=b.dataset.tab;renderServer(id);}));
   v.querySelectorAll('[data-a]').forEach(b=>b.addEventListener('click',async()=>{const a=b.dataset.a;try{
     if(a==='delete'){if(await confirmDialog('Delete server',`Permanently delete ${i.name}?`,'Delete')){await api.deleteInstance(id);toast('Deleted','success');location.hash='#/servers';}return;}
@@ -283,8 +295,9 @@ async function renderServer(id){
     tv.querySelector('#nf').addEventListener('click',async()=>{const d=await modal('New file',field('Name','name','text','','required')+textarea('Content','content',''),{confirm:'Create'});if(d){await api.writeFile(id,{path:f.path+'/'+d.name,content:d.content||''});renderServer(id);}});
     tv.querySelector('#nd').addEventListener('click',async()=>{const d=await modal('New folder',field('Name','name','text','','required'),{confirm:'Create'});if(d){await api.writeFile(id,{op:'mkdir',path:f.path+'/'+d.name});renderServer(id);}});
   }else if(tab==='configuration'||tab==='startup'){
-    tv.innerHTML=section(tab==='configuration'?'Configuration':'Startup settings','',`<form id="sf">${field('Image','image','text',i.image)}${field('Command','command','text',i.command)}${field('CPU','cpuCores','number',i.cpuCores)}${field('Memory (MB)','memoryMb','number',i.memoryMb)}${field('Disk (GB)','diskGb','number',i.diskGb)}${textarea('Environment (KEY=value)','env',Object.entries(i.env||{}).map(([k,x])=>k+'='+x).join('\n'))}<button class="lt-btn lt-btn-primary" type="submit">Save</button></form>`);
-    tv.querySelector('#sf').addEventListener('submit',async(e)=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());const env={};for(const l of String(d.env||'').split('\n')){const m=l.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/);if(m)env[m[1]]=m[2];}try{await api.updateInstance(id,{...d,cpuCores:+d.cpuCores,memoryMb:+d.memoryMb,diskGb:+d.diskGb,env});toast('Saved','success');renderServer(id);}catch(err){toast(err.message,'error');}});
+    tv.innerHTML=section(tab==='configuration'?'Configuration':'Startup settings','',`<p class="lt-meta" style="margin-bottom:12px">Runtime: ${esc(i.environmentId||'—')} ${esc(i.environmentVersion||'')} · ${i.cpuCores} vCPU · ${i.memoryMb} MB RAM · ${i.diskGb} GB disk (set by your plan)</p>
+      <form id="sf">${field('Startup command','command','text',i.command)}${textarea('Environment (KEY=value)','env',Object.entries(i.env||{}).map(([k,x])=>k+'='+x).join('\n'))}<button class="lt-btn lt-btn-primary" type="submit">Save</button></form>`);
+    tv.querySelector('#sf').addEventListener('submit',async(e)=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());const env={};for(const l of String(d.env||'').split('\n')){const m=l.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/);if(m)env[m[1]]=m[2];}try{await api.updateInstance(id,{command:d.command,env});toast('Saved — restart to apply','success');renderServer(id);}catch(err){toast(err.message,'error');}});
   }else if(tab==='monitoring'){
     tv.innerHTML=section('Resource usage','',metrics.metrics.length?metrics.metrics.slice(-40).map(m=>`<div style="display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--lt-border);font-size:12px"><span class="lt-td-mono" style="width:160px">${fmtTime(m.ts)}</span><span>CPU ${m.cpu}%</span><span>MEM ${m.mem}%</span><span>NET ${fmtNum(m.net_in)}/${fmtNum(m.net_out)}</span></div>`).join(''):empty('No metrics yet','Metrics appear once the agent reports.'));
     poll(async()=>{if(currentView==='server'&&currentServerTab==='monitoring')await renderServer(id);},10000);
@@ -357,12 +370,13 @@ async function renderAdmin(){const v=app.querySelector('#view'),[users,teams,aud
 
 /* ---------- commercial dashboard views ---------- */
 async function renderMarketplace(){
-  const v=app.querySelector('#view');let cats=[],prods=[];
+  const v=app.querySelector('#view');let cats=[],prods=[],byop=false;
   try{[cats,prods]=await Promise.all([api.categories(),api.products()]);cats=cats.categories||[];prods=prods.products||[];}catch{}
+  try{byop=!!(await api.pricing()).config?.customPlansEnabled;}catch{}
   const active=currentParam||'all';
   const filtered=active==='all'?prods:prods.filter(p=>p.categoryId===active);
   v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Browse Hosting</h1><p class="lt-page-subtitle">Choose what you want to host and deploy in minutes</p></div>
-    <div class="lt-page-actions"><button class="lt-btn lt-btn-secondary" id="custom">Build your own plan</button><a class="lt-btn lt-btn-primary" href="/hosting">Full catalogue ↗</a></div></div>
+    <div class="lt-page-actions">${byop?'<button class="lt-btn lt-btn-secondary" id="custom">Build your own plan</button>':''}<a class="lt-btn lt-btn-primary" href="/hosting">Full catalogue ↗</a></div></div>
     <div class="lt-tabs">${['all',...cats.map(c=>c.id)].map(c=>`<button class="lt-tab ${c===active?'active':''}" data-cat="${c}">${c==='all'?'All products':esc((cats.find(x=>x.id===c)||{}).name||c)}</button>`).join('')}</div>
     ${filtered.length?`<div class="lt-grid lt-grid-3">${filtered.map(p=>`<div class="lt-card lt-card-hover" style="padding:0;overflow:hidden">
       <div style="height:96px;background:linear-gradient(135deg,var(--lt-ember-alpha-12),var(--lt-success-dim));display:flex;align-items:center;justify-content:center;font-size:36px;color:var(--lt-ember-500)">${esc(p.icon)}</div>
@@ -372,14 +386,14 @@ async function renderMarketplace(){
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px"><span style="font-weight:700">From $${(p.startingPriceMonthly/100).toFixed(0)}/mo</span><a class="lt-btn lt-btn-primary lt-btn-sm" href="/product?id=${p.slug}">View Plans</a></div>
       </div></div>`).join('')}</div>`:empty('No products','Products will appear here once configured by an administrator.')}`;
   v.querySelectorAll('[data-cat]').forEach(b=>b.addEventListener('click',()=>{location.hash='#/market/'+b.dataset.cat;}));
-  v.querySelector('#custom').addEventListener('click',()=>{location.href='/configure';});
+  v.querySelector('#custom')?.addEventListener('click',()=>{location.href='/configure';});
 }
 
 async function renderBilling(){
-  const v=app.querySelector('#view');let sub={},plan=null,history=[];
-  try{const [s,h]=await Promise.all([api.subscription(),api.billingHistory()]);sub=s.subscription||{};plan=s.plan;history=h.transactions||[];}catch{}
+  const v=app.querySelector('#view');let sub={},plan=null,history=[],byop=false;
+  try{const [s,h,p]=await Promise.all([api.subscription(),api.billingHistory(),api.pricing()]);sub=s.subscription||{};plan=s.plan;history=h.transactions||[];byop=!!p.config?.customPlansEnabled;}catch{}
   v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Plans & Billing</h1><p class="lt-page-subtitle">Your current plan, usage and billing history</p></div>
-    <div class="lt-page-actions"><button class="lt-btn lt-btn-secondary" id="browse">Browse plans</button><button class="lt-btn lt-btn-primary" id="custom">Build your own plan</button></div></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-secondary" id="browse">Browse plans</button>${byop?'<button class="lt-btn lt-btn-primary" id="custom">Build your own plan</button>':''}</div></div>
     <div class="lt-grid lt-grid-2">
       ${section('Current plan',sub.source==='custom'?'Custom configuration':(plan?.name||'Free'),`<div class="lt-grid lt-grid-3">${[['RAM',(plan?.memoryMb||sub.customConfig?.memoryMb||512)+' MB'],['CPU',(plan?.cpuCores||sub.customConfig?.cpuCores||1)+' cores'],['Storage',(plan?.diskGb||sub.customConfig?.diskGb||4)+' GB']].map(([l,x])=>`<div><div class="lt-meta">${l}</div><div style="font-weight:700;font-size:18px">${x}</div></div>`).join('')}</div>
         <div class="lt-meta" style="margin-top:14px">Status: ${badge(sub.status||'active')} · Price: $${((sub.priceMonthly||0)/100).toFixed(2)}/${sub.currency||'USD'}</div>`)}
@@ -387,7 +401,7 @@ async function renderBilling(){
       ${section('Billing history','',history.length?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Description</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${history.map(t=>`<tr><td class="lt-td-strong">${esc(t.description)}</td><td class="lt-td-mono">$${(t.amount/100).toFixed(2)} ${esc(t.currency)}</td><td>${badge(t.status)}</td><td>${fmtTime(t.createdAt)}</td></tr>`).join('')}</tbody></table></div>`:empty('No transactions','Plan activations and payments will appear here.'))}
     </div>`;
   v.querySelector('#browse').addEventListener('click',()=>{location.hash='#/market';});
-  v.querySelector('#custom').addEventListener('click',()=>{location.href='/configure';});
+  v.querySelector('#custom')?.addEventListener('click',()=>{location.href='/configure';});
   // load plans for switching
   try{const pl=(await api.plans()).plans||[];const list=v.querySelector('#planList');
     if(list)list.innerHTML=pl.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--lt-border)">

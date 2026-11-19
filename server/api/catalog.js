@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireAuth, requireAdmin } from '../auth.js';
-import { asyncRoute, notFound, badRequest } from '../util.js';
+import config from '../config.js';
+import { asyncRoute, notFound, badRequest, forbidden } from '../util.js';
 import { pricingConfig, calculatePrice, validateResources, publicPlan } from '../pricing.js';
 
 export function catalogRoutes() {
@@ -55,11 +56,13 @@ export function catalogRoutes() {
       minDiskGb: cfg.min_disk_gb, maxDiskGb: cfg.max_disk_gb,
       stepCpu: cfg.step_cpu, stepMemoryMb: cfg.step_memory_mb, stepDiskGb: cfg.step_disk_gb,
       yearlyDiscountPercent: cfg.yearly_discount_percent, paymentProvider: cfg.payment_provider,
+      customPlansEnabled: config.allowCustomPlans,
     }});
   }));
 
   // Server-side estimate (frontend may display but cannot be trusted for purchases).
   router.post('/pricing/estimate', asyncRoute(async (req, res) => {
+    if (!config.allowCustomPlans) throw forbidden('custom_plans_disabled');
     const cfg = pricingConfig();
     const resources = validateResources(cfg, req.body?.resources || {});
     const interval = req.body?.interval === 'yearly' ? 'yearly' : 'monthly';
