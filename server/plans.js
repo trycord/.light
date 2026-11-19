@@ -1,16 +1,29 @@
 import { getDb } from './db.js';
-import { conflict } from './util.js';
+import { conflict, json } from './util.js';
 
 export function planFor(teamId) {
-  const row = getDb().prepare(`
-    SELECT p.* FROM teams t JOIN plans p ON p.id = t.plan_id WHERE t.id = ?
-  `).get(teamId);
-  return row || getDb().prepare('SELECT * FROM plans WHERE id = ?').get('free');
+  const sub = getDb().prepare("SELECT * FROM subscriptions WHERE team_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1").get(teamId);
+  if (sub?.source === 'custom') {
+    const c = json(sub.custom_config, {});
+    if (c.cpuCores || c.memoryMb || c.diskGb) {
+      return {
+        id: 'custom', name: 'Custom Plan',
+        memory_mb: c.memoryMb || 512, disk_gb: c.diskGb || 4, cpu_cores: c.cpuCores || 1,
+        instances: c.instances || 10,
+      };
+    }
+  }
+  if (sub?.plan_id) {
+    const plan = getDb().prepare('SELECT * FROM plans WHERE id = ?').get(sub.plan_id);
+    if (plan) return plan;
+  }
+  const team = getDb().prepare('SELECT plan_id FROM teams WHERE id = ?').get(teamId);
+  return getDb().prepare('SELECT * FROM plans WHERE id = ?').get(team?.plan_id || 'free') || getDb().prepare('SELECT * FROM plans WHERE id = ?').get('free');
 }
 
 export function teamUsage(teamId) {
   const db = getDb();
-  const instances = db.prepare('SELECT COUNT(*) AS count, COALESCE(SUM(memory_mb),0) AS memory, COALESCE(SUM(disk_gb),0) AS disk, COALESCE(SUM(cpu_cores),0) AS cpu FROM instances WHERE team_id = ? AND status != ?').get(teamId, 'error');
+  const instances = db.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(memory_mb),0) AS memory, COALESCE(SUM(disk_gb),0) AS disk, COALESCE(SUM(cpu_cores),0) AS cpu FROM instances WHERE team_id = ? AND status != 'error'").get(teamId);
   return { instances: instances.count, memoryMb: instances.memory, diskGb: instances.disk, cpuCores: instances.cpu };
 }
 

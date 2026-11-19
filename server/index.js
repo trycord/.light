@@ -25,6 +25,7 @@ import { catalogRoutes } from './api/catalog.js';
 import { adminRoutes } from './api/admin.js';
 import { agentRoutes } from './api/agent.js';
 import { statsRoutes } from './api/stats.js';
+import { subscriptionsRoutes } from './api/subscriptions.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(__dirname, '..');
@@ -62,6 +63,7 @@ api.use('/domains', domainsRoutes());
 api.use('/backups', backupsRoutes());
 api.use('/schedules', schedulesRoutes());
 api.use('/catalog', catalogRoutes());
+api.use('/subscriptions', subscriptionsRoutes());
 api.use('/admin', adminRoutes());
 api.use('/agent', agentRoutes());
 api.get('/stats', requireAuth, statsRoutes());
@@ -73,6 +75,12 @@ app.use('/api', api);
 
 app.use(express.static(path.join(appDir, 'public')));
 app.use('/assets', express.static(path.join(appDir, 'assets')));
+app.get('/', (req, res) => res.sendFile(path.join(appDir, 'public', 'site.html')));
+const PUBLIC_PAGES = ['site','pricing','docs','about','contact','legal','product','hosting','configure','features','faq'];
+app.get('/:page.html', (req, res, next) => {
+  if (PUBLIC_PAGES.includes(req.params.page)) return res.sendFile(path.join(appDir, 'public', `${req.params.page}.html`));
+  next();
+});
 app.get(/^\/(?!api|health|assets).*/, (req, res) => res.sendFile(path.join(appDir, 'public', 'index.html')));
 app.use((req, res) => res.status(404).json({ error: 'not_found' }));
 app.use((error, req, res, next) => {

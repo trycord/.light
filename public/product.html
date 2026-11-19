@@ -1,32 +1,44 @@
 <!DOCTYPE html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hosting Products — .light</title>
+<title>Hosting Product — .light</title>
 <link rel="icon" href="/assets/logos/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
-</head><body><div id="site"></div>
+</head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
 <script type="module">
-import { layout, loadBranding, PRODUCTS } from '/js/site.js';
+import { layout, esc, loadBranding } from '/js/site.js';
+import api from '/js/api.js';
 async function boot(){
   const b = await loadBranding();
-  const q = new URLSearchParams(location.search).get('id');
-  const p = PRODUCTS.find(x => x.id === q) || PRODUCTS[0];
+  const slug = new URLSearchParams(location.search).get('id') || 'minecraft';
+  let data = {product:{name:'Product',description:'',icon:'◈',features:[],shortDescription:''},plans:[],locations:[]};
+  try { data = await api.product(slug); } catch {}
+  const p = data.product||{}, plans=data.plans||[], locs=data.locations||[];
+  const interval = new URLSearchParams(location.search).get('interval')==='yearly'?'yearly':'monthly';
   const content = `<section class="site-section"><div class="site-wrap">
-    <a href="/site.html#products" class="site-muted" style="text-decoration:none">← All products</a>
-    <div style="display:flex;gap:20px;align-items:center;margin:26px 0">
-      <div class="site-card-icon" style="background:${p.color}1a;color:${p.color};width:56px;height:56px;font-size:26px">${p.icon}</div>
-      <h1 style="font-size:2.4rem;font-weight:800;letter-spacing:-.03em;margin:0">${p.title}</h1>
+    <a href="/hosting.html" class="site-muted" style="text-decoration:none">← Hosting marketplace</a>
+    <div style="display:flex;gap:22px;align-items:center;margin:26px 0">
+      <div style="width:70px;height:70px;border-radius:16px;background:rgba(255,77,36,.12);border:1px solid var(--lt-border-ember);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--lt-ember-500)">${esc(p.icon)}</div>
+      <div><h1 style="font-size:2.2rem;font-weight:800;letter-spacing:-.03em;margin:0">${esc(p.name)}</h1><p class="site-muted" style="margin:6px 0 0">${esc(p.shortDescription||'')}</p></div>
     </div>
-    <p style="font-size:1.1rem;color:var(--lt-text-secondary);max-width:720px">${p.desc}</p>
-    <div class="site-grid" style="margin-top:36px">
-      <div class="site-card"><h3>Configuration</h3><p>Configure resources, ports, environment variables and startup parameters through a guided dashboard — no manual infrastructure work.</p></div>
-      <div class="site-card"><h3>Deployment</h3><p>Deploy from official templates or custom Docker images. Update, reinstall and roll back with clear status at every step.</p></div>
-      <div class="site-card"><h3>Management</h3><p>Live console, file manager, logs, backups, domains and monitoring are built in for every service.</p></div>
+    <p style="color:var(--lt-text-secondary);font-size:15px;line-height:1.7;max-width:760px">${esc(p.description||'')}</p>
+    <div class="site-grid" style="margin:30px 0">
+      ${(p.features||[]).map(f=>`<div class="site-card"><h3>✓ ${esc(f)}</h3></div>`).join('')}
     </div>
-    <div class="site-cta-band"><a href="/index.html#register" class="lt-btn lt-btn-primary">Create Your First Server</a></div>
+    ${locs.length?`<div style="margin:30px 0"><h3 class="lt-h3">Available locations</h3><div class="lt-grid lt-grid-3" style="margin-top:12px">${locs.filter(l=>l.available).map(l=>`<div class="site-card" style="padding:14px"><div style="font-weight:700">${esc(l.city||l.region||l.country||'Location')}</div><div class="lt-meta">${esc(l.country||'')} ${l.latency_ms?`· ${l.latency_ms}ms measured`:''}</div></div>`).join('')}</div></div>`:''}
+    <div style="margin-top:34px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><h2 style="font-size:1.6rem;font-weight:800;letter-spacing:-.02em;margin:0">Choose a plan</h2>
+      <div class="lt-auth-tabs" style="margin:0;width:auto"><button class="lt-auth-tab ${interval==='monthly'?'active':''}" data-i="monthly">Monthly</button><button class="lt-auth-tab ${interval==='yearly'?'active':''}" data-i="yearly">Yearly (save)</button></div></div>
+      <div class="site-grid" style="margin-top:18px">
+        ${plans.map(pl=>`<div class="site-plan ${pl.featured?'featured':''}"><h3>${esc(pl.name)}</h3><div class="price">$${(pl.price/100).toFixed(0)}<span style="font-size:13px;color:var(--lt-text-muted)">/${interval==='yearly'?'yr':'mo'}</span></div>
+          <p class="site-muted">${esc(pl.description||'')}</p><ul><li>${pl.memoryMb} MB RAM</li><li>${pl.cpuCores} vCPU</li><li>${pl.diskGb} GB storage</li><li>${pl.instances} instances</li>${(pl.features||[]).map(f=>`<li>✓ ${esc(f)}</li>`).join('')}</ul>
+          <a href="/index.html?plan=${pl.id}#register" class="lt-btn ${pl.featured?'lt-btn-primary':'lt-btn-secondary'}">Get ${esc(pl.name)}</a></div>`).join('') || '<div class="site-muted">No plans available for this product.</div>'}
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:34px"><a href="/configure.html" class="lt-btn lt-btn-secondary">Build your own plan</a></div>
   </div></section>`;
   document.getElementById('site').innerHTML = layout(b, content, 'products');
+  document.querySelectorAll('[data-i]').forEach(el=>el.addEventListener('click',()=>{location.href='/product.html?id='+encodeURIComponent(slug)+'&interval='+el.dataset.i;}));
 }
 boot();
 </script></body></html>

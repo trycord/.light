@@ -27,9 +27,60 @@ const TABLES = {
     team_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member',
     created_at INTEGER NOT NULL, PRIMARY KEY (team_id, user_id))`,
   plans: `CREATE TABLE IF NOT EXISTS plans (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, memory_mb INTEGER NOT NULL, disk_gb INTEGER NOT NULL,
-    cpu_cores INTEGER NOT NULL, instances INTEGER NOT NULL DEFAULT 3,
-    price_monthly INTEGER NOT NULL DEFAULT 0, description TEXT NOT NULL DEFAULT '')`,
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'shared', product_id TEXT,
+    cpu_cores INTEGER NOT NULL DEFAULT 1, memory_mb INTEGER NOT NULL DEFAULT 512,
+    disk_gb INTEGER NOT NULL DEFAULT 4, network_gb INTEGER NOT NULL DEFAULT 0,
+    instances INTEGER NOT NULL DEFAULT 3,
+    price_monthly INTEGER NOT NULL DEFAULT 0, price_yearly INTEGER NOT NULL DEFAULT 0,
+    interval TEXT NOT NULL DEFAULT 'monthly', currency TEXT NOT NULL DEFAULT 'USD',
+    features TEXT NOT NULL DEFAULT '[]', restrictions TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'published', featured INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0, available INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  product_categories: `CREATE TABLE IF NOT EXISTS product_categories (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '◈',
+    image TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'published')`,
+  products: `CREATE TABLE IF NOT EXISTS products (
+    id TEXT PRIMARY KEY, category_id TEXT NOT NULL, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
+    short_description TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
+    image TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '◈',
+    features TEXT NOT NULL DEFAULT '[]', tags TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'published', featured INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    starting_price_monthly INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'USD',
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  product_locations: `CREATE TABLE IF NOT EXISTS product_locations (
+    id TEXT PRIMARY KEY, product_id TEXT NOT NULL, country TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT '', city TEXT NOT NULL DEFAULT '',
+    node_id TEXT, available INTEGER NOT NULL DEFAULT 1, latency_ms INTEGER)`,
+  pricing_config: `CREATE TABLE IF NOT EXISTS pricing_config (
+    id TEXT PRIMARY KEY, currency TEXT NOT NULL DEFAULT 'USD', tax_percent REAL NOT NULL DEFAULT 0,
+    price_cpu INTEGER NOT NULL DEFAULT 200, price_memory_mb INTEGER NOT NULL DEFAULT 2,
+    price_disk_gb INTEGER NOT NULL DEFAULT 20, price_network_gb INTEGER NOT NULL DEFAULT 5,
+    price_instance INTEGER NOT NULL DEFAULT 0,
+    min_cpu INTEGER NOT NULL DEFAULT 1, max_cpu INTEGER NOT NULL DEFAULT 32,
+    min_memory_mb INTEGER NOT NULL DEFAULT 256, max_memory_mb INTEGER NOT NULL DEFAULT 65536,
+    min_disk_gb INTEGER NOT NULL DEFAULT 4, max_disk_gb INTEGER NOT NULL DEFAULT 2000,
+    step_cpu INTEGER NOT NULL DEFAULT 1, step_memory_mb INTEGER NOT NULL DEFAULT 256,
+    step_disk_gb INTEGER NOT NULL DEFAULT 4,
+    yearly_discount_percent REAL NOT NULL DEFAULT 15,
+    payment_provider TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL)`,
+  subscriptions: `CREATE TABLE IF NOT EXISTS subscriptions (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, plan_id TEXT,
+    status TEXT NOT NULL DEFAULT 'active', source TEXT NOT NULL DEFAULT 'preset',
+    custom_config TEXT NOT NULL DEFAULT '{}',
+    price_monthly INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'USD',
+    started_at INTEGER NOT NULL, renews_at INTEGER, cancelled_at INTEGER,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  transactions: `CREATE TABLE IF NOT EXISTS transactions (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, subscription_id TEXT,
+    type TEXT NOT NULL DEFAULT 'charge', description TEXT NOT NULL DEFAULT '',
+    amount INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'USD',
+    status TEXT NOT NULL DEFAULT 'pending', provider TEXT NOT NULL DEFAULT '',
+    reference TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`,
   nodes: `CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, name TEXT NOT NULL, host TEXT NOT NULL,
     region TEXT NOT NULL DEFAULT 'local', version TEXT NOT NULL DEFAULT '1.0.0',
@@ -94,6 +145,11 @@ const TABLES = {
 };
 
 const LEGACY_COLUMNS = {
+  plans: { description: "TEXT NOT NULL DEFAULT ''", category: "TEXT NOT NULL DEFAULT 'shared'", product_id: 'TEXT',
+    price_yearly: 'INTEGER NOT NULL DEFAULT 0', interval: "TEXT NOT NULL DEFAULT 'monthly'", currency: "TEXT NOT NULL DEFAULT 'USD'",
+    features: "TEXT NOT NULL DEFAULT '[]'", restrictions: "TEXT NOT NULL DEFAULT '[]'", status: "TEXT NOT NULL DEFAULT 'published'",
+    featured: 'INTEGER NOT NULL DEFAULT 0', sort_order: 'INTEGER NOT NULL DEFAULT 0', available: 'INTEGER NOT NULL DEFAULT 1',
+    network_gb: 'INTEGER NOT NULL DEFAULT 0', created_at: 'INTEGER NOT NULL DEFAULT 0', updated_at: 'INTEGER NOT NULL DEFAULT 0' },
   users: { token_version: 'INTEGER NOT NULL DEFAULT 0', team_id: 'TEXT', status: "TEXT NOT NULL DEFAULT 'active'", updated_at: 'INTEGER', last_login: 'INTEGER',
     username: 'TEXT', email_verified: 'INTEGER NOT NULL DEFAULT 1', verification_token: 'TEXT', verification_expires: 'INTEGER',
     reset_token: 'TEXT', reset_expires: 'INTEGER', failed_logins: 'INTEGER NOT NULL DEFAULT 0', locked_until: 'INTEGER',
@@ -120,6 +176,11 @@ const INDEXES = [
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_domains_domain ON domains(domain)',
   'CREATE INDEX IF NOT EXISTS idx_audit_team ON audit_logs(team_id, id)',
   'CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, id)',
+  'CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id, sort_order)',
+  'CREATE INDEX IF NOT EXISTS idx_products_status ON products(status, sort_order)',
+  'CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(status, sort_order)',
+  'CREATE INDEX IF NOT EXISTS idx_subscriptions_team ON subscriptions(team_id, id)',
+  'CREATE INDEX IF NOT EXISTS idx_transactions_team ON transactions(team_id, id)',
 ];
 
 function migrate() {
@@ -135,10 +196,62 @@ function migrate() {
 
 function seed() {
   const ts = now();
-  const insertPlan = db.prepare('INSERT OR IGNORE INTO plans (id, name, memory_mb, disk_gb, cpu_cores, instances, price_monthly, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  insertPlan.run('free', 'Free', 512, 4, 1, 3, 0, '512 MB RAM · 4 GB storage · subdomain · custom domains');
-  insertPlan.run('shared', 'Shared', 4096, 40, 2, 10, 1200, '4 GB RAM · 40 GB storage · priority scheduling');
-  insertPlan.run('dedicated', 'Dedicated', 16384, 200, 8, 50, 4800, '16 GB RAM · 200 GB storage · dedicated allocation');
+  // Pricing configuration (server-side source of truth for custom plans).
+  if (!db.prepare('SELECT id FROM pricing_config LIMIT 1').get()) {
+    db.prepare(`INSERT INTO pricing_config (id, currency, tax_percent, price_cpu, price_memory_mb, price_disk_gb, price_network_gb, price_instance,
+      min_cpu, max_cpu, min_memory_mb, max_memory_mb, min_disk_gb, max_disk_gb, step_cpu, step_memory_mb, step_disk_gb, yearly_discount_percent, payment_provider, updated_at)
+      VALUES ('default', 'USD', 0, 200, 2, 20, 5, 0, 1, 32, 256, 65536, 4, 2000, 1, 256, 4, 15, '', ?)`).run(ts);
+  }
+
+  // Product catalogue categories.
+  const insertCat = db.prepare('INSERT OR IGNORE INTO product_categories (id, name, slug, description, icon, image, sort_order, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const categories = [
+    ['game', 'Game Servers', 'game', 'Host multiplayer game servers with console and mod support', '◆', '/assets/icons/game-servers.svg', 1],
+    ['web', 'Web Hosting', 'web', 'Websites, web applications and APIs', '◈', '/assets/icons/applications.svg', 2],
+    ['bot', 'Bot Hosting', 'bot', 'Discord bots, Lavalink and general bots', '◇', '/assets/icons/instances.svg', 3],
+    ['database', 'Databases', 'database', 'Managed database services', '▤', '/assets/icons/storage.svg', 4],
+    ['custom', 'Custom Docker', 'custom', 'Run any containerised service', '◉', '/assets/icons/templates.svg', 5],
+  ];
+  for (const cat of categories) insertCat.run(cat[0], cat[1], cat[2], cat[3], cat[4], cat[5], cat[6], 'published');
+
+  // Hosting products.
+  const insertProduct = db.prepare(`INSERT OR IGNORE INTO products (id, category_id, name, slug, short_description, description, image, icon, features, tags, status, featured, sort_order, starting_price_monthly, currency, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const products = [
+    ['minecraft', 'game', 'Minecraft', 'minecraft', 'Java & Bedrock game server hosting', 'Host Minecraft Java or Bedrock with version selection, mod/plugin support and a live console.', '/assets/backgrounds/volcanic-strata-16x9.svg', '◆', ['Instant setup','Version selection','Mods & plugins','Live console','Automatic backups'], ['minecraft','game','java','bedrock'], 1, 1, 500],
+    ['hytale', 'game', 'Hytale', 'hytale', 'Hytale server hosting', 'Dedicated Hytale server hosting with configuration and console access.', '/assets/backgrounds/volcanic-strata-16x9.svg', '◆', ['Instant setup','Console access','Backups'], ['hytale','game'], 0, 2, 500],
+    ['terraria', 'game', 'Terraria', 'terraria', 'Terraria server hosting', 'Host Terraria worlds with mod support and automated backups.', '/assets/backgrounds/volcanic-strata-16x9.svg', '◆', ['Instant setup','Mod support','Backups'], ['terraria','game'], 0, 3, 500],
+    ['five-m', 'game', 'FiveM', 'five-m', 'GTA V roleplay server hosting', 'FiveM server hosting for GTA V roleplay communities.', '/assets/backgrounds/volcanic-strata-16x9.svg', '◆', ['Instant setup','Resources','Console'], ['fivem','game','gta'], 0, 4, 1200],
+    ['discord-bot', 'bot', 'Discord Bot', 'discord-bot', 'Always-on Discord bot hosting', 'Keep your Discord bots online with persistent storage and automatic restarts.', '/assets/icons/instances.svg', '◇', ['24/7 uptime','Auto-restart','Environment variables'], ['discord','bot'], 1, 1, 300],
+    ['lavalink', 'bot', 'Lavalink', 'lavalink', 'Lavalink audio node hosting', 'Dedicated Lavalink audio nodes for music bots.', '/assets/icons/instances.svg', '◇', ['Low latency','Auto-restart','Configurable'], ['lavalink','bot','audio'], 0, 2, 300],
+    ['website', 'web', 'Website Hosting', 'website', 'Static and dynamic website hosting', 'Host static sites or dynamic web applications with custom domains and SSL.', '/assets/icons/applications.svg', '◈', ['Custom domains','SSL','Git deploys','Backups'], ['website','web','static'], 1, 1, 300],
+    ['webapp', 'web', 'Web Applications', 'webapp', 'Node, Python, Go and more', 'Deploy web applications and APIs from Git or custom images.', '/assets/icons/applications.svg', '◈', ['Git deploys','Environment variables','Databases'], ['app','api','node','python'], 1, 2, 500],
+    ['database', 'database', 'Database Hosting', 'database', 'PostgreSQL, MySQL, Redis', 'Isolated database instances with persistent storage and backups.', '/assets/icons/storage.svg', '▤', ['Persistent storage','Backups','Isolation'], ['postgres','mysql','redis','database'], 0, 1, 500],
+    ['docker', 'custom', 'Custom Docker', 'docker', 'Run any container image', 'Bring your own Docker image with full control over commands, ports and volumes.', '/assets/icons/templates.svg', '◉', ['Custom images','Resource limits','Volumes'], ['docker','custom'], 1, 1, 300],
+  ];
+  for (const p of products) insertProduct.run(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], JSON.stringify(p[8]), JSON.stringify(p[9]), 'published', p[10], p[11], p[12], 'USD', ts, ts);
+
+  // Preset plans (configurable, not hardcoded in UI).
+  const insertPlan = db.prepare(`INSERT OR IGNORE INTO plans (id, name, description, category, product_id, cpu_cores, memory_mb, disk_gb, network_gb, instances,
+    price_monthly, price_yearly, interval, currency, features, restrictions, status, featured, sort_order, available, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const planData = [
+    ['free','Free','Free plan to get started','shared',null,1,512,4,10,3,0,0,'monthly','USD',['Community support','Project subdomain','Basic monitoring'],['Limited resources'],'published',1,1,1],
+    ['starter','Starter','For small personal projects','shared',null,2,2048,20,100,5,800,8000,'monthly','USD',['Email support','Custom domains','Backups'],[],'published',0,2,1],
+    ['basic','Basic','For growing applications','shared',null,2,4096,40,250,10,1600,16000,'monthly','USD',['Priority support','Backups','Monitoring'],[],'published',1,3,1],
+    ['pro','Pro','For production workloads','shared',null,4,8192,80,500,20,3200,32000,'monthly','USD',['Priority support','Advanced monitoring','Backups','SSL'],[],'published',0,4,1],
+    ['advanced','Advanced','For demanding services','dedicated',null,8,16384,160,1000,50,6400,64000,'monthly','USD',['Dedicated resources','Priority support','SSL','Backups'],[],'published',0,5,1],
+    ['enterprise','Enterprise','Custom allocation','dedicated',null,16,32768,500,2000,100,12800,128000,'monthly','USD',['Dedicated resources','Dedicated support','SLA available'],['Contact for custom allocations'],'published',0,6,1],
+  ];
+  for (const p of planData) insertPlan.run(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], JSON.stringify(p[14]), JSON.stringify(p[15]), p[16], p[17], p[18], p[19], ts, ts);
+
+  // Default subscription for every team that has none (free plan).
+  for (const team of db.prepare('SELECT id FROM teams').all()) {
+    if (!db.prepare('SELECT id FROM subscriptions WHERE team_id = ?').get(team.id)) {
+      db.prepare(`INSERT INTO subscriptions (id, team_id, plan_id, status, source, price_monthly, currency, started_at, created_at, updated_at)
+        VALUES (?, ?, 'free', 'active', 'preset', 0, 'USD', ?, ?, ?)`).run(id('sub'), team.id, ts, ts, ts);
+    }
+  }
 
   const templates = [
     ['minecraft', 'Minecraft (Paper)', 'game', 'itzg/minecraft-server', ['1.21.4', '1.20.6', '1.19.4'], '["25565"]', '{"EULA":"TRUE"}'],

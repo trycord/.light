@@ -1,0 +1,41 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hosting Marketplace — .light</title>
+<meta name="description" content="Browse .light hosting products for game servers, websites, bots, databases and custom Docker workloads.">
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+</head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading catalogue…</div></div>
+<script type="module">
+import { layout, esc, loadBranding } from '/js/site.js';
+import api from '/js/api.js';
+async function boot(){
+  const b = await loadBranding();
+  let categories=[], products=[];
+  try { [categories, products] = await Promise.all([api.categories(), api.products()]); categories=categories.categories||[]; products=products.products||[]; } catch {}
+  const active = new URLSearchParams(location.search).get('category') || 'all';
+  const filtered = active==='all'?products:products.filter(p=>p.categoryId===active);
+  const content = `<section class="site-section"><div class="site-wrap">
+    <div class="site-heading"><h2>Hosting marketplace</h2><p>Choose what you want to host. Configure it, pick a plan, and deploy in minutes.</p></div>
+    <div class="lt-tabs" style="justify-content:center">
+      <button class="lt-tab ${active==='all'?'active':''}" data-cat="all">All products</button>
+      ${categories.map(c=>`<button class="lt-tab ${active===c.id?'active':''}" data-cat="${c.id}">${esc(c.name)}</button>`).join('')}
+    </div>
+    <div class="site-grid" style="margin-top:28px">
+      ${filtered.map(p=>`<a href="/product.html?id=${p.slug}" class="site-card" style="text-decoration:none;padding:0;overflow:hidden">
+        <div style="height:130px;background:linear-gradient(140deg,rgba(255,77,36,.16),rgba(76,155,138,.08)),var(--lt-surface-2);display:flex;align-items:center;justify-content:center;font-size:42px;color:var(--lt-ember-500);border-bottom:1px solid var(--lt-border)">${esc(p.icon)}</div>
+        <div style="padding:20px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lt-badge lt-badge-neutral">${esc((categories.find(c=>c.id===p.categoryId)||{}).name||p.categoryId)}</span>${p.featured?'<span class="lt-badge lt-badge-ember">Featured</span>':''}</div>
+          <h3 style="margin:12px 0 6px;font-size:17px">${esc(p.name)}</h3>
+          <p style="min-height:42px">${esc(p.shortDescription)}</p>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin:12px 0">${(p.features||[]).slice(0,3).map(f=>`<span class="lt-badge lt-badge-neutral" style="font-size:10px">${esc(f)}</span>`).join('')}</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px"><span style="font-weight:700;font-size:15px">From $${(p.startingPriceMonthly/100).toFixed(0)}<span style="font-size:11px;color:var(--lt-text-muted)">/mo</span></span><span style="color:var(--lt-ember-500);font-weight:700;font-size:13px">View Plans →</span></div>
+        </div></a>`).join('') || '<div class="site-muted">No products available in this category yet.</div>'}
+    </div>
+    <div style="text-align:center;margin-top:36px"><a href="/configure.html" class="lt-btn lt-btn-secondary">Build your own plan</a> <a href="/index.html#register" class="lt-btn lt-btn-primary">Get Started</a></div>
+  </div></section>`;
+  document.getElementById('site').innerHTML = layout(b, content, 'products');
+  document.querySelectorAll('[data-cat]').forEach(el=>el.addEventListener('click',()=>{location.href='/hosting.html'+(el.dataset.cat==='all'?'':'?category='+el.dataset.cat);}));
+}
+boot();
+</script></body></html>
