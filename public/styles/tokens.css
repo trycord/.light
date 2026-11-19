@@ -1,0 +1,150 @@
+/* ==========================================================================
+   .light — Trycord Design System Tokens
+   Prefix: --lt-
+   Brand: Ember Orange #FF4D24 · Volcanic (Obsidian / Basalt / Magma / Lava) · Manrope
+   Source: Trycord .light Volcanic Infrastructure Asset Pack
+   ========================================================================== */
+
+:root {
+  /* ---------- Brand: volcanic ember family ---------- */
+  --lt-magma: #FF7847;
+  --lt-lava: #E34B2F;
+  --lt-sulfur: #F2C75C;
+  --lt-copper: #A96745;
+  --lt-ember-50: #FDF3EC;
+  --lt-ember-100: #FBE3D6;
+  --lt-ember-200: #F7C8B0;
+  --lt-ember-300: #F6A283;
+  --lt-ember-400: #FF7847;
+  --lt-ember-500: #FF4D24; /* Ember Orange — primary */
+  --lt-ember-600: #E63E1B;
+  --lt-ember-700: #C23214;
+  --lt-ember-800: #9C2A12;
+  --lt-ember-alpha-04: rgba(255, 77, 36, 0.04);
+  --lt-ember-alpha-08: rgba(255, 77, 36, 0.08);
+  --lt-ember-alpha-12: rgba(255, 77, 36, 0.12);
+  --lt-ember-alpha-20: rgba(255, 77, 36, 0.2);
+  --lt-ember-alpha-32: rgba(255, 77, 36, 0.32);
+  --lt-ember-alpha-48: rgba(255, 77, 36, 0.48);
+  --lt-on-ember: #FFF7F4;
+  --lt-mineral: #4C9B8A;
+
+  /* ---------- Volcanic foundation: Obsidian / Basalt ---------- */
+  --lt-obsidian: #080A09;
+  --lt-basalt: #111311;
+  --lt-bg: var(--lt-basalt);
+  --lt-bg-elev: #161A18;
+  --lt-surface: #1C201C;
+  --lt-surface-2: #232823;
+  --lt-surface-3: #2A2E29;
+  --lt-surface-4: #33382F;
+
+  /* ---------- Borders (warm dark) ---------- */
+  --lt-border: rgba(237, 231, 222, 0.07);
+  --lt-border-strong: rgba(237, 231, 222, 0.14);
+  --lt-border-stronger: rgba(237, 231, 222, 0.24);
+  --lt-border-ember: rgba(255, 77, 36, 0.4);
+
+  /* ---------- Text hierarchy (pumice / ash warm neutrals) ---------- */
+  --lt-text: #EDE7DE;
+  --lt-text-secondary: #B8B0A4;
+  --lt-text-muted: #8A8278;
+  --lt-text-faint: #5F594F;
+  --lt-text-inverse: #080A09;
+
+  /* ---------- Semantic status ---------- */
+  --lt-success: #4C9B8A; /* Mineral */
+  --lt-success-dim: rgba(76, 155, 138, 0.12);
+  --lt-warning: #F2C75C; /* Sulfur */
+  --lt-warning-dim: rgba(242, 199, 92, 0.12);
+  --lt-danger: #E34B2F; /* Lava */
+  --lt-danger-dim: rgba(227, 75, 47, 0.12);
+  --lt-info: #6FB3A0;
+  --lt-info-dim: rgba(111, 179, 160, 0.12);
+
+  /* ---------- Glassmorphism ---------- */
+  --lt-glass-bg: rgba(17, 19, 17, 0.55);
+  --lt-glass-bg-strong: rgba(8, 10, 9, 0.72);
+  --lt-glass-border: rgba(237, 231, 222, 0.08);
+  --lt-blur: 18px;
+
+  /* ---------- Typography ---------- */
+  --lt-font: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
+  --lt-font-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, 'Courier New', monospace;
+  --lt-text-2xs: 0.6875rem;
+  --lt-text-xs: 0.75rem;
+  --lt-text-sm: 0.8125rem;
+  --lt-text-base: 0.875rem;
+  --lt-text-md: 0.9375rem;
+  --lt-text-lg: 1.0625rem;
+  --lt-text-xl: 1.25rem;
+  --lt-text-2xl: 1.5rem;
+  --lt-text-3xl: 1.875rem;
+  --lt-tracking-label: 0.08em;
+  --lt-tracking-tight: -0.02em;
+  --lt-leading: 1.5;
+  --lt-leading-tight: 1.25;
+
+  /* ---------- Spacing (4px base) ---------- */
+  --lt-space-1: 0.25rem;
+  --lt-space-2: 0.5rem;
+  --lt-space-3: 0.75rem;
+  --lt-space-4: 1rem;
+  --lt-space-5: 1.25rem;
+  --lt-space-6: 1.5rem;
+  --lt-space-8: 2rem;
+  --lt-space-10: 2.5rem;
+  --lt-space-12: 3rem;
+  --lt-space-16: 4rem;
+
+  /* ---------- Border radius ---------- */
+  --lt-radius-xs: 4px;
+  --lt-radius-sm: 6px;
+  --lt-radius-md: 10px;
+  --lt-radius-lg: 14px;
+  --lt-radius-xl: 20px;
+  --lt-radius-2xl: 28px;
+  --lt-radius-full: 9999px;
+
+  /* ---------- Shadows ---------- */
+  --lt-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --lt-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.45);
+  --lt-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --lt-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
+
+  /* ---------- Focus / motion ---------- */
+  --lt-focus-ring: 0 0 0 3px rgba(255, 77, 36, 0.3);
+  --lt-dur-fast: 120ms;
+  --lt-dur: 180ms;
+  --lt-dur-slow: 280ms;
+  --lt-ease: cubic-bezier(0.3, 0.7, 0.4, 1);
+
+  /* ---------- Layout ---------- */
+  --lt-sidebar-w: 264px;
+  --lt-sidebar-w-rail: 76px;
+  --lt-topbar-h: 56px;
+  --lt-content-max: 1440px;
+}
+
+[data-theme='dark'] { color-scheme: dark; }
+[data-theme='high-contrast'] {
+  --lt-bg: #060807;
+  --lt-bg-elev: #0C0E0D;
+  --lt-surface: #111311;
+  --lt-surface-2: #171B18;
+  --lt-surface-3: #1F241F;
+  --lt-surface-4: #262C26;
+  --lt-border: rgba(237, 231, 222, 0.16);
+  --lt-border-strong: rgba(237, 231, 222, 0.32);
+  --lt-text: #FFFFFF;
+  --lt-text-secondary: #E0D9CE;
+  --lt-text-muted: #BFB6A9;
+  --lt-text-faint: #9A9187;
+  --lt-focus-ring: 0 0 0 4px rgba(255, 77, 36, 0.45);
+  --lt-glass-bg: rgba(8, 10, 9, 0.88);
+  --lt-glass-bg-strong: rgba(6, 7, 6, 0.94);
+}
+
+[data-density='compact'] { --lt-space-2: 0.35rem; --lt-space-3: 0.5rem; --lt-space-4: 0.75rem; --lt-space-5: 1rem; --lt-space-6: 1.125rem; --lt-space-8: 1.5rem; }
+[data-density='comfortable'] { --lt-space-4: 1.25rem; --lt-space-5: 1.5rem; --lt-space-6: 1.75rem; --lt-space-8: 2.25rem; }
+[data-density='spacious'] { --lt-space-4: 1.5rem; --lt-space-5: 1.75rem; --lt-space-6: 2rem; --lt-space-8: 2.75rem; }

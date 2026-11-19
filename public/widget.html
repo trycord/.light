@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-density="comfortable">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>.light Monitor — Desktop Widget</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles/tokens.css" />
+  <link rel="stylesheet" href="/styles/components.css" />
+  <link rel="stylesheet" href="/styles/utilities.css" />
+  <link rel="stylesheet" href="/styles/layout.css" />
+  <link rel="stylesheet" href="/styles/widget.css" />
+</head>
+<body data-wallpaper="0">
+  <div class="lt-widget-stage">
+    <div class="lt-widget" id="ltWidget" data-widget="compact" data-layout="standard">
+      <div class="lt-widget-controls">
+        <button class="lt-btn lt-btn-ghost lt-btn-icon" id="widgetSizeToggle" title="Toggle widget size" aria-label="Toggle widget size">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M8 4v16M4 4l16 16M20 4L4 20"/></svg>
+        </button>
+        <button class="lt-btn lt-btn-ghost lt-btn-icon" id="widgetLayoutToggle" title="Toggle widget layout" aria-label="Toggle widget layout">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h10M8 18h8"/></svg>
+        </button>
+      </div>
+      <div class="lt-widget-header">
+        <span class="lt-widget-title">Control plane</span>
+        <span class="lt-badge lt-badge-success"><span class="lt-dot lt-dot-success"></span>Live</span>
+      </div>
+      <div class="lt-widget-body">
+        <div class="lt-widget-temp">
+          <span class="lt-widget-temp-value" data-live="temp" data-base="44" data-amp="4" data-min="30" data-max="70" data-fmt="temp">44°C</span>
+          <span class="lt-label">CPU temp</span>
+        </div>
+        <div class="lt-widget-metrics">
+          <div class="lt-widget-metric">
+            <div class="lt-widget-metric-row"><span>CPU</span><span class="v" data-live="cpu" data-base="34" data-amp="8" data-min="4" data-max="92" data-fmt="pct">34%</span></div>
+            <div class="lt-meter"><div class="lt-meter-fill" data-role="fill" style="width:34%"></div></div>
+          </div>
+          <div class="lt-widget-metric">
+            <div class="lt-widget-metric-row"><span>Memory</span><span class="v" data-live="mem" data-base="61" data-amp="6" data-min="20" data-max="95" data-fmt="pct">61%</span></div>
+            <div class="lt-meter"><div class="lt-meter-fill" data-role="fill" style="width:61%"></div></div>
+          </div>
+          <div class="lt-widget-metric">
+            <div class="lt-widget-metric-row"><span>Network</span><span class="v" data-live="netIn" data-base="12" data-amp="6" data-min="0" data-max="100" data-fmt="net">12 Mbps</span></div>
+          </div>
+        </div>
+        <div class="lt-widget-graph" id="widgetGraph">
+          <svg class="lt-spark" data-role="spark" data-base="50" data-amp="10" data-min="0" data-max="100" data-fmt="pct" style="height:56px"></svg>
+        </div>
+      </div>
+      <div class="lt-widget-footer">
+        <span class="lt-meta">uptime 14d 06:22</span>
+        <span class="lt-meta" id="widgetNode">node —</span>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/api.js"></script>
+  <script type="module" src="/js/metrics.js"></script>
+  <script type="module" src="/js/widget.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      var widget = document.getElementById('ltWidget');
+      var sizeBtn = document.getElementById('widgetSizeToggle');
+      var layoutBtn = document.getElementById('widgetLayoutToggle');
+      if (sizeBtn) {
+        sizeBtn.addEventListener('click', function () {
+          var cur = widget.getAttribute('data-widget') === 'expanded' ? 'compact' : 'expanded';
+          widget.setAttribute('data-widget', cur);
+          widget.classList.toggle('is-expanded', cur === 'expanded');
+          widget.classList.toggle('is-compact', cur === 'compact');
+        });
+      }
+      if (layoutBtn) {
+        layoutBtn.addEventListener('click', function () {
+          var cur = widget.getAttribute('data-layout') === 'minimal' ? 'standard' : 'minimal';
+          widget.setAttribute('data-layout', cur);
+          widget.classList.toggle('is-layout-minimal', cur === 'minimal');
+        });
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+services:
+  # Add an external hosting node using the SAME single image, in agent-only mode.
+  # Usage: CONTROL_URL=https://your-control-plane:5858 LIGHT_NODE_ID=node-02 NODE_TOKEN=... \
+  #        docker compose -f compose.node.yml up -d
+  light-node:
+    image: ${LIGHT_NODE_IMAGE:-trycord/light:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${LIGHT_NODE_CONTAINER:-trycord-light-node-02}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      LT_MODE: agent
+      CONTROL_URL: ${CONTROL_URL:?set CONTROL_URL to your control plane}
+      NODE_ID: ${LIGHT_NODE_ID:-node-02}
+      NODE_TOKEN: ${NODE_TOKEN:-}
+      AGENT_DATA_DIR: /var/lib/trycord-light
+      HOST: 0.0.0.0
+      PORT: 5859
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - trycord-light-node-data:/var/lib/trycord-light
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5859/health').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_interval: 10s
+
+volumes:
+  trycord-light-node-data:
+    name: trycord-light-node-data-${LIGHT_NODE_ID:-node-02}

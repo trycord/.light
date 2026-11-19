@@ -1,0 +1,59 @@
+services:
+  light:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: trycord/light:latest
+    container_name: trycord-light
+    restart: unless-stopped
+    ports:
+      - "${CONTROL_PLANE_PORT:-5858}:5858"
+    environment:
+      NODE_ENV: production
+      PORT: 5858
+      AGENT_PORT: 5859
+      HOST: 0.0.0.0
+      DATABASE_PATH: /data/trycord-light.db
+      JWT_SECRET: ${JWT_SECRET:-}
+      NODE_TOKEN: ${NODE_TOKEN:-}
+      NODE_ID: ${LIGHT_NODE_ID:-node-01}
+      CONTROL_URL: http://127.0.0.1:5858
+      AGENT_DATA_DIR: /var/lib/trycord-light
+      LT_MODE: all
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-trycord.dev}
+      CONTROL_BASE_URL: ${CONTROL_BASE_URL:-https://trycord.dev}
+      BRAND_PRODUCT: ${BRAND_PRODUCT:-.light}
+      BRAND_OWNER: ${BRAND_OWNER:-Trycord}
+      BRAND_ATTRIBUTION: ${BRAND_ATTRIBUTION:-.light is a Trycord product}
+      BRAND_TAGLINE: ${BRAND_TAGLINE:-Universal hosting platform}
+      BRAND_SUPPORT_EMAIL: ${BRAND_SUPPORT_EMAIL:-support@trycord.dev}
+      BRAND_PRIMARY_COLOR: ${BRAND_PRIMARY_COLOR:-#FF4D24}
+      BRAND_ACCENT_COLOR: ${BRAND_ACCENT_COLOR:-#4C9B8A}
+      BRAND_MARK: ${BRAND_MARK:-ΔΓΟ}
+      BRAND_FAVICON: ${BRAND_FAVICON:-/assets/logos/favicon.svg}
+      BRAND_LOGO: ${BRAND_LOGO:-/assets/logos/light-primary.svg}
+      BRAND_WORDMARK: ${BRAND_WORDMARK:-/assets/logos/light-wordmark.svg}
+      BRAND_BACKGROUND: ${BRAND_BACKGROUND:-/assets/backgrounds/volcanic-strata-16x9.svg}
+      BRAND_DOC_TITLE: ${BRAND_DOC_TITLE:-.light — Trycord Hosting}
+    volumes:
+      - trycord-light-data:/data
+      - trycord-light-node-data:/var/lib/trycord-light
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+      start_interval: 5s
+
+volumes:
+  trycord-light-data:
+    name: trycord-light-data
+  trycord-light-node-data:
+    name: trycord-light-node-data

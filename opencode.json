@@ -1,0 +1,229 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "build",
+  "warming": false,
+  "compaction": {
+    "auto": true,
+    "keep": {
+      "tokens": 24000
+    },
+    "buffer": "20%"
+  },
+  "providers": {
+    "ollama": {
+      "name": "Poor Man's Opencode",
+      "settings": {
+        "baseURL": "http://192.168.1.137:11434/v1",
+        "headerTimeout": false,
+        "chunkTimeout": false
+      },
+      "models": {
+        "gemma4:latest": {
+          "name": "Emerald 4",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        },
+        "lfm3-omni:2b": {
+          "name": "Lil Omni",
+          "limit": {
+            "context": 40960,
+            "output": 8192
+          }
+        },
+        "qwen2.5-coder:1.5b": {
+          "name": "Lil Qwen",
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
+        },
+        "glm-4.7-flash:Q4_K_M": {
+          "name": "Good Looking Model",
+          "limit": {
+            "context": 1202752,
+            "output": 163384
+          }
+        },
+        "qwen3-coder:30b": {
+          "name": "TheChineseOne",
+          "limit": {
+            "context": 262144,
+            "output": 16384
+          }
+        },
+        "gpt-oss:20b": {
+          "name": "SaucyOSS",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        },
+        "devstral-small-2:latest": {
+          "name": "Little Dev",
+          "limit": {
+            "context": 393216,
+            "output": 16384
+          }
+        },
+        "laguna-xs-2.1:latest": {
+          "name": "Lagoon",
+          "limit": {
+            "context": 262144,
+            "output": 16384
+          }
+        },
+        "nemotron-cascade-2:latest": {
+          "name": "Niagara Falls",
+          "limit": {
+            "context": 262144,
+            "output": 16384
+          }
+        },
+        "olmo-3:32b": {
+          "name": "Elmo",
+          "limit": {
+            "context": 65536,
+            "output": 8192
+          }
+        },
+        "deepseek-coder-v2:latest": {
+          "name": "Bing Chilling",
+          "limit": {
+            "context": 163840,
+            "output": 16384
+          }
+        },
+        "MFDoom/deepseek-coder-v2-tool-calling:latest": {
+          "name": "DeepSeek Coder V2 Tool Calling",
+          "limit": {
+            "context": 163840,
+            "output": 16384
+          }
+        },
+        "nemotron-3.5-64k:latest": {
+          "name": "The Essay Machine",
+          "limit": {
+            "context": 65536,
+            "output": 16384
+          }
+        },
+        "muse-glimmer:30b": {
+          "name": "Facebook Info Stealer",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        },
+        "ornith-1.5:35b": {
+          "name": "The Quiet Orchid",
+          "limit": {
+            "context": 262384,
+            "output": 102192
+          }
+        },
+        "nemotron-3.5-lightning:latest": {
+          "name": "Usain Bolt.exe",
+          "limit": {
+            "context": 262144,
+            "output": 16384
+          }
+        },
+        "hf.co/xhxlb/IQuest-Coder-V1-14B-Instruct-GGUF:Q4_K_M": {
+          "name": "Quest Accepted (Never Finished)",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        },
+        "flint:40b": {
+          "name": "Steel",
+          "limit": {
+            "context": 262144,
+            "output": 16384
+          }
+        },
+        "qwen2.5-coder:7b": {
+          "name": "Qwen Diesel",
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
+        },
+        "qwen2.5-coder:latest": {
+          "name": "Qwen Wick",
+          "limit": {
+            "context": 32768,
+            "output": 8192
+          }
+        },
+        "qwen3.8:27b": {
+          "name": "The Architect of Unemployment",
+          "limit": {
+            "context": 262144,
+            "output": 16384
+          }
+        },
+        "starcoder2:15b": {
+          "name": "Stack Overflow Addict",
+          "limit": {
+            "context": 16384,
+            "output": 8192
+          }
+        },
+        "nemotron-3.5-24k:latest": {
+          "name": "Economical Yapper",
+          "limit": {
+            "context": 24576,
+            "output": 8192
+          }
+        },
+        "phi4:latest": {
+          "name": "Socrates With Wi-Fi",
+          "limit": {
+            "context": 16384,
+            "output": 8192
+          }
+        },
+      "north-mini-code-1.0": {
+  "name": "Intern Found in Production",
+  "limit": {
+    "context": 262144,
+    "output": 150384
+  },
+  "options": {
+    "num_ctx": 262144,
+    "num_predict": 150384,
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "top_k": 40,
+    "repeat_penalty": 1.05,
+    "min_p": 0.05
+  }
+},
+        "lfm2.5:24b": {
+          "name": "The Incident Was Never Recorded",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        },
+        "granite4.1:30b": {
+          "name": "Your Privacy Died in 2014",
+          "limit": {
+            "context": 131072,
+            "output": 16384
+          }
+        },
+        "rnj-1": {
+          "name": "Last Known Alive",
+          "limit": {
+            "context": 125000,
+            "output": 81900
+          }
+        }
+      }
+    }
+  }
+}

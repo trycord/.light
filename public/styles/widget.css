@@ -1,0 +1,49 @@
+/* ==========================================================================
+   .light — Desktop Monitoring Widget
+   ========================================================================== */
+
+.lt-widget {
+  width: 300px;
+  border-radius: var(--lt-radius-xl);
+  background: var(--lt-glass-bg-strong);
+  border: 1px solid var(--lt-glass-border);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: var(--lt-shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.lt-widget-header { display: flex; align-items: center; justify-content: space-between; padding: var(--lt-space-3) var(--lt-space-4); border-bottom: 1px solid var(--lt-border); }
+.lt-widget-title { display: flex; align-items: center; gap: var(--lt-space-2); font-size: var(--lt-text-xs); font-weight: 700; letter-spacing: var(--lt-tracking-label); text-transform: uppercase; color: var(--lt-text-muted); }
+.lt-widget-body { padding: var(--lt-space-4); display: flex; flex-direction: column; gap: var(--lt-space-4); }
+.lt-widget-footer { padding: var(--lt-space-3) var(--lt-space-4); border-top: 1px solid var(--lt-border); display: flex; align-items: center; justify-content: space-between; gap: var(--lt-space-2); }
+.lt-widget-temp { display: flex; align-items: baseline; gap: var(--lt-space-2); }
+.lt-widget-temp-value { font-size: var(--lt-text-3xl); font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+
+/* Compact variant */
+.lt-widget.is-compact { width: 260px; }
+
+/* Expanded variant */
+.lt-widget.is-expanded { width: 360px; }
+
+/* Expanded widget shows network + temps */
+.lt-widget.is-expanded .lt-widget-body { gap: var(--lt-space-5); }
+
+/* Widget layout variants */
+.lt-widget.is-layout-minimal .lt-widget-body { gap: var(--lt-space-3); }
+.lt-widget.is-layout-minimal .lt-widget-metrics { display: none; }
+.lt-widget.is-layout-minimal .lt-widget-graph { display: none; }
+
+.lt-widget-metrics { display: flex; flex-direction: column; gap: var(--lt-space-3); }
+.lt-widget-graph { display: flex; flex-direction: column; gap: var(--lt-space-2); }
+
+/* Widget control panel */
+.lt-widget-controls { position: absolute; top: 8px; right: 8px; display: flex; gap: var(--lt-space-1); z-index: 5; }
+.lt-widget-controls .lt-btn { background: var(--lt-glass-bg-strong); border: 1px solid var(--lt-glass-border); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+
+/* Widget background simulation */
+.lt-widget-stage { min-height: 480px; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 600px at 20% 0%, #1C1619 0%, #121014 55%, #0B0A0D 100%); padding: var(--lt-space-6); }
+.lt-widget-stage[data-wallpaper='2'] { background: radial-gradient(1200px 600px at 80% 20%, #2A1A14 0%, #17100D 55%, #0E0A08 100%); }

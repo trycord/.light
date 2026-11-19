@@ -1,0 +1,72 @@
+/* ==========================================================================
+   .light — App Shell Layout
+   ========================================================================== */
+
+.lt-app { display: flex; min-height: 100vh; background: var(--lt-bg); }
+
+.lt-sidebar { width: var(--lt-sidebar-w); flex: none; background: var(--lt-bg-elev); border-right: 1px solid var(--lt-border); display: flex; flex-direction: column; padding: var(--lt-space-4); gap: var(--lt-space-4); position: sticky; top: 0; height: 100vh; z-index: 50; }
+
+.lt-sidebar-overlay { position: fixed; inset: 0; background: rgba(5,5,7,0.55); z-index: 49; }
+
+.lt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.lt-topbar {
+  height: var(--lt-topbar-h);
+  display: flex;
+  align-items: center;
+  gap: var(--lt-space-4);
+  padding: 0 var(--lt-space-6);
+  border-bottom: 1px solid var(--lt-border);
+  background: rgba(15, 14, 17, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+.lt-topbar-spacer { flex: 1; }
+.lt-topbar-actions { display: flex; align-items: center; gap: var(--lt-space-2); }
+
+.lt-content { padding: var(--lt-space-6); width: 100%; max-width: var(--lt-content-max); margin: 0 auto; display: flex; flex-direction: column; gap: var(--lt-space-6); }
+
+/* ---------- Page header ---------- */
+.lt-page-header { display: flex; align-items: flex-start; gap: var(--lt-space-4); margin-bottom: var(--lt-space-6); flex-wrap: wrap; }
+.lt-page-header-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--lt-space-1); }
+.lt-page-title { font-size: var(--lt-text-2xl); font-weight: 800; letter-spacing: -0.02em; }
+.lt-page-subtitle { font-size: var(--lt-text-sm); color: var(--lt-text-muted); }
+
+/* ---------- Grid helpers for dashboards ---------- */
+.lt-grid { display: grid; gap: var(--lt-space-4); }
+.lt-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.lt-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.lt-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.lt-grid-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.lt-span-2 { grid-column: span 2; }
+.lt-span-3 { grid-column: span 3; }
+.lt-span-4 { grid-column: span 4; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1200px) {
+  .lt-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lt-grid-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lt-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .lt-sidebar { position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%); transition: transform var(--lt-dur-slow) cubic-bezier(0.3, 0.7, 0.4, 1); box-shadow: var(--lt-shadow-lg); }
+  .lt-sidebar.is-open { transform: translateX(0); }
+  .lt-app.has-mobile-nav .lt-main { margin-left: 0; }
+  .lt-content { padding: var(--lt-space-5); }
+}
+
+@media (min-width: 901px) {
+  .lt-sidebar-toggle { display: none; }
+}
+
+@media (max-width: 640px) {
+  .lt-grid-2, .lt-grid-3, .lt-grid-4, .lt-grid-6 { grid-template-columns: minmax(0, 1fr); }
+  .lt-span-2, .lt-span-3, .lt-span-4 { grid-column: auto; }
+  .lt-topbar { padding: 0 var(--lt-space-4); }
+  .lt-content { padding: var(--lt-space-4); }
+  .lt-page-header { flex-direction: column; }
+}
