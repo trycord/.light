@@ -1,0 +1,24 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>About — .light</title>
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+</head><body><div id="site"></div>
+<script type="module">
+import { layout, loadBranding } from '/js/site.js';
+async function boot(){
+  const b = await loadBranding();
+  const content = `<div class="site-prose">
+    <h1>About ${b.product || '.light'}</h1>
+    <p>${b.product || '.light'} is a universal hosting platform that makes deploying and managing servers, applications, websites, bots and databases simple. Customers interact with a clean dashboard while the platform handles containers, networking, monitoring and infrastructure behind the scenes.</p>
+    <h2>Ownership</h2>
+    <p><strong>${b.attribution || '.light is a Trycord product'}.</strong> ${b.product || '.light'} is independently branded and operated as its own product, owned, developed and maintained by Trycord.</p>
+    <h2>Open and self-hostable</h2>
+    <p>The same core software powers both hosted and self-hosted installations. You can run ${b.product || '.light'} on your own infrastructure with a single Docker container — no dependency on Trycord's systems.</p>
+  </div>`;
+  document.getElementById('site').innerHTML = layout(b, content, 'about');
+}
+boot();
+</script></body></html>

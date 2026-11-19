@@ -1,0 +1,25 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Legal — .light</title>
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+</head><body><div id="site"></div>
+<script type="module">
+import { layout, loadBranding } from '/js/site.js';
+async function boot(){
+  const b = await loadBranding();
+  const content = `<div class="site-prose">
+    <h1>Legal</h1>
+    <div class="site-draft"><strong>Draft for review.</strong> These documents are provided as templates and have not been reviewed by legal counsel. The operator must review, customize and approve them before production use.</div>
+    <h2>Terms of Service</h2><p>Users are responsible for the content and workloads they deploy and must comply with applicable laws and the Acceptable Use Policy. The service is provided by the operator on an as-is basis. Accounts may be suspended for violations.</p>
+    <h2>Privacy Policy</h2><p>Account information (email, username, password hash) is stored to provide the service. Hosting data and logs are stored on the operator's infrastructure. Operators should describe their own data retention, processing and third-party practices here.</p>
+    <h2>Acceptable Use Policy</h2><p>Users must not use the service for illegal activity, abuse, unauthorized access, malware distribution, or resource abuse. Violations may result in suspension or termination.</p>
+    <h2>Cookie Policy</h2><p>This application uses local storage to maintain authentication sessions. Operators using additional analytics or tracking must disclose them here.</p>
+    <p class="site-muted">${b.attribution || '.light is a Trycord product'} · © 2026 Trycord</p>
+  </div>`;
+  document.getElementById('site').innerHTML = layout(b, content);
+}
+boot();
+</script></body></html>

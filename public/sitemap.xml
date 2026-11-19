@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://trycord.dev/site.html</loc><changefreq>weekly</changefreq></url>
+  <url><loc>https://trycord.dev/pricing.html</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://trycord.dev/docs.html</loc><changefreq>weekly</changefreq></url>
+  <url><loc>https://trycord.dev/about.html</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://trycord.dev/contact.html</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://trycord.dev/legal.html</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://trycord.dev/product.html?id=game</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://trycord.dev/product.html?id=web</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://trycord.dev/product.html?id=website</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://trycord.dev/product.html?id=bot</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://trycord.dev/product.html?id=database</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://trycord.dev/product.html?id=docker</loc><changefreq>monthly</changefreq></url>
+</urlset>

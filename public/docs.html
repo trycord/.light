@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Documentation — .light</title><meta name="description" content=".light hosting documentation and guides.">
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+</head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
+<script type="module">
+import { layout, loadBranding } from '/js/site.js';
+const DOCS = [
+  ['Getting started','Create an account, sign in, and get oriented in the dashboard. Your first step is creating a server.'],
+  ['Creating servers','Choose a game, application template or custom Docker image. Configure resources, ports and startup settings, then deploy.'],
+  ['Managing applications','Connect a Git repository, set environment variables and startup commands, and deploy updates from the dashboard.'],
+  ['Domains & networking','Attach project subdomains or custom domains, verify DNS and manage SSL certificates and port mappings.'],
+  ['File management','Browse, upload, download, edit, rename and delete files through the built-in manager with tenant isolation.'],
+  ['Console & logs','Open a live console, stream output, run supported commands and review historical logs.'],
+  ['Backups','Create manual or scheduled backups and restore them to recover your service data.'],
+  ['Account management','Update your profile, change your password, manage sessions and configure notifications.'],
+];
+async function boot(){
+  const b = await loadBranding();
+  const content = `<div class="site-prose">
+    <h1>Documentation</h1><p class="site-muted">Guides for getting the most out of ${b.product || '.light'}.</p>
+    ${DOCS.map(d => `<h2>${d[0]}</h2><p>${d[1]}</p>`).join('')}
+    <div class="site-draft">These guides are an overview. Detailed step-by-step documentation should be expanded by the operator for each deployment.</div>
+  </div>`;
+  document.getElementById('site').innerHTML = layout(b, content);
+}
+boot();
+</script></body></html>

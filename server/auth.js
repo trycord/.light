@@ -77,6 +77,8 @@ export function authenticate(email, password) {
   if (!validateEmail(email)) throw badRequest('invalid_email');
   const user = getDb().prepare('SELECT * FROM users WHERE email = ?').get(String(email).toLowerCase());
   if (!user || user.status !== 'active' || !verifyPassword(password, user.password_hash)) throw unauthorized('invalid_credentials');
+  // Email verification is only enforced when email infrastructure is enabled.
+  if (config.email?.enabled && !user.email_verified) throw unauthorized('email_not_verified');
   getDb().prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now(), user.id);
   return user;
 }

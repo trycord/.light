@@ -11,8 +11,14 @@ export function getDb() { return db; }
 const TABLES = {
   users: `CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '',
-    password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user', team_id TEXT,
+    username TEXT, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user', team_id TEXT,
     status TEXT NOT NULL DEFAULT 'active', token_version INTEGER NOT NULL DEFAULT 0,
+    email_verified INTEGER NOT NULL DEFAULT 1,
+    verification_token TEXT, verification_expires INTEGER,
+    reset_token TEXT, reset_expires INTEGER,
+    failed_logins INTEGER NOT NULL DEFAULT 0, locked_until INTEGER,
+    accept_terms INTEGER NOT NULL DEFAULT 0,
+    theme TEXT NOT NULL DEFAULT 'dark', notifications_enabled INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_login INTEGER)`,
   teams: `CREATE TABLE IF NOT EXISTS teams (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, owner_id TEXT NOT NULL,
@@ -77,6 +83,10 @@ const TABLES = {
     id TEXT PRIMARY KEY, team_id TEXT NOT NULL, instance_id TEXT NOT NULL, domain TEXT NOT NULL,
     verified INTEGER NOT NULL DEFAULT 0, ssl_status TEXT NOT NULL DEFAULT 'pending',
     status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL)`,
+  sessions: `CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+    ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '')`,
   audit_logs: `CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, team_id TEXT, user_id TEXT, action TEXT NOT NULL,
     target_type TEXT NOT NULL DEFAULT '', target_id TEXT NOT NULL DEFAULT '',
@@ -84,7 +94,10 @@ const TABLES = {
 };
 
 const LEGACY_COLUMNS = {
-  users: { token_version: 'INTEGER NOT NULL DEFAULT 0', team_id: 'TEXT', status: "TEXT NOT NULL DEFAULT 'active'", updated_at: 'INTEGER', last_login: 'INTEGER' },
+  users: { token_version: 'INTEGER NOT NULL DEFAULT 0', team_id: 'TEXT', status: "TEXT NOT NULL DEFAULT 'active'", updated_at: 'INTEGER', last_login: 'INTEGER',
+    username: 'TEXT', email_verified: 'INTEGER NOT NULL DEFAULT 1', verification_token: 'TEXT', verification_expires: 'INTEGER',
+    reset_token: 'TEXT', reset_expires: 'INTEGER', failed_logins: 'INTEGER NOT NULL DEFAULT 0', locked_until: 'INTEGER',
+    accept_terms: 'INTEGER NOT NULL DEFAULT 0', theme: "TEXT NOT NULL DEFAULT 'dark'", notifications_enabled: 'INTEGER NOT NULL DEFAULT 1' },
   nodes: { availability: "TEXT NOT NULL DEFAULT 'active'", cpu_used: 'REAL NOT NULL DEFAULT 0', mem_used: 'REAL NOT NULL DEFAULT 0', disk_used: 'REAL NOT NULL DEFAULT 0', net_in: 'REAL NOT NULL DEFAULT 0', net_out: 'REAL NOT NULL DEFAULT 0', temp: 'REAL NOT NULL DEFAULT 0' },
   deployments: { instance_id: "TEXT NOT NULL DEFAULT ''", team_id: "TEXT NOT NULL DEFAULT ''", source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", ref: "TEXT NOT NULL DEFAULT 'main'", commit_sha: "TEXT NOT NULL DEFAULT ''", command: "TEXT NOT NULL DEFAULT ''", created_at: 'INTEGER NOT NULL DEFAULT 0' },
   metric_samples: { instance_id: 'TEXT', temp: 'REAL NOT NULL DEFAULT 0' },
@@ -106,6 +119,7 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_domains_team ON domains(team_id, id)',
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_domains_domain ON domains(domain)',
   'CREATE INDEX IF NOT EXISTS idx_audit_team ON audit_logs(team_id, id)',
+  'CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, id)',
 ];
 
 function migrate() {

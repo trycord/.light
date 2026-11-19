@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /index.html
+Disallow: /workloads.html
+Disallow: /deployments.html
+Disallow: /nodes.html
+Disallow: /widget.html
+Disallow: /showcase.html
+
+Sitemap: https://trycord.dev/sitemap.xml

@@ -1,7 +1,7 @@
 // .light — email provider abstraction.
 // EmailService → provider (DeoMail / SMTP) → provider API.
 // No email requests are made when EMAIL_ENABLED=false.
-import config from './config.js';
+import config from '../config.js';
 
 class DeomailProvider {
   constructor(cfg) { this.cfg = cfg; }

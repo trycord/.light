@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>.light — Universal Hosting Platform</title>
+  <meta name="description" content=".light is a universal hosting platform for game servers, applications, websites, bots and databases. Infrastructure made simple.">
+  <link rel="icon" href="/assets/logos/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+</head><body>
+  <div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
+  <script type="module">
+    import { layout, esc, loadBranding, PRODUCTS, FEATURES, FAQS } from '/js/site.js';
+    async function boot() {
+      const b = await loadBranding();
+      const content = `
+      <section class="site-hero"><div class="site-wrap">
+        <h1>Host anything.<br><span class="hl">Without the infrastructure headache.</span></h1>
+        <p>Game servers, web applications, websites, bots and databases — deployed in moments and managed from one beautifully simple dashboard.</p>
+        <div class="site-cta">
+          <a href="/index.html#register" class="lt-btn lt-btn-primary">Get Started — It's Free</a>
+          <a href="/site.html#products" class="lt-btn lt-btn-secondary">Explore Products</a>
+        </div>
+      </div></section>
+
+      <section class="site-section alt" id="products"><div class="site-wrap">
+        <div class="site-heading"><h2>One platform. Every workload.</h2><p>From game servers to production applications, ${esc(b.product || '.light')} gives you the same simple experience everywhere.</p></div>
+        <div class="site-grid">
+          ${PRODUCTS.map(p => `<a href="/product.html?id=${p.id}" class="site-card" style="text-decoration:none">
+            <div class="site-card-icon" style="background:${p.color}1a;color:${p.color}">${p.icon}</div>
+            <h3>${p.title}</h3><p>${p.desc}</p></a>`).join('')}
+        </div>
+      </div></section>
+
+      <section class="site-section"><div class="site-wrap">
+        <div class="site-heading"><h2>Everything you need, built in</h2><p>Powerful hosting capabilities without the complexity.</p></div>
+        <div class="site-grid">
+          ${FEATURES.map(f => `<div class="site-card"><h3>${f[0]}</h3><p>${f[1]}</p></div>`).join('')}
+        </div>
+      </div></section>
+
+      <section class="site-section alt"><div class="site-wrap">
+        <div class="site-heading"><h2>How it works</h2><p>From zero to hosting in four simple steps.</p></div>
+        <div class="site-wrap" style="max-width:640px">
+          <div class="site-steps">
+            <div class="site-step"><h3>Create your account</h3><p>Register in seconds. No infrastructure knowledge required.</p></div>
+            <div class="site-step"><h3>Choose what to host</h3><p>Pick a game, application template or bring your own Docker image.</p></div>
+            <div class="site-step"><h3>Configure & deploy</h3><p>Set resources, ports and environment variables, then deploy with one click.</p></div>
+            <div class="site-step"><h3>Manage with ease</h3><p>Use the live console, file manager, backups and monitoring from your dashboard.</p></div>
+          </div>
+        </div>
+      </div></section>
+
+      <section class="site-section"><div class="site-wrap">
+        <div class="site-heading"><h2>Simple, transparent pricing</h2><p>Start free. Upgrade when you need more power.</p></div>
+        <div id="homePlans" class="site-grid" style="max-width:960px;margin:0 auto"></div>
+      </div></section>
+
+      <section class="site-section alt"><div class="site-wrap">
+        <div class="site-heading"><h2>Frequently asked questions</h2><p>Everything you might be wondering.</p></div>
+        <div class="site-faq">
+          ${FAQS.map(f => `<div class="site-faq-item"><h4>${f[0]}</h4><p>${f[1]}</p></div>`).join('')}
+        </div>
+      </div></section>
+
+      <section class="site-cta-band"><div class="site-wrap">
+        <h2>Ready to host something?</h2>
+        <p>Create your free account and deploy your first server in minutes.</p>
+        <a href="/index.html#register" class="lt-btn lt-btn-primary">Create Your First Server</a>
+      </div></section>`;
+      document.getElementById('site').innerHTML = layout(b, content);
+
+      try {
+        const mod = await import('/js/api.js');
+        const plans = await mod.default.plans();
+        const el = document.getElementById('homePlans');
+        if (el) el.innerHTML = (plans.plans || []).slice(0,3).map(p => `<div class="site-plan ${p.id === 'shared' ? 'featured' : ''}">
+          <h3>${esc(p.name)}</h3><div class="price">${p.price_monthly ? '$' + (p.price_monthly/100).toFixed(0) + '/mo' : 'Free'}</div>
+          <ul><li>${p.memory_mb} MB RAM</li><li>${p.disk_gb} GB storage</li><li>${p.cpu_cores} CPU cores</li><li>${p.instances} instances</li></ul>
+          <a href="/index.html#register" class="lt-btn ${p.id === 'shared' ? 'lt-btn-primary' : 'lt-btn-secondary'}">Get Started</a></div>`).join('');
+      } catch { /* pricing loads on pricing page */ }
+    }
+    boot();
+  </script>
+</body></html>

@@ -88,18 +88,28 @@ function renderAuth(mode = 'login') {
   app.innerHTML = `<div class="lt-auth-screen" style="background-image:linear-gradient(rgba(8,10,9,.86),rgba(8,10,9,.94)),url('${brand.background || ASSETS.background}');background-size:cover;background-position:center"><div class="lt-auth-card">
     <div class="lt-auth-brand">${brandMark(40)}<span>${esc(brand.product)}</span></div>
     <div class="lt-auth-title">${mode === 'register' ? 'Create your account' : 'Welcome back'}</div>
-    <div class="lt-auth-sub">${mode === 'register' ? 'Deploy and manage your hosting services.' : 'Sign in to your Trycord hosting workspace.'}</div>
+    <div class="lt-auth-sub">${mode === 'register' ? 'Deploy and manage your hosting services.' : `Sign in to your ${esc(brand.product)} hosting workspace.`}</div>
     <div class="lt-auth-tabs"><button class="lt-auth-tab ${mode === 'login' ? 'active' : ''}" data-mode="login">Sign in</button><button class="lt-auth-tab ${mode === 'register' ? 'active' : ''}" data-mode="register">Create account</button></div>
     <form id="authForm">
-      ${mode === 'register' ? field('Name', 'name', 'text', '', 'autocomplete="name"') : ''}
+      ${mode === 'register' ? field('Username', 'username', 'text', '', 'autocomplete="username" required pattern="[a-zA-Z0-9_]+"') : ''}
       ${field('Email', 'email', 'email', '', 'autocomplete="email" required')}
       ${field('Password', 'password', 'password', '', `autocomplete="${mode === 'register' ? 'new-password' : 'current-password'}" required minlength="${mode === 'register' ? 10 : 1}"`)}
+      ${mode === 'register' ? '<label class="lt-field" style="flex-direction:row;align-items:center;gap:8px;margin:6px 0 0;font-size:12px;color:var(--lt-text-muted)"><input type="checkbox" name="acceptTerms" required style="width:auto"> I accept the <a href="/legal.html" target="_blank" style="color:var(--lt-ember-500)">Terms</a> and <a href="/legal.html" target="_blank" style="color:var(--lt-ember-500)">Privacy Policy</a></label>' : '<div style="text-align:right;margin-top:6px"><button type="button" id="forgotBtn" class="lt-btn lt-btn-ghost lt-btn-sm" style="padding:0;color:var(--lt-text-muted)">Forgot password?</button></div>'}
       <div class="lt-auth-error" id="authError"></div>
       <button class="lt-btn lt-btn-primary" type="submit" style="width:100%;margin-top:10px">${mode === 'register' ? 'Create account' : 'Sign in'}</button>
     </form>
     <div class="lt-auth-footer">${esc(brand.attribution)} · ${esc(brand.tagline)}<div class="lt-watermark" style="border:none;display:block;padding:8px 0 0"><span class="lt-wm-mark">ΔΓΟ</span> <a href="${esc(brand.watermark?.source || 'https://trycord.dev')}" target="_blank" rel="noopener">${esc(brand.watermark?.short || 'Powered by .light')}</a></div></div>
   </div></div>`;
   app.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => renderAuth(b.dataset.mode)));
+  const forgotBtn = app.querySelector('#forgotBtn');
+  if (forgotBtn) forgotBtn.addEventListener('click', async () => {
+    const data = await modal('Reset password', `${field('Account email', 'email', 'email', '', 'required')}<p class="lt-meta" style="margin-top:10px">If email is configured, a secure reset link will be sent. Otherwise contact your administrator for assisted recovery.</p>`, { confirm: 'Send reset link' });
+    if (!data) return;
+    try {
+      const r = await api.forgotPassword(data.email);
+      toast(r.ok ? 'Reset instructions sent' : (r.message || 'Email is disabled — contact your administrator'), r.ok ? 'success' : 'info');
+    } catch (error) { toast(error.message, 'error'); }
+  });
   app.querySelector('#authForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
@@ -112,6 +122,13 @@ function renderAuth(mode = 'login') {
       const result = mode === 'register' ? await api.register(data) : await api.login(data);
       api.setToken(result.token);
       session = await api.me();
+      if (result.verifyRequired || (session.user && session.user.emailVerified === false)) {
+        location.hash = '#/verify';
+        renderShell();
+        await navigate();
+        toast('Check your email to verify your account', 'info');
+        return;
+      }
       location.hash = '#/overview';
       renderShell();
       navigate();
@@ -200,10 +217,16 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 function poll(fn, ms = 5000) { stopPolling(); pollTimer = setInterval(() => { if (currentView) fn().catch(() => {}); }, ms); }
 
 /* ---------- router ---------- */
-function parseHash() { const raw = (location.hash || '#/overview').replace(/^#\/?/, ''); const [view, param] = raw.split('/'); return { view: view || 'overview', param }; }
+function parseHash() {
+  const raw = (location.hash || '#/overview').replace(/^#\/?/, '');
+  const [pathPart, queryPart] = raw.split('?');
+  const [view, param] = pathPart.split('/');
+  const query = new URLSearchParams(queryPart || '');
+  return { view: view || 'overview', param, query };
+}
 async function navigate() {
   if (!session) return;
-  const { view, param } = parseHash();
+  const { view, param, query } = parseHash();
   setActiveNav(view);
   stopPolling();
   currentView = view;
@@ -213,6 +236,7 @@ async function navigate() {
     overview: renderOverview, instances: () => renderInstances('all'), game: () => renderInstances('game'), web: () => renderInstances('web'),
     deployments: renderDeployments, nodes: renderNodes, domains: renderDomains, backups: renderBackups, schedules: renderSchedules,
     account: renderAccount, admin: renderAdmin, instance: () => renderInstance(param),
+    verify: () => renderVerify(query), reset: () => renderReset(query),
   };
   const renderer = renderers[view] || renderOverview;
   container.innerHTML = loading();
@@ -220,6 +244,44 @@ async function navigate() {
 }
 
 /* ---------- views ---------- */
+async function renderVerify(query) {
+  const view = app.querySelector('#view');
+  const token = query?.get('token');
+  let message = '', ok = false;
+  if (token) {
+    try { await api.verifyEmail(token); ok = true; message = 'Your email has been verified.'; }
+    catch (error) { message = error.message || 'Verification failed.'; }
+  } else {
+    message = 'Open the verification link from your email to verify your account.';
+  }
+  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">Verify email</h1><p class="lt-page-subtitle">Account verification</p></div></div>
+    ${section('Verification', '', `<p style="color:var(--lt-text-secondary);font-size:13px">${esc(message)}</p>
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="lt-btn lt-btn-secondary" id="resendVerify">Resend verification email</button>
+        <a class="lt-btn lt-btn-primary" href="#/overview">Continue to dashboard</a>
+      </div>`)}`;
+  const resend = view.querySelector('#resendVerify');
+  if (resend) resend.addEventListener('click', async () => { try { const r = await api.resendVerification(); toast(r.ok ? 'Verification email sent' : (r.reason || 'Not available'), r.ok ? 'success' : 'info'); } catch (e) { toast(e.message, 'error'); } });
+}
+
+async function renderReset(query) {
+  const view = app.querySelector('#view');
+  const token = query?.get('token');
+  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">Reset password</h1><p class="lt-page-subtitle">Choose a new password</p></div></div>
+    ${section('New password', '', `<form id="resetForm">
+      ${field('New password (min 10 characters)', 'password', 'password', '', 'minlength="10" required')}
+      <button class="lt-btn lt-btn-primary" type="submit" ${token ? '' : 'disabled'}>Set password</button>
+      ${token ? '' : '<p class="lt-meta" style="margin-top:10px">Invalid or missing reset token. Request a new link from the sign-in page.</p>'}
+    </form>`)}`;
+  const form = view.querySelector('#resetForm');
+  if (form && token) form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = new FormData(form).get('password');
+    try { await api.resetPassword(token, pw); toast('Password updated — please sign in', 'success'); api.setToken(''); session = null; renderAuth('login'); }
+    catch (error) { toast(error.message, 'error'); }
+  });
+}
+
 async function renderOverview() {
   const view = app.querySelector('#view');
   const [stats, instances, deployments, nodes] = await Promise.all([api.stats(), api.instances(), api.deployments(), api.nodes()]);
@@ -234,10 +296,17 @@ async function renderOverview() {
   ].map((k) => `<div class="lt-card" style="padding:var(--lt-space-4)"><div class="lt-label">${esc(k.label)}</div><div class="lt-kpi" style="margin-top:6px">${esc(k.value)}</div><div class="lt-meta" style="margin-top:6px">${esc(k.sub)}</div></div>`).join('');
   const instanceRows = instances.instances.slice(0, 6).map((i) => `<tr><td><a class="lt-td-strong" href="#/instance/${i.id}" style="color:var(--lt-text);text-decoration:none">${esc(i.name)}</a><div class="lt-meta">${esc(i.image)}</div></td><td>${badge(i.status)}</td><td>${esc(i.category)}</td><td class="lt-td-mono">${i.memoryMb} MB</td><td>${esc(i.nodeName || '—')}</td><td>${fmtAgo(i.updatedAt)}</td></tr>`).join('');
   const deployRows = deployments.deployments.slice(0, 5).map((d) => `<tr><td class="lt-td-strong">${esc(d.instanceName || d.instanceId)}</td><td>${badge(d.status)}</td><td class="lt-td-mono">${esc(d.version)}</td><td>${fmtTime(d.createdAt)}</td></tr>`).join('');
-  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">Overview</h1><p class="lt-page-subtitle">Your hosting infrastructure at a glance</p></div><div class="lt-page-actions"><a class="lt-btn lt-btn-primary" href="#/instances">New instance</a></div></div>
+  const onboarding = instances.instances.length === 0 ? `
+    <div class="lt-card" style="padding:var(--lt-space-6);border-color:var(--lt-border-ember);background:linear-gradient(140deg,var(--lt-ember-alpha-08),transparent 60%);margin-bottom:var(--lt-space-4)">
+      <div style="font-size:20px;font-weight:800;letter-spacing:-.02em">Welcome to ${esc(brand.product)} 👋</div>
+      <p style="color:var(--lt-text-secondary);font-size:13px;max-width:620px;line-height:1.6;margin:8px 0 16px">Your workspace is ready. Create your first server to host a game, website, application, bot or database. Choose a template or bring your own Docker image — the platform handles the rest.</p>
+      <a class="lt-btn lt-btn-primary" href="#/instances">Create Your First Server</a>
+    </div>` : '';
+  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">Overview</h1><p class="lt-page-subtitle">Your hosting infrastructure at a glance</p></div><div class="lt-page-actions"><a class="lt-btn lt-btn-primary" href="#/instances">Create Your First Server</a></div></div>
+    ${onboarding}
     <div class="lt-grid lt-grid-4" style="margin-bottom:var(--lt-space-4)">${kpis}</div>
     <div class="lt-stack">
-      ${section('Instances', 'Recent activity across your workspace', instanceRows ? `<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Memory</th><th>Node</th><th>Updated</th></tr></thead><tbody>${instanceRows}</tbody></table></div>` : empty('No instances yet', 'Create an instance to start hosting a game server or application.'))}
+      ${section('Instances', 'Recent activity across your workspace', instanceRows ? `<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Memory</th><th>Node</th><th>Updated</th></tr></thead><tbody>${instanceRows}</tbody></table></div>` : empty('No instances yet', 'Create an instance to start hosting a game server or application.', '<a class="lt-btn lt-btn-primary" href="#/instances">Create Your First Server</a>'))}
       ${section('Recent deployments', 'Latest release activity', deployRows ? `<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Instance</th><th>Status</th><th>Version</th><th>Time</th></tr></thead><tbody>${deployRows}</tbody></table></div>` : empty('No deployments', 'Deployments will appear here once you deploy an instance.'))}
     </div>`;
   poll(async () => { if (currentView === 'overview') await renderOverview(); }, 10000);

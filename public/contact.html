@@ -1,0 +1,29 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Contact & Support — .light</title>
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+</head><body><div id="site"></div>
+<script type="module">
+import { layout, loadBranding, esc } from '/js/site.js';
+async function boot(){
+  const b = await loadBranding();
+  const content = `<div class="site-prose">
+    <h1>Contact & Support</h1>
+    <p>Need help? Check the <a href="/docs.html">documentation</a> first, then reach out to your operator.</p>
+    <h2>Support email</h2><p>${b.supportEmail ? `<a href="mailto:${esc(b.supportEmail)}">${esc(b.supportEmail)}</a>` : 'No support email configured by the operator.'}</p>
+    <h2>Contact form</h2>
+    <form id="contactForm" onsubmit="event.preventDefault();document.getElementById('contactMsg').textContent='Your operator has not configured a contact endpoint. Please use the support email above.'">
+      <div class="lt-field"><label>Email</label><input class="lt-input" type="email" required></div>
+      <div class="lt-field"><label>Message</label><textarea class="lt-textarea" required></textarea></div>
+      <button class="lt-btn lt-btn-primary" type="submit">Send message</button>
+      <p id="contactMsg" class="site-muted" style="margin-top:12px"></p>
+    </form>
+    <h2>Support tickets</h2><p>Authenticated customers can submit support requests from their dashboard under Support.</p>
+  </div>`;
+  document.getElementById('site').innerHTML = layout(b, content);
+}
+boot();
+</script></body></html>
