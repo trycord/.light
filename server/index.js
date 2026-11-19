@@ -27,6 +27,9 @@ import { agentRoutes } from './api/agent.js';
 import { statsRoutes } from './api/stats.js';
 import { subscriptionsRoutes } from './api/subscriptions.js';
 import { environmentsRoutes } from './api/environments.js';
+import { billingRoutes } from './api/billing.js';
+import { githubRoutes } from './api/github.js';
+import { featuresRoutes } from './api/features.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(__dirname, '..');
@@ -36,7 +39,8 @@ app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
 app.use(cors({ origin: config.env === 'production' ? false : true }));
 app.use(compression());
-app.use(express.json({ limit: '12mb' }));
+// Capture raw body for webhook signature verification via express.json verify hook.
+app.use(express.json({ limit: '12mb', verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); } }));
 
 // Mandatory software identification on every response (cannot be white-labeled away).
 const IDENT = softwareIdentification();
@@ -66,6 +70,9 @@ api.use('/schedules', schedulesRoutes());
 api.use('/catalog', catalogRoutes());
 api.use('/subscriptions', subscriptionsRoutes());
 api.use('/environments', environmentsRoutes());
+api.use('/billing', billingRoutes());
+api.use('/github', githubRoutes());
+api.use('/features', featuresRoutes());
 api.use('/admin', adminRoutes());
 api.use('/agent', agentRoutes());
 api.get('/stats', requireAuth, statsRoutes());

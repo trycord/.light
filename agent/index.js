@@ -1,8 +1,11 @@
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import config from './config.js';
 import { hostMetrics, createInstance, startInstance, stopInstance, restartInstance, suspendInstance, resumeInstance, removeInstance, reinstallInstance, execCommand, deployImage, containerStatus, containerStats, followLogs, ensureDirs, containerName } from './docker.js';
 import { listFiles, readFile, writeFile, fileOperation, storageUsage, createBackup, restoreBackup } from './files.js';
 import { installSteamGame, isSteamGame, resolveGame } from './games.js';
+import { buildSource, cloneRepository, validateBuildSpec } from './build.js';
 
 const CONTROL = config.controlUrl.replace(/\/$/, '');
 const HEADERS = { 'Content-Type': 'application/json', 'x-node-token': config.nodeToken || '' };
@@ -60,6 +63,26 @@ async function execute(command) {
     }
     case 'instance.game.install': return installSteamGame({ ...payload, instanceId: command.instanceId });
     case 'instance.game.info': return resolveGame(payload.game);
+    case 'instance.mods.install': {
+      const dir = path.join(config.dataRoot, 'instances', String(command.instanceId).replace(/[^A-Za-z0-9_-]/g, ''), 'mods');
+      fs.mkdirSync(dir, { recursive: true });
+      const results = [];
+      for (const mod of (payload.mods || [])) {
+        try {
+          const url = String(mod.url || '');
+          if (!/^https:\/\//.test(url)) { results.push({ name: mod.name, ok: false, reason: 'invalid_url' }); continue; }
+          const res = await fetch(url);
+          if (!res.ok) { results.push({ name: mod.name, ok: false, reason: 'download_' + res.status }); continue; }
+          const buf = Buffer.from(await res.arrayBuffer());
+          if (buf.length > 200 * 1024 * 1024) { results.push({ name: mod.name, ok: false, reason: 'too_large' }); continue; }
+          fs.writeFileSync(path.join(dir, String(mod.name).replace(/[^A-Za-z0-9._-]/g, '')), buf);
+          results.push({ name: mod.name, ok: true, bytes: buf.length });
+        } catch (e) { results.push({ name: mod.name, ok: false, reason: e.message }); }
+      }
+      return { ok: results.every((r) => r.ok), results, modpackId: payload.modpackId };
+    }
+
+
     case 'instance.start': return startInstance(command.instanceId);
     case 'instance.stop': return stopInstance(command.instanceId);
     case 'instance.restart': return restartInstance(command.instanceId);
@@ -69,7 +92,14 @@ async function execute(command) {
     case 'instance.reinstall': return reinstallInstance(command.instanceId, payload);
     case 'instance.exec': return execCommand(command.instanceId, payload.command);
     case 'instance.deploy': {
-      if (payload.source === 'git' && payload.repoUrl) return { note: 'git build delegated to builder', repoUrl: payload.repoUrl };
+      if (payload.source === 'git' && payload.repoUrl) {
+        const clone = await cloneRepository({ instanceId: command.instanceId, repoUrl: payload.repoUrl, ref: payload.ref, token: payload.token || '' });
+        if (!clone.ok) throw new Error('git_clone_failed');
+        const spec = validateBuildSpec({ runtime: payload.runtime || 'node', version: payload.version || '22', installCommand: payload.installCommand, buildCommand: payload.buildCommand });
+        const built = await buildSource({ instanceId: command.instanceId, source: 'git', ...spec });
+        if (!built.ok) throw new Error('build_failed: ' + built.logs.slice(-500));
+        return { ok: true, source: 'git', commitSha: payload.commitSha || '', image: built.image, logs: built.logs.slice(-1000) };
+      }
       return deployImage(command.instanceId, payload);
     }
     case 'instance.status': return containerStatus(command.instanceId);

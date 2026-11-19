@@ -123,6 +123,42 @@ const TABLES = {
   trycord_releases: `CREATE TABLE IF NOT EXISTS trycord_releases (
     id TEXT PRIMARY KEY, version TEXT NOT NULL, image TEXT NOT NULL, release_notes TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'published', created_at INTEGER NOT NULL)`,
+  payment_methods: `CREATE TABLE IF NOT EXISTS payment_methods (
+    id TEXT PRIMARY KEY, provider TEXT NOT NULL, display_name TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0, config TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'unconfigured', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  checkout_sessions: `CREATE TABLE IF NOT EXISTS checkout_sessions (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, subscription_id TEXT, plan_id TEXT,
+    provider TEXT NOT NULL, provider_session_id TEXT NOT NULL DEFAULT '',
+    amount INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'USD',
+    status TEXT NOT NULL DEFAULT 'pending', metadata TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL, expires_at INTEGER)`,
+  webhook_events2: `CREATE TABLE IF NOT EXISTS payment_webhooks (
+    id TEXT PRIMARY KEY, provider TEXT NOT NULL, event_id TEXT NOT NULL UNIQUE,
+    event_type TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'processed', error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`,
+  invoices: `CREATE TABLE IF NOT EXISTS invoices (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, subscription_id TEXT,
+    number TEXT NOT NULL, amount INTEGER NOT NULL DEFAULT 0, tax INTEGER NOT NULL DEFAULT 0,
+    currency TEXT NOT NULL DEFAULT 'USD', status TEXT NOT NULL DEFAULT 'draft',
+    provider TEXT NOT NULL DEFAULT '', provider_ref TEXT NOT NULL DEFAULT '',
+    issued_at INTEGER NOT NULL, due_at INTEGER, paid_at INTEGER, created_at INTEGER NOT NULL)`,
+  oauth_states: `CREATE TABLE IF NOT EXISTS oauth_states (
+    state TEXT PRIMARY KEY, team_id TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'github',
+    created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
+  auto_deploys: `CREATE TABLE IF NOT EXISTS auto_deploys (
+    id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, team_id TEXT NOT NULL,
+    repo_full_name TEXT NOT NULL, branch TEXT NOT NULL DEFAULT 'main',
+    install_command TEXT NOT NULL DEFAULT '', build_command TEXT NOT NULL DEFAULT '',
+    secret TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+    last_commit TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`,
+  two_factor: `CREATE TABLE IF NOT EXISTS two_factor (
+    user_id TEXT PRIMARY KEY, secret TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0,
+    backup_codes TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, enabled_at INTEGER)`,
+  modpacks: `CREATE TABLE IF NOT EXISTS modpacks (
+    id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, team_id TEXT NOT NULL,
+    name TEXT NOT NULL, loader TEXT NOT NULL DEFAULT 'fabric', version TEXT NOT NULL DEFAULT '',
+    mods TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
   instances: `CREATE TABLE IF NOT EXISTS instances (
     id TEXT PRIMARY KEY, team_id TEXT NOT NULL, node_id TEXT, name TEXT NOT NULL,
     category TEXT NOT NULL DEFAULT 'web', type TEXT NOT NULL DEFAULT 'custom',
@@ -208,6 +244,9 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_environments_category ON environments(category, sort_order)',
   'CREATE INDEX IF NOT EXISTS idx_builds_instance ON builds(instance_id, id)',
   'CREATE INDEX IF NOT EXISTS idx_webhook_events ON webhook_events(event_id)',
+  'CREATE INDEX IF NOT EXISTS idx_checkout_team ON checkout_sessions(team_id, id)',
+  'CREATE INDEX IF NOT EXISTS idx_invoices_team ON invoices(team_id, id)',
+  'CREATE INDEX IF NOT EXISTS idx_autodeploy_repo ON auto_deploys(repo_full_name, branch)',
   'CREATE INDEX IF NOT EXISTS idx_products_status ON products(status, sort_order)',
   'CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(status, sort_order)',
   'CREATE INDEX IF NOT EXISTS idx_subscriptions_team ON subscriptions(team_id, id)',
