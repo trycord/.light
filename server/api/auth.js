@@ -69,7 +69,8 @@ export function authRoutes() {
   router.post('/login', asyncRoute(async (req, res) => {
     const { email, password } = req.body || {};
     const db = getDb();
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(String(email || '').toLowerCase());
+    const identity = String(email || '').toLowerCase().trim();
+    const user = db.prepare('SELECT * FROM users WHERE email = ? OR lower(username) = ?').get(identity, identity);
     if (user && user.locked_until && user.locked_until > now()) throw unauthorized('account_locked');
     let authed;
     try { authed = authenticate(email, password); }
@@ -95,9 +96,10 @@ export function authRoutes() {
   }));
 
   router.post('/forgot-password', asyncRoute(async (req, res) => {
-    const email = String(req.body?.email || '').toLowerCase();
-    if (!validateEmail(email)) throw badRequest('invalid_email');
-    const user = getDb().prepare('SELECT * FROM users WHERE email = ?').get(email);
+    const identity = String(req.body?.email || '').toLowerCase().trim();
+    if (!identity) throw badRequest('invalid_identity');
+    const user = getDb().prepare('SELECT * FROM users WHERE email = ? OR lower(username) = ?').get(identity, identity);
+    const email = user?.email || identity;
     // Always respond generically to avoid account enumeration.
     if (!user) return res.json({ ok: true, emailEnabled: emailEnabled() });
     if (!emailEnabled()) {

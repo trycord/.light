@@ -2,6 +2,7 @@ import http from 'http';
 import config from './config.js';
 import { hostMetrics, createInstance, startInstance, stopInstance, restartInstance, suspendInstance, resumeInstance, removeInstance, reinstallInstance, execCommand, deployImage, containerStatus, containerStats, followLogs, ensureDirs, containerName } from './docker.js';
 import { listFiles, readFile, writeFile, fileOperation, storageUsage, createBackup, restoreBackup } from './files.js';
+import { installSteamGame, isSteamGame, resolveGame } from './games.js';
 
 const CONTROL = config.controlUrl.replace(/\/$/, '');
 const HEADERS = { 'Content-Type': 'application/json', 'x-node-token': config.nodeToken || '' };
@@ -48,7 +49,17 @@ const streaming = new Set();
 async function execute(command) {
   const payload = command.payload || {};
   switch (command.type) {
-    case 'instance.create': return createInstance({ ...payload, instanceId: command.instanceId });
+    case 'instance.create': {
+      const result = await createInstance({ ...payload, instanceId: command.instanceId });
+      // If this is a Steam game, install it into the persistent volume first.
+      if (payload.game && isSteamGame(payload.game, payload.image)) {
+        try { await installSteamGame({ ...payload, instanceId: command.instanceId }); }
+        catch (error) { return { ...result, warning: 'steam_install_failed', detail: error.message }; }
+      }
+      return result;
+    }
+    case 'instance.game.install': return installSteamGame({ ...payload, instanceId: command.instanceId });
+    case 'instance.game.info': return resolveGame(payload.game);
     case 'instance.start': return startInstance(command.instanceId);
     case 'instance.stop': return stopInstance(command.instanceId);
     case 'instance.restart': return restartInstance(command.instanceId);

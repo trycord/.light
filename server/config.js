@@ -30,7 +30,7 @@ const config = {
   brand: {
     product: process.env.BRAND_PRODUCT || '.light',
     owner: process.env.BRAND_OWNER || 'Trycord',
-    attribution: process.env.BRAND_ATTRIBUTION || '.light is a Trycord product',
+    attribution: process.env.BRAND_ATTRIBUTION || '.light POWERED BY TRYCORD',
     supportEmail: process.env.BRAND_SUPPORT_EMAIL || 'support@trycord.dev',
     tagline: process.env.BRAND_TAGLINE || 'Universal hosting platform',
     primaryColor: process.env.BRAND_PRIMARY_COLOR || '#FF4D24',
@@ -41,6 +41,13 @@ const config = {
     wordmark: process.env.BRAND_WORDMARK || '/assets/logos/light-wordmark.svg',
     background: process.env.BRAND_BACKGROUND || '/assets/backgrounds/volcanic-strata-16x9.svg',
     docTitle: process.env.BRAND_DOC_TITLE || '.light — Trycord Hosting',
+  },
+
+  // Single sign-on (optional)
+  sso: {
+    enabled: bool(process.env.SSO_ENABLED, false) && Boolean(process.env.SSO_URL),
+    url: process.env.SSO_URL || '',
+    label: process.env.SSO_LABEL || 'Continue with SSO',
   },
 
   // Universal domain

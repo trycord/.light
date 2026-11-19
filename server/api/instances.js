@@ -53,7 +53,7 @@ export function instancesRoutes() {
     getDb().prepare(`
       INSERT INTO instances (id, team_id, node_id, name, category, type, status, image, command, version, env_json, ports_json, volumes_json, cpu_cores, memory_mb, disk_gb, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(iid, req.teamId, node.id, name, category, str(b.type || 'custom', 80), 'pending', image,
+    `).run(iid, req.teamId, node.id, name, category, str(b.game || b.type || 'custom', 80), 'pending', image,
       str(b.command || '', 1000), str(b.version || 'latest', 100), JSON.stringify(sanitizeEnv(b.env)),
       JSON.stringify(ports), JSON.stringify(volumes), cpu, memory, disk, ts, ts);
 

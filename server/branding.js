@@ -18,6 +18,7 @@ function whiteLabel() {
     supportEmail: config.brand.supportEmail,
     domain: config.platformDomain,
     signupEnabled: config.allowSignup,
+    sso: config.sso,
   };
 }
 

@@ -21,7 +21,7 @@ test('public website and branding are accessible without auth', async () => {
   const branding = await req('/api/branding');
   assert.equal(branding.status, 200);
   assert.ok(branding.body.product);
-  assert.ok(branding.body.watermark?.text?.includes('Trycord'));
+  assert.ok(branding.body.watermark?.text?.toUpperCase().includes('TRYCORD'));
   assert.ok(branding.body.identity?.identifier === 'trycord-light');
 });
 

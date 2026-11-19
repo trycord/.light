@@ -12,12 +12,12 @@ export const LIGHT_SIGNATURE = Object.freeze({
   software: '.light',
   product: 'universal hosting platform',
   owner: 'Trycord',
-  attribution: '.light is a product owned and developed by Trycord',
+  attribution: '.light — POWERED BY TRYCORD',
   copyright: 'Copyright (c) 2026 Trycord. All rights reserved.',
   identifier: 'trycord-light',
   version: '1.0.0',
   source: 'https://trycord.dev',
-  watermark: 'Powered by .light',
+  watermark: 'POWERED BY TRYCORD',
 });
 
 // Used in API identification headers/responses.

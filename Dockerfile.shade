@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.7
+# light-shade: official .light infrastructure agent image.
+# Multi-stage: build/bundle in builder, ship only runtime artifacts.
+FROM node:20-bookworm-slim AS deps
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+COPY package.json ./
+RUN npm install --omit=dev --no-audit --no-fund
+COPY . .
+
+FROM node:20-bookworm-slim AS shade
+LABEL org.opencontainers.image.title="light-shade" \
+      org.opencontainers.image.description=".light infrastructure agent (Shade) — POWERED BY TRYCORD" \
+      org.opencontainers.image.vendor="Trycord"
+ENV NODE_ENV=production
+WORKDIR /app
+RUN mkdir -p /var/lib/light-shade /var/run && chown -R node:node /var/lib/light-shade
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/agent ./agent
+COPY --from=deps /app/package.json ./package.json
+COPY --from=deps /app/shade-entry.js ./shade-entry.js
+USER node
+EXPOSE 5859
+ENV SHADE_PORT=5859 SHADE_HOST=0.0.0.0 SHADE_DATA_DIR=/var/lib/light-shade \
+    SHADE_DOCKER_HOST=unix:///var/run/docker.sock NODE_ENV=production
+VOLUME ["/var/lib/light-shade"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:5859/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+STOPSIGNAL SIGTERM
+CMD ["node", "shade-entry.js"]

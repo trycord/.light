@@ -40,6 +40,9 @@ services:
       BRAND_WORDMARK: ${BRAND_WORDMARK:-/assets/logos/light-wordmark.svg}
       BRAND_BACKGROUND: ${BRAND_BACKGROUND:-/assets/backgrounds/volcanic-strata-16x9.svg}
       BRAND_DOC_TITLE: ${BRAND_DOC_TITLE:-.light — Trycord Hosting}
+      SSO_ENABLED: ${SSO_ENABLED:-false}
+      SSO_URL: ${SSO_URL:-}
+      SSO_LABEL: ${SSO_LABEL:-Continue with SSO}
     volumes:
       - trycord-light-data:/data
       - trycord-light-node-data:/var/lib/trycord-light

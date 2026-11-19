@@ -8,7 +8,7 @@ let session = null;
 let pollTimer = null;
 let currentView = null;
 let brand = {
-  product: '.light', owner: 'Trycord', attribution: '.light is a Trycord product',
+  product: '.light', owner: 'Trycord', attribution: '.light POWERED BY TRYCORD',
   tagline: 'Universal hosting platform', supportEmail: 'support@trycord.dev',
   domain: 'trycord.dev', primaryColor: '#FF4D24', accentColor: '#4C9B8A',
   favicon: '/assets/logos/favicon.svg', logo: '/assets/logos/light-primary.svg',
@@ -87,30 +87,88 @@ async function loadBranding() {
 /* ---------- auth ---------- */
 function renderAuth(mode = 'login') {
   stopPolling();
-  app.innerHTML = `<div class="lt-auth-screen" style="background-image:linear-gradient(rgba(8,10,9,.86),rgba(8,10,9,.94)),url('${brand.background || ASSETS.background}');background-size:cover;background-position:center"><div class="lt-auth-card">
-    <div class="lt-auth-brand">${brandMark(40)}<span>${esc(brand.product)}</span></div>
-    <div class="lt-auth-title">${mode === 'register' ? 'Create your account' : 'Welcome back'}</div>
-    <div class="lt-auth-sub">${mode === 'register' ? 'Deploy and manage your hosting services.' : `Sign in to your ${esc(brand.product)} hosting workspace.`}</div>
-    <div class="lt-auth-tabs"><button class="lt-auth-tab ${mode === 'login' ? 'active' : ''}" data-mode="login">Sign in</button><button class="lt-auth-tab ${mode === 'register' ? 'active' : ''}" data-mode="register">Create account</button></div>
-    <form id="authForm">
-      ${mode === 'register' ? field('Username', 'username', 'text', '', 'autocomplete="username" required pattern="[a-zA-Z0-9_]+"') : ''}
-      ${field('Email', 'email', 'email', '', 'autocomplete="email" required')}
-      ${field('Password', 'password', 'password', '', `autocomplete="${mode === 'register' ? 'new-password' : 'current-password'}" required minlength="${mode === 'register' ? 10 : 1}"`)}
-      ${mode === 'register' ? '<label class="lt-field" style="flex-direction:row;align-items:center;gap:8px;margin:6px 0 0;font-size:12px;color:var(--lt-text-muted)"><input type="checkbox" name="acceptTerms" required style="width:auto"> I accept the <a href="/legal.html" target="_blank" style="color:var(--lt-ember-500)">Terms</a> and <a href="/legal.html" target="_blank" style="color:var(--lt-ember-500)">Privacy Policy</a></label>' : '<div style="text-align:right;margin-top:6px"><button type="button" id="forgotBtn" class="lt-btn lt-btn-ghost lt-btn-sm" style="padding:0;color:var(--lt-text-muted)">Forgot password?</button></div>'}
-      <div class="lt-auth-error" id="authError"></div>
-      <button class="lt-btn lt-btn-primary" type="submit" style="width:100%;margin-top:10px">${mode === 'register' ? 'Create account' : 'Sign in'}</button>
-    </form>
-    <div class="lt-auth-footer">${esc(brand.attribution)} · ${esc(brand.tagline)}<div class="lt-watermark" style="border:none;display:block;padding:8px 0 0"><span class="lt-wm-mark">ΔΓΟ</span> <a href="${esc(brand.watermark?.source || 'https://trycord.dev')}" target="_blank" rel="noopener">${esc(brand.watermark?.short || 'Powered by .light')}</a></div></div>
-  </div></div>`;
+  const isReg = mode === 'register';
+  app.innerHTML = `<div class="lt-auth">
+    <section class="lt-auth-brand-panel">
+      <div class="lt-auth-brand-inner">
+        <a href="/site.html" class="lt-auth-logo">${brandMark(40)}<span>${esc(brand.product)}</span></a>
+        <div class="lt-auth-visual" aria-hidden="true">
+          <div class="v-glow"></div><div class="v-ring"></div><div class="v-ring alt"></div>
+          <div class="v-stack">
+            <div class="lt-auth-node"><div class="row"><span class="led"></span><span class="lt-meta">node-01 · online</span><span class="bars"><i></i><i></i><i></i><i></i></span></div><div class="line"></div><div class="line short"></div></div>
+            <div class="lt-auth-node"><div class="row"><span class="led"></span><span class="lt-meta">node-02 · online</span><span class="bars"><i></i><i></i><i></i><i></i></span></div><div class="line"></div><div class="line short"></div></div>
+            <div class="lt-auth-node warn"><div class="row"><span class="led"></span><span class="lt-meta">services · monitored</span><span class="bars"><i></i><i></i><i></i><i></i></span></div><div class="line"></div><div class="line short"></div></div>
+          </div>
+        </div>
+        <div class="lt-auth-pitch">
+          <h1>Your infrastructure.<br><span class="hl">Without the complexity.</span></h1>
+          <p>Deploy, manage and scale your servers and applications from one place.</p>
+        </div>
+        <div class="lt-auth-brand-foot">${esc(brand.attribution)} · ${esc(brand.domain)}</div>
+      </div>
+    </section>
+    <section class="lt-auth-form-panel">
+      <div class="lt-auth-form-wrap">
+        <div class="lt-auth-mobile-logo">${brandMark(34)}<span>${esc(brand.product)}</span></div>
+        <div class="lt-auth-tabs">
+          <button class="lt-auth-tab ${isReg ? '' : 'active'}" data-mode="login">Sign in</button>
+          <button class="lt-auth-tab ${isReg ? 'active' : ''}" data-mode="register">Create account</button>
+        </div>
+        <h2 class="lt-auth-title">${isReg ? 'Create your account' : 'Welcome back'}</h2>
+        <p class="lt-auth-sub">${isReg ? 'Deploy and manage your hosting services.' : `Sign in to your ${esc(brand.product)} account to continue.`}</p>
+        <form id="authForm" novalidate>
+          ${isReg ? field('Username', 'username', 'text', '', 'autocomplete="username" required pattern="[a-zA-Z0-9_]+" placeholder="your_username"') : ''}
+          ${isReg
+            ? field('Email', 'email', 'email', '', 'autocomplete="email" required placeholder="you@example.com"')
+            : `<div class="lt-field"><label for="f-email">Username or email</label><input class="lt-input" id="f-email" name="email" type="text" autocomplete="username" required placeholder="you@example.com or username"></div>`}
+          <div class="lt-field"><label for="f-password">Password</label>
+            <div class="lt-input-wrap">
+              <input class="lt-input" id="f-password" name="password" type="password" autocomplete="${isReg ? 'new-password' : 'current-password'}" required minlength="${isReg ? 10 : 1}" placeholder="${isReg ? 'At least 10 characters' : 'Enter your password'}">
+              <button type="button" class="lt-auth-eye" id="togglePw" aria-label="Show password" title="Show password">◉</button>
+            </div>
+          </div>
+          ${isReg
+            ? `<label class="lt-auth-terms"><input type="checkbox" name="acceptTerms" required><span>I accept the <a href="/legal.html" target="_blank">Terms of Service</a> and <a href="/legal.html" target="_blank">Privacy Policy</a>.</span></label>`
+            : `<div style="text-align:right;margin:-2px 0 8px"><button type="button" id="forgotBtn" class="lt-auth-link">Forgot password?</button></div>`}
+          <div class="lt-auth-error" id="authError" role="alert"></div>
+          <button class="lt-btn lt-btn-primary" type="submit" style="width:100%;margin-top:8px">${isReg ? 'Create account' : 'Sign in'}</button>
+        </form>
+        ${!isReg ? `<div class="lt-auth-divider">or continue with</div>
+        <div class="lt-field"><label for="f-sso">Organization email (SSO)</label><input class="lt-input" id="f-sso" type="email" placeholder="you@company.com"></div>
+        <button class="lt-btn lt-btn-secondary" id="ssoBtn" style="width:100%">Continue with SSO</button>` : ''}
+        <div class="lt-auth-footer">
+          ${esc(brand.attribution)} · ${esc(brand.tagline)}
+          <div class="lt-auth-watermark"><span class="lt-wm-mark">ΔΓΟ</span> <a href="${esc(brand.watermark?.source || 'https://trycord.dev')}" target="_blank" rel="noopener">${esc(brand.watermark?.short || 'POWERED BY TRYCORD')}</a></div>
+        </div>
+      </div>
+    </section>
+  </div>`;
+
   app.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => renderAuth(b.dataset.mode)));
+  const eye = app.querySelector('#togglePw');
+  if (eye) eye.addEventListener('click', () => {
+    const input = app.querySelector('#f-password');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    eye.textContent = show ? '◌' : '◉';
+    eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  });
   const forgotBtn = app.querySelector('#forgotBtn');
   if (forgotBtn) forgotBtn.addEventListener('click', async () => {
-    const data = await modal('Reset password', `${field('Account email', 'email', 'email', '', 'required')}<p class="lt-meta" style="margin-top:10px">If email is configured, a secure reset link will be sent. Otherwise contact your administrator for assisted recovery.</p>`, { confirm: 'Send reset link' });
+    const data = await modal('Reset password', `${field('Account email or username', 'identity', 'text', '', 'required')}<p class="lt-meta" style="margin-top:10px">If email is configured, a secure reset link will be sent. Otherwise contact your administrator for assisted recovery.</p>`, { confirm: 'Send reset link' });
     if (!data) return;
     try {
-      const r = await api.forgotPassword(data.email);
+      const r = await api.forgotPassword(data.identity);
       toast(r.ok ? 'Reset instructions sent' : (r.message || 'Email is disabled — contact your administrator'), r.ok ? 'success' : 'info');
     } catch (error) { toast(error.message, 'error'); }
+  });
+  const ssoBtn = app.querySelector('#ssoBtn');
+  if (ssoBtn) ssoBtn.addEventListener('click', () => {
+    const sso = brand.sso || {};
+    const email = (app.querySelector('#f-sso')?.value || '').trim();
+    if (!sso.enabled || !sso.url) { toast('SSO is not configured for this deployment — contact your administrator or sign in with your username or email.', 'info'); return; }
+    if (!email) { toast('Enter your organization email to continue with SSO', 'warning'); return; }
+    location.href = sso.url + (sso.url.includes('?') ? '&' : '?') + 'login_hint=' + encodeURIComponent(email);
   });
   app.querySelector('#authForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -125,15 +183,10 @@ function renderAuth(mode = 'login') {
       api.setToken(result.token);
       session = await api.me();
       if (result.verifyRequired || (session.user && session.user.emailVerified === false)) {
-        location.hash = '#/verify';
-        renderShell();
-        await navigate();
-        toast('Check your email to verify your account', 'info');
-        return;
+        location.hash = '#/verify'; renderShell(); await navigate();
+        toast('Check your email to verify your account', 'info'); return;
       }
-      location.hash = '#/overview';
-      renderShell();
-      navigate();
+      location.hash = '#/overview'; renderShell(); navigate();
       toast(mode === 'register' ? 'Account created' : 'Signed in', 'success');
     } catch (error) { errorEl.textContent = error.message; }
     finally { button.disabled = false; button.textContent = mode === 'register' ? 'Create account' : 'Sign in'; }
@@ -171,7 +224,7 @@ function renderShell() {
       <a class="lt-brand" href="#/overview">${brandMark(34)}<span class="lt-brand-word">.light<span class="lt-brand-sub">Trycord</span></span></a>
       ${nav}
       <div class="lt-nav-footer">
-        <div class="lt-watermark"><span class="lt-wm-mark">ΔΓΟ</span><span><a href="${esc(brand.watermark?.source || 'https://trycord.dev')}" target="_blank" rel="noopener">${esc(brand.watermark?.short || 'Powered by .light')}</a> · v1.0.0</span></div>
+        <div class="lt-watermark"><span class="lt-wm-mark">ΔΓΟ</span><span><a href="${esc(brand.watermark?.source || 'https://trycord.dev')}" target="_blank" rel="noopener">${esc(brand.watermark?.short || 'POWERED BY TRYCORD')}</a> · v1.0.0</span></div>
       </div>
     </aside>
     <div class="lt-scrim lt-sidebar-overlay" id="sidebarScrim" style="display:none"></div>

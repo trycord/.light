@@ -1,0 +1,28 @@
+services:
+  # Distributed mode: run light-shade on a remote machine.
+  # CONTROL_URL and SHADE_NODE_TOKEN must point back to the central panel.
+  shade:
+    build:
+      context: .
+      dockerfile: Dockerfile.shade
+    image: light-shade:latest
+    container_name: ${SHADE_CONTAINER:-light-shade}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SHADE_NODE_ID: ${SHADE_NODE_ID:-node-02}
+      SHADE_NODE_NAME: ${SHADE_NODE_NAME:-node-02}
+      SHADE_NODE_TOKEN: ${SHADE_NODE_TOKEN:?set SHADE_NODE_TOKEN}
+      SHADE_CONTROL_PLANE_URL: ${SHADE_CONTROL_PLANE_URL:?set SHADE_CONTROL_PLANE_URL}
+      SHADE_DOCKER_HOST: unix:///var/run/docker.sock
+      SHADE_DATA_DIR: /var/lib/light-shade
+      SHADE_HEARTBEAT_INTERVAL: 30s
+      SHADE_METRICS_INTERVAL: 15s
+      SHADE_LOG_LEVEL: ${SHADE_LOG_LEVEL:-info}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - light-shade-data:/var/lib/light-shade
+
+volumes:
+  light-shade-data:
+    name: light-shade-data
