@@ -70,9 +70,24 @@ Legacy `.html` URLs still redirect to the same pages.
 - **Reset admin:** `docker exec trycord-light node server/reset-admin.js [password]`.
 - **Tests:** `npm test` (API/E2E tests require a running stack).
 
+## Integrations (all optional, opt-in via environment)
+
+- **Payments** — Stripe checkout, HMAC-verified webhooks, idempotent event processing,
+  invoices, and refunds. When no `STRIPE_SECRET_KEY` is set, activation uses
+  administrator-approved manual mode and records a pending transaction (never faked as paid).
+- **GitHub** — OAuth app connection, encrypted token storage, repository/branch listing,
+  and HMAC-verified push webhooks triggering idempotent auto-deploys. Configure with
+  `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`.
+- **TLS / reverse proxy** — Caddyfile generated from verified domains and applied via the
+  Caddy admin API (`CADDY_ADMIN_URL`). HTTPS status is only reported active after a
+  certificate is provisioned. DNS instructions are provided per domain.
+- **Mods / plugins** — modpack management with agent-side isolated downloads into instance volumes.
+- **2FA** — RFC 6238 TOTP with backup codes; enable/disable and login verification.
+
+When any provider is unconfigured, the platform reports an honest configuration-required
+state and never pretends an operation succeeded.
+
 ## Known limitations
 
-- Payment processing is not integrated; activation uses administrator-approved manual mode and records a pending transaction. It is never reported as a completed payment.
-- Git-based automatic deploys and webhook verification are scaffolded (tables/models) but the full OAuth flow is not enabled.
-- TLS certificate issuance and reverse-proxy application are not automatic; a Caddy-compatible config is exposed via the domains API.
-- Mod/plugin management and 2FA are not implemented.
+- ACME certificate issuance is delegated to Caddy (not implemented natively in the control plane).
+- Administrative impersonation and granular custom RBAC roles are not yet implemented (single admin role).
