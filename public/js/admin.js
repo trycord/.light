@@ -4,7 +4,7 @@ import { iconImg, brandMark } from '/js/assets.js';
 
 const root = document.getElementById('admin-app');
 const overlays = document.getElementById('overlay-root');
-let admin = null, poll = null, currentView = '';
+let admin = null, pollTimer = null, currentView = '';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtTime = (t) => t ? new Date(t).toLocaleString() : '—';
@@ -59,10 +59,11 @@ function route(){const v=(location.hash||'#/dashboard').replace(/^#\/?/,'').spli
 function setNav(v){root.querySelectorAll('[data-view]').forEach(a=>a.classList.toggle('active',a.dataset.view===v));const c=root.querySelector('#aCrumb');if(c)c.textContent=v.charAt(0).toUpperCase()+v.slice(1);}
 
 async function render(v){
-  stopPoll();const view=root.querySelector('#aView');if(!view)return;
+  stopPoll();currentView=v;const view=root.querySelector('#aView');if(!view)return;
   const R={dashboard:dashboard,customers:customers,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,settings:settings};
   view.innerHTML=loading();try{await (R[v]||dashboard)();}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;}}
-function stopPoll(){if(poll){clearInterval(poll);poll=null;}}
+function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
+function poll(fn,ms=15000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&admin)fn().catch(()=>{});},ms);}
 
 /* ---------- views ---------- */
 async function dashboard(){

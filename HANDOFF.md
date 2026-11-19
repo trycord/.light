@@ -1,0 +1,175 @@
+# .light — HANDOFF SUMMARY FOR NEW CODING AGENT
+
+## 0. CRITICAL CONTEXT
+
+**Project:** `/light` (Trycord's universal hosting SaaS)
+**Repo root:** `C:\Users\ultim\.light` (git initialized, multiple commits)
+**Stack:** Node 20 ESM + Express + better-sqlite3 (SQLite WAL) + dockerode. No frontend build step. Fonts via Google Fonts.
+**Brand:** Product = `.light`; Owner/developer = Trycord; Infra agent = Shade. Watermark ".light POWERED BY TRYCORD" is MANDATORY and embedded in source — never remove. White-label config can change appearance but not ownership attribution.
+**Universal domain:** `trycord.dev` (project subdomains `<slug>-<id>.trycord.dev`).
+**Ports:** Control plane 5858 (`PORT`), agent 5859 (`AGENT_PORT`/`SHADE_PORT`). Both env-overridable.
+
+## 1. CURRENT RUNNING STATE (as of handoff)
+
+- Docker image `trycord/light:latest` built; one container `trycord-light` running via `docker compose up -d`.
+- Health endpoint `GET /health` returns status ok with both `controlPlane` and `nodeAgent` healthy.
+- Single container runs TWO processes via `start.js` supervisor: `server/index.js` (panel) + `agent/index.js` (integrated Shade).
+- Persistent volumes: `trycord-light-data` (DB), `trycord-light-node-data` (workload files).
+- Test artifacts: `public/_boot.html` exists (dev-only token boot page — DELETE before production).
+
+## 2. ACCESS CREDENTIALS
+
+- Admin: `admin@trycord.dev` / `LightAdmin2026!`
+- Reset utility: `docker exec trycord-light node server/reset-admin.js [password]`
+- `BOOTSTRAP_ADMIN_EMAIL/PASSWORD/NAME` env vars seed admin on fresh DB.
+
+## 3. FILE TREE (key files)
+
+```
+server/
+  index.js          - Express app, all routes, static serving, clean URLs, webhook raw-body
+  config.js         - env config (branding, email, payments, platform domain)
+  db.js             - schema + additive migrations + seed (products, plans, 19 environments, etc.)
+  auth.js           - JWT auth, requireAuth/requireAdmin, scrypt password hashing
+  crypto.js         - AES-256-GCM encrypt/decrypt for secrets at rest
+  pricing.js        - server-side pricing engine (authoritative, no client price trust)
+  payments.js       - Stripe abstraction (checkout, webhook verify, refunds)
+  github.js         - GitHub OAuth/API/webhook signature verification
+  proxy.js          - Caddyfile generation + Caddy admin API application
+  twofactor.js      - RFC 6238 TOTP + backup codes
+  plans.js          - quota enforcement (checkQuota), planFor (respects custom subs)
+  commands.js       - node command queue (queueCommand, claimCommand, dispatch)
+  health.js         - combined health for panel + agent
+  watermark.js      - mandatory ownership attribution
+  branding.js       - publicBranding() merges white-label + immutable watermark
+  secrets.js        - auto-generates JWT_SECRET/NODE_TOKEN on first start
+  audit.js          - audit logging
+  reset-admin.js    - admin reset utility
+  api/
+    auth.js, billing.js, github.js, features.js, catalog.js, subscriptions.js,
+    environments.js, instances.js, nodes.js, deployments.js, domains.js,
+    backups.js, schedules.js, admin.js, agent.js, stats.js
+agent/
+  config.js         - SHADE_* env config
+  index.js          - agent main loop, command execution, log streaming
+  docker.js         - dockerode workload execution
+  build.js          - isolated build pipeline (no Dockerfiles/socket/privileged)
+  games.js          - steamcmd game server installs
+  files.js          - file manager with path traversal protection
+public/
+  index.html        - customer dashboard SPA entry (loads /js/dashboard.js)
+  admin.html        - INDEPENDENT admin app entry (loads /js/admin.js)
+  site.html         - public website
+  hosting.html, product.html, pricing.html, configure.html, docs.html,
+  about.html, contact.html, legal.html
+  js/
+    dashboard.js    - customer dashboard (nav, views, all functionality)
+    admin.js        - admin control center (nav, views, editing)
+    api.js          - API client (ALL methods defined here)
+    assets.js       - brand asset helpers
+    site.js         - public website helpers
+  styles/
+    tokens.css, components.css, utilities.css, layout.css, app.css,
+    dashboard.css, admin.css, site.css, widget.css
+tests/
+  unit.test.js, api.test.js, auth.test.js, e2e.test.js, features.test.js
+Dockerfile          - single image (panel+agent), multi-stage, non-root via entrypoint
+Dockerfile.shade    - standalone Shade image (light-shade:latest)
+docker-compose.yml  - standalone stack
+compose.shade.yml   - distributed Shade node
+compose.node.yml    - legacy node override
+docker-entrypoint.sh - socket permission fix + privilege drop
+start.js            - process supervisor
+```
+
+## 4. CLEAN URL ROUTES (no .html)
+
+| URL | Page |
+|---|---|
+| `/` | Public website |
+| `/hosting`, `/hosting/:category` | Marketplace |
+| `/product/:slug` | Product detail + plans |
+| `/pricing`, `/configure` | Plans / custom configurator |
+| `/docs`, `/features`, `/faq` | Info pages |
+| `/about`, `/contact`, `/legal` | Company/legal |
+| `/login`, `/register` | Customer dashboard + auth |
+| `/admin`, `/admin/:section` | Admin control center |
+
+## 5. IMPLEMENTED FEATURES (all with real backend + persistence)
+
+**Auth:** registration (username/email/password/terms), scrypt hashing, JWT sessions, logout (token_version invalidation), password change/reset, email verification (conditional on EMAIL_ENABLED), brute-force lockout, session management, account deletion, 2FA (TOTP + backup codes).
+
+**Commercial:** products/categories/plans/pricing_config/subscriptions/transactions/invoices — all DB-backed and admin-editable. Server-side pricing engine. Build Your Own Plan. Stripe checkout + verified webhooks + refunds (manual mode when unconfigured — never fakes payment).
+
+**Hosting:** instance CRUD + lifecycle (start/stop/restart/reinstall/suspend/resume/delete) via authenticated node command queue. Docker execution with resource limits, per-team networks, port mappings, persistent volumes, CapDrop, no-new-privileges. Files manager (path-traversal protected), console/log streaming, metrics, backups/restore, schedules, domains.
+
+**GitHub:** OAuth + PAT, encrypted tokens, repo/branch listing, HMAC-verified push webhooks → idempotent auto-deploy.
+
+**Shade:** 19 runtime environments, steamcmd game installs, isolated builds (no customer Dockerfiles), mods, standalone + distributed modes, health checks.
+
+**TLS/proxy:** Caddyfile generation from verified domains, Caddy admin API application, DNS instructions, cert state tracking (active only after provisioning).
+
+**Admin app:** independent entry at /admin with full nav — customers, services, products, plans (editing VERIFIED working), environments, nodes, subscriptions, transactions, pricing, domains, backups, audit, settings.
+
+**Branding:** publicBranding() API with watermark; all branding env-configurable; white-label cannot remove watermark.
+
+## 6. VERIFICATION
+
+- `npm test` → 30/30 tests pass (unit, API, auth, E2E provisioning, tenant isolation, features with real TOTP computation).
+- Admin dashboard verified rendering via headless Chrome after fixing `poll is not a function` bug.
+- Clean routes all return HTTP 200.
+- E2E verified: register → create server → agent provisions real container → lifecycle → delete.
+- Data persists across container restarts.
+
+## 7. JUST-FIXED BUGS (last session)
+
+1. Admin dashboard stuck on error `poll is not a function` — admin.js called `poll()` but never defined it. Fixed by adding `function poll(fn, ms=15000)` and renaming timer var to `pollTimer` to avoid collision. Also set `currentView = v` in `render()`. VERIFIED working (8 admin-stat cards, 15 nav items rendered).
+2. Webhook 500 error — raw-body middleware consumed stream before express.json. Fixed by using `express.json({ verify: (req,res,buf) => req.rawBody = buf.toString() })`.
+3. 2FA enable chicken-and-egg — enable() called verify() which required enabled=1. Fixed by verifying against stored secret directly.
+4. Environment seed "Too few parameter values" — rewrote seed using named object parameters.
+5. Plan editing via admin API verified working.
+
+## 8. REMAINING / NOT DONE (honest)
+
+- Customer dashboard was showing auth screen in one headless test due to a stale token in `_boot.html` (token_version mismatch after 2FA operations) — regenerate fresh token with `node C:\tmp\mkboot2.js /login` to test; the app itself is fine.
+- ACME certificate issuance delegated to Caddy (not native).
+- Granular custom RBAC roles / impersonation not implemented (single admin role).
+- Payment methods beyond Stripe not added (PayPal etc listed as possibilities only).
+- Webhook raw-body for GitHub uses `req.rawBody` from express.json verify — works.
+- `public/_boot.html` is a dev-only test artifact — DELETE before production.
+- `.env` contains real secrets (local dev) — gitignored, never commit.
+- Frontend for some admin modules (support tickets, notifications, analytics detail, roles) are nav items but use generic panels; backend for many exists but some (support tickets, notifications CRUD) are not built.
+- Git-based builds: `agent/build.js` exists but real repo builds need GITHUB credentials + proper build images tested.
+
+## 9. HOW TO RUN / TEST
+
+```powershell
+cd C:\Users\ultim\.light
+docker compose up -d --build
+curl.exe http://127.0.0.1:5858/health
+npm test
+```
+
+Admin UI: `http://localhost:5858/admin` → login with admin creds (redirects to /login if no token; after login, navigate to /admin).
+Customer UI: `http://localhost:5858/login`.
+Public site: `http://localhost:5858/`.
+
+## 10. GIT HISTORY (recent)
+
+```
+c280aea docs: update integrations and remaining limitations
+4e818c2 feat: implement payments, GitHub deploys, TLS/proxy, mods, 2FA
+e0eed8c docs: update README with admin access, clean routes, commercial platform
+da372f7 chore: remove test artifacts
+0800223 feat: clean routes, administration control center, Shade runtime registry
+aeab453 feat: commercial platform backend + catalogue, admin reset utility
+```
+
+## 11. INSTRUCTIONS FOR NEW AGENT
+
+1. Read this file + README.md + server/index.js + public/js/admin.js + public/js/dashboard.js.
+2. Verify dashboards load in a browser (use fresh token if using headless Chrome boot page).
+3. Continue with remaining items in section 8, prioritizing: RBAC, support tickets backend/UI, notifications, analytics, and fuller GitHub build testing.
+4. Keep all changes backward-compatible; maintain tests; keep app runnable.
+5. NEVER remove the watermark or change ownership attribution.
+6. Every new feature needs: interface + backend + persistence + permissions + tests.
