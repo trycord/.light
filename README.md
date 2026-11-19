@@ -1,82 +1,78 @@
 # .light
 
-Universal hosting platform. `.light` is a Trycord product.
+Universal hosting platform. `.light` is a Trycord product, powered by Shade.
 
 ## Quick start (standalone, one container)
 
-Requires Docker with the Docker socket available at `/var/run/docker.sock` (the
-integrated node agent provisions real containers through it).
-
 ```bash
 cp .env.example .env
-# edit .env: set JWT_SECRET, NODE_TOKEN (or leave blank to auto-generate),
-# and the bootstrap admin credentials
+# Optionally set JWT_SECRET / NODE_TOKEN (auto-generated if blank).
 docker compose up -d --build
 ```
 
-- Dashboard: `http://<host>:5858/index.html`
-- Public site: `http://<host>:5858/`
-- Health: `http://<host>:5858/health` (reports both control plane and integrated agent)
-- Default admin: `admin@trycord.dev` / `TryAdmin2026!` (from `.env` — change it)
+- Public website: `http://<host>:5858/`
+- Dashboard: `http://<host>:5858/login`
+- Administration: `http://<host>:5858/admin`
+- Health: `http://<host>:5858/health` (control plane + integrated node agent)
+- Designated admin: `admin@trycord.dev` / `LightAdmin2026!` (set via `BOOTSTRAP_ADMIN_*` in `.env`; change after first login)
 
-One container (`start.js`) runs two processes: the control plane (API + dashboard)
-and the integrated node agent. A supervisor starts both, reports failures, and
-shuts them down gracefully. Data is stored in named volumes `trycord-light-data`
-(database) and `trycord-light-node-data` (workload files/backups).
+Requires the Docker socket at `/var/run/docker.sock` so the integrated Shade agent can provision workloads.
 
-## Configuration
+## Clean routes
 
-All settings are environment variables in `.env`. Key groups:
+| URL | Page |
+|---|---|
+| `/` | Public website |
+| `/hosting`, `/hosting/:category` | Hosting marketplace |
+| `/product/:slug` | Product detail + plans |
+| `/pricing` | Plans & pricing |
+| `/configure` | Build Your Own Plan |
+| `/docs`, `/features`, `/faq` | Information |
+| `/about`, `/contact`, `/legal` | Company / legal (drafts) |
+| `/login`, `/register` | Customer dashboard + auth |
+| `/admin`, `/admin/:section` | Administration Control Center |
 
-- **Secrets:** `JWT_SECRET`, `NODE_TOKEN` — auto-generated and persisted in
-  `/data/.secrets.json` if blank.
-- **Branding (white-label):** `BRAND_PRODUCT`, `BRAND_LOGO`, `BRAND_FAVICON`,
-  `BRAND_PRIMARY_COLOR`, `BRAND_ACCENT_COLOR`, `BRAND_TAGLINE`, etc. Served by
-  `GET /api/branding`. The `.light` ownership watermark and software identity
-  (`server/watermark.js`, `GET /api/identify`) are embedded in source and cannot
-  be removed through configuration.
-- **Domain:** `PLATFORM_DOMAIN` (default `trycord.dev`) is used for project
-  subdomains assigned to each new instance.
-- **Email:** disabled by default. Set `EMAIL_ENABLED=true` and either
-  `EMAIL_PROVIDER=deomail` with `DEOMAIL_API_KEY`/`DEOMAIL_FROM_EMAIL`, or
-  `EMAIL_PROVIDER=smtp` with the `SMTP_*` variables. With email disabled,
-  registration/login work without verification and password recovery is
-  administrator-assisted.
-
-## Remote nodes (distributed mode)
-
-The standalone install does not require a node container. To add capacity on
-another machine, run the same image in agent-only mode:
-
-```bash
-CONTROL_URL=https://<control-plane>:5858 NODE_ID=node-02 NODE_TOKEN=<token> \
-  docker compose -f compose.node.yml up -d
-```
-
-Register the matching node/token in the admin panel. Agents authenticate with
-`NODE_TOKEN`, poll an authenticated command queue, stream logs, and push real
-host metrics.
-
-## Operations
-
-- **Upgrade:** `docker compose pull && docker compose up -d --build`. Database
-  migrations run automatically on start and are additive (existing data kept).
-- **Backup:** copy the `trycord-light-data` and `trycord-light-node-data`
-  volumes. Per-instance backups are created from the instance's Backups tab.
-- **Restore:** restore the volumes, then start the stack.
-- **Tests:** `npm test` (requires a running stack for API/E2E tests).
+Legacy `.html` URLs still redirect to the same pages.
 
 ## Architecture
 
-Express control plane + SQLite (WAL) + dockerode node agent. Multi-tenant with
-scrypt password hashing, JWT sessions, role-based authorization, quota
-enforcement, tenant isolation, audit log, and an authenticated node command
-queue. Frontend is a vanilla-JS SPA plus a public marketing site.
+- **Control plane** (`server/`): Express + SQLite (WAL), JWT auth, scrypt passwords,
+  role-based access, tenant isolation, audit log, rate limiting. Multi-stage Docker image.
+- **Shade** (`agent/`, `light-shade:latest`): infrastructure agent — Docker execution,
+  isolated builds (no customer Dockerfiles/socket), resource limits, log streaming,
+  metrics, BYOD domain support. `SHADE_*` env configuration.
+- **Standalone**: one container runs control plane + integrated Shade via a supervisor
+  with health checks and graceful shutdown.
+- **Distributed**: `compose.shade.yml` runs independent Shade nodes that register with
+  the central panel using `SHADE_NODE_TOKEN`.
+
+## Commercial platform
+
+- Backend-configurable products, categories, preset plans and custom pricing (`pricing_config`).
+- Server-side pricing engine (`server/pricing.js`) — client estimates are never trusted.
+- Subscriptions, transactions, manual activation when no payment provider is configured.
+- Build Your Own Plan configurator with authoritative server-side validation.
+- Administration UI for products, plans, pricing, environments, nodes, customers and audit.
+
+## Ports & configuration
+
+- Control plane: `5858` (`PORT`, `CONTROL_PLANE_PORT`) — env-overridable.
+- Shade agent: `5859` (`AGENT_PORT` / `SHADE_PORT`) — env-overridable.
+- All branding, domain (`PLATFORM_DOMAIN`, default `trycord.dev`), email (DeoMail,
+  opt-in) and ownership attribution are environment-configurable. The `.light`
+  ownership watermark is embedded in source and cannot be removed by white-label config.
+
+## Operations
+
+- **Upgrade:** `docker compose pull && docker compose up -d --build` (additive migrations run on start).
+- **Backup:** copy `trycord-light-data` and `trycord-light-node-data` volumes; per-service backups from the dashboard.
+- **Restore:** restore volumes, then start the stack.
+- **Reset admin:** `docker exec trycord-light node server/reset-admin.js [password]`.
+- **Tests:** `npm test` (API/E2E tests require a running stack).
 
 ## Known limitations
 
-- Git-based builds are stubbed in the agent (image-based deploys are real).
-- SSL certificate provisioning and reverse-proxy application are not automatic;
-  a Caddy-compatible config is generated at `GET /api/domains/config/proxy`.
-- Mod/plugin management and automatic 2FA are not implemented.
-- Plan billing/payment processing is not implemented; plans are configuration.
+- Payment processing is not integrated; activation uses administrator-approved manual mode and records a pending transaction. It is never reported as a completed payment.
+- Git-based automatic deploys and webhook verification are scaffolded (tables/models) but the full OAuth flow is not enabled.
+- TLS certificate issuance and reverse-proxy application are not automatic; a Caddy-compatible config is exposed via the domains API.
+- Mod/plugin management and 2FA are not implemented.
