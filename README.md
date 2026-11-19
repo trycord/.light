@@ -83,6 +83,10 @@ Legacy `.html` URLs still redirect to the same pages.
   certificate is provisioned. DNS instructions are provided per domain.
 - **Mods / plugins** — modpack management with agent-side isolated downloads into instance volumes.
 - **2FA** — RFC 6238 TOTP with backup codes; enable/disable and login verification.
+- **Notifications** — persisted in-product notifications with per-user/team targeting, admin broadcasts, unread counts and mark-read flows (customer dashboard bell + admin centre).
+- **Support tickets** — customer ticket creation, threaded replies, status/priority management and admin-side queue, with notifications on replies and status changes.
+- **Analytics** — platform-wide metrics aggregated from persisted data (signups, revenue, services, plans, nodes, tickets, audit activity) in the admin centre.
+- **Roles & access (RBAC)** — custom roles with granular permissions, per-section enforcement in the admin API, permission-aware navigation, and fully audited admin impersonation with a scoped, non-privileged token.
 
 When any provider is unconfigured, the platform reports an honest configuration-required
 state and never pretends an operation succeeded.
@@ -90,4 +94,6 @@ state and never pretends an operation succeeded.
 ## Known limitations
 
 - ACME certificate issuance is delegated to Caddy (not implemented natively in the control plane).
-- Administrative impersonation and granular custom RBAC roles are not yet implemented (single admin role).
+- Payment methods beyond Stripe are not implemented (manual activation is used when Stripe is unconfigured).
+- Git-based builds require configured GitHub credentials and tested build images.
+- Email delivery is opt-in; when disabled, verification/recovery fall back to administrator assistance.

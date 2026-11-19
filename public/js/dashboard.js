@@ -113,6 +113,35 @@ function renderShell(){
   app.querySelector('#scrim')?.addEventListener('click',()=>{app.querySelector('#sidebar').classList.remove('is-open');app.querySelector('#scrim').style.display='none';});
   app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="#/admin" ${session.user.role!=='admin'?'style="display:none"':''}>Administration</a><a href="/">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});
   app.querySelector('#globalSearch')?.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&e.target.value.trim()){serversState.search=e.target.value.trim();location.hash='#/servers';setTimeout(()=>renderServers(),50);}});
+  app.querySelector('#notifBtn')?.addEventListener('click',(e)=>{e.stopPropagation();openNotifPanel(e.currentTarget);});
+  if(session?.impersonatedBy){
+    const bar=document.createElement('div');bar.className='lt-impersonation-bar';
+    bar.innerHTML=`<span>⚠ Viewing as <strong>${esc(session.user.email)}</strong> — actions are performed on behalf of this account.</span><button class="lt-btn lt-btn-sm" id="exitImpersonate">Exit</button>`;
+    app.querySelector('.lt-main')?.prepend(bar);
+    bar.querySelector('#exitImpersonate')?.addEventListener('click',()=>{api.setToken('');session=null;location.href='/login';});
+  }
+}
+
+async function loadUnread(){
+  if(!session)return;
+  try{const r=await api.unreadNotifications();const el=app.querySelector('#notifCount');if(el){el.textContent=r.unread>99?'99+':r.unread;el.style.display=r.unread?'inline-block':'none';}}catch{}
+}
+
+async function openNotifPanel(anchor){
+  const ex=document.querySelector('.lt-notif-panel');if(ex){ex.remove();return;}
+  const p=document.createElement('div');p.className='lt-notif-panel';
+  p.innerHTML='<div class="lt-notif-head">Notifications <button class="lt-btn lt-btn-ghost lt-btn-sm" id="npReadAll">Mark all read</button></div><div id="npList">'+loading()+'</div>';
+  document.body.appendChild(p);
+  const rect=anchor.getBoundingClientRect();p.style.top=(rect.bottom+8)+'px';p.style.right=Math.max(8,window.innerWidth-rect.right)+'px';
+  const load=async()=>{try{const r=await api.notifications(30);const list=p.querySelector('#npList');
+    list.innerHTML=r.notifications.length?r.notifications.map(n=>`<div class="lt-notif-item ${n.read?'':'is-unread'}" data-n="${esc(n.id)}">
+      <div class="lt-notif-dot ${esc(n.type)}"></div><div style="flex:1;min-width:0"><div class="lt-notif-title">${esc(n.title)}</div>
+      <div class="lt-notif-msg">${esc(n.message)}</div><div class="lt-meta">${fmtAgo(n.createdAt)}</div></div></div>`).join(''):'<div class="lt-notif-empty">You’re all caught up.</div>';
+    list.querySelectorAll('[data-n]').forEach(el=>el.addEventListener('click',async()=>{const n=r.notifications.find(x=>x.id===el.dataset.n);if(n&&!n.read){try{await api.markNotificationRead(n.id);await loadUnread();}catch{}}if(n?.data?.ticketId)location.hash='#/support';el.remove();}));
+  }catch(e){p.querySelector('#npList').innerHTML=errState(e);}};
+  p.querySelector('#npReadAll').addEventListener('click',async()=>{try{await api.markAllNotificationsRead();await loadUnread();await load();toast('All marked as read','success');}catch(e){toast(e.message,'error');}});
+  await load();loadUnread();
+  setTimeout(()=>{const h=(ev)=>{if(!p.contains(ev.target)&&!anchor.contains(ev.target)){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);
 }
 function setActive(v){app.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===v));const labels={overview:'Dashboard',servers:'All Servers',game:'Game Servers',web:'Applications',websites:'Websites',database:'Databases',deployments:'Deployments',domains:'Domains',backups:'Backups',schedules:'Schedules',files:'Files',usage:'Usage & Resources',billing:'Billing & Plans',notifications:'Notifications',support:'Support',settings:'Settings',admin:'Administration',server:'Server',verify:'Verify',reset:'Reset'};const c=app.querySelector('#crumb');if(c)c.textContent=labels[v]||v;}
 function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
@@ -130,7 +159,7 @@ window.addEventListener('lt:unauthorized',()=>{toast('Session expired','error');
 
 async function boot(){try{brand=await api.branding();}catch{}document.documentElement.setAttribute('data-theme',localStorage.getItem('lt_theme')||'dark');document.title=brand.docTitle||'.light';let f=document.querySelector('link[rel=icon]');if(f&&brand.favicon)f.href=brand.favicon;
   if(!api.token()){const h=(location.hash||'').toLowerCase();renderAuth(h.includes('register')?'register':'login');return;}
-  try{session=await api.me();renderShell();await navigate();}catch(e){api.setToken('');renderAuth('login');}
+  try{session=await api.me();renderShell();await navigate();await loadUnread();}catch(e){api.setToken('');renderAuth('login');}
 }
 boot();
 
@@ -353,4 +382,67 @@ async function renderBilling(){
       try{await api.activatePlan({planId:b.dataset.plan});toast('Plan activated','success');renderBilling();}catch(e){toast(e.message,'error');}
     }));
   }catch{}
+}
+
+/* ---------- notifications & support ---------- */
+async function renderNotifications(){
+  const v=app.querySelector('#view');let r={notifications:[],unread:0};
+  try{r=await api.notifications(200);}catch(e){v.innerHTML=errState(e);return;}
+  const rows=r.notifications.map(n=>`<div class="lt-card" style="padding:14px 16px;${n.read?'':'border-color:var(--lt-border-ember)'}">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+      <div style="display:flex;gap:12px;min-width:0"><span class="lt-badge lt-badge-${n.type==='danger'?'danger':n.type==='warning'?'warning':n.type==='success'?'success':'neutral'}">${esc(n.type)}</span>
+        <div style="min-width:0"><div style="font-weight:700">${esc(n.title)} ${n.read?'':badge('pending')}</div>
+          <div class="lt-meta" style="white-space:pre-wrap;margin-top:4px">${esc(n.message)}</div>
+          <div class="lt-meta" style="margin-top:6px">${fmtTime(n.createdAt)}</div></div></div>
+      <div style="display:flex;gap:6px;flex-shrink:0">${n.read?'':`<button class="lt-btn lt-btn-ghost lt-btn-sm" data-read="${esc(n.id)}">Mark read</button>`}
+        <button class="lt-btn lt-btn-ghost lt-btn-sm" data-del="${esc(n.id)}">Delete</button></div>
+    </div></div>`).join('');
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Notifications</h1><p class="lt-page-subtitle">${r.unread} unread · ${r.notifications.length} total</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-secondary" id="readAll">Mark all as read</button></div></div>
+    ${r.notifications.length?`<div class="lt-stack">${rows}</div>`:empty('No notifications','Important account and service updates will appear here.')}`;
+  v.querySelector('#readAll')?.addEventListener('click',async()=>{try{await api.markAllNotificationsRead();toast('All marked as read','success');await loadUnread();renderNotifications();}catch(e){toast(e.message,'error');}});
+  v.querySelectorAll('[data-read]').forEach(b=>b.addEventListener('click',async()=>{try{await api.markNotificationRead(b.dataset.read);await loadUnread();renderNotifications();}catch(e){toast(e.message,'error');}}));
+  v.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',async()=>{try{await api.deleteNotification(b.dataset.del);await loadUnread();renderNotifications();}catch(e){toast(e.message,'error');}}));
+}
+
+async function renderSupport(){
+  const v=app.querySelector('#view');let r={tickets:[]};
+  try{r=await api.tickets();}catch(e){v.innerHTML=errState(e);return;}
+  const rows=r.tickets.map(t=>`<tr><td class="lt-td-strong">${esc(t.subject)}</td><td>${esc(t.category)}</td>
+    <td><span class="lt-badge lt-badge-${t.priority==='urgent'||t.priority==='high'?'danger':t.priority==='low'?'neutral':'warning'}">${esc(t.priority)}</span></td>
+    <td>${badge(t.status)}</td><td class="lt-td-mono">${t.messageCount}</td><td>${fmtAgo(t.createdAt)}</td>
+    <td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-t="${esc(t.id)}">Open</button></td></tr>`).join('');
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Support</h1><p class="lt-page-subtitle">Ask questions and track your requests</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-primary" id="newTicket">+ New ticket</button></div></div>
+    ${section('Your tickets',`${r.tickets.length} requests`,rows?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Subject</th><th>Category</th><th>Priority</th><th>Status</th><th>Messages</th><th>Updated</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      :empty('No tickets yet','Need help? Open a support ticket and our team will reply.'))}`;
+  v.querySelector('#newTicket').addEventListener('click',async()=>{
+    const d=await modal('New support ticket',`<form id="tf">
+      ${field('Subject','subject','text','','required')}
+      ${selectField('Category','category',['general','technical','billing','account','feature'])}
+      ${selectField('Priority','priority',['low','normal','high','urgent'],'normal')}
+      ${textarea('Describe your issue','message','')}
+    </form>`,{confirm:'Submit ticket'});
+    if(!d)return;
+    try{await api.createTicket(d);toast('Ticket created','success');renderSupport();}catch(e){toast(e.message,'error');}
+  });
+  v.querySelectorAll('[data-t]').forEach(b=>b.addEventListener('click',async()=>openTicket(b.dataset.t)));
+}
+
+async function openTicket(id){
+  const v=app.querySelector('#view');let t;
+  try{t=(await api.ticket(id)).ticket;}catch(e){toast(e.message,'error');return;}
+  const msgs=t.messages.map(m=>`<div style="padding:12px 0;border-bottom:1px solid var(--lt-border)">
+    <div style="display:flex;justify-content:space-between"><strong>${m.isStaff?'Support team':esc(m.author?.name||m.author?.email||'You')}</strong><span class="lt-meta">${fmtTime(m.createdAt)}</span></div>
+    <div style="font-size:13px;line-height:1.6;margin-top:6px;white-space:pre-wrap">${esc(m.message)}</div></div>`).join('');
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">${esc(t.subject)}</h1>
+    <p class="lt-page-subtitle">${esc(t.category)} · ${esc(t.priority)} priority · ${badge(t.status)}</p></div>
+    <div class="lt-page-actions"><a class="lt-btn lt-btn-ghost" href="#/support">← All tickets</a>
+    ${t.status!=='closed'?`<button class="lt-btn lt-btn-secondary" id="closeTicket">Close</button>`:`<button class="lt-btn lt-btn-secondary" id="reopenTicket">Reopen</button>`}</div></div>
+    ${section('Conversation','',msgs||'<p class="lt-meta">No messages yet.</p>')}
+    ${t.status!=='closed'?section('Reply','',`<form id="replyForm">${textarea('Your message','message','')}<button class="lt-btn lt-btn-primary" type="submit">Send reply</button></form>`):''}`;
+  v.querySelector('#replyForm')?.addEventListener('submit',async(e)=>{e.preventDefault();const msg=new FormData(e.target).get('message');if(!String(msg||'').trim())return;
+    try{await api.replyTicket(id,msg);toast('Reply sent','success');openTicket(id);await loadUnread();}catch(err){toast(err.message,'error');}});
+  v.querySelector('#closeTicket')?.addEventListener('click',async()=>{try{await api.updateTicket(id,{status:'closed'});toast('Ticket closed','success');openTicket(id);}catch(err){toast(err.message,'error');}});
+  v.querySelector('#reopenTicket')?.addEventListener('click',async()=>{try{await api.updateTicket(id,{status:'open'});toast('Ticket reopened','success');openTicket(id);}catch(err){toast(err.message,'error');}});
 }

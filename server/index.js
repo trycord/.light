@@ -30,6 +30,9 @@ import { environmentsRoutes } from './api/environments.js';
 import { billingRoutes } from './api/billing.js';
 import { githubRoutes } from './api/github.js';
 import { featuresRoutes } from './api/features.js';
+import { notificationsRoutes } from './api/notifications.js';
+import { ticketsRoutes, adminTicketRoutes } from './api/tickets.js';
+import { analyticsRoutes } from './api/analytics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(__dirname, '..');
@@ -73,12 +76,17 @@ api.use('/environments', environmentsRoutes());
 api.use('/billing', billingRoutes());
 api.use('/github', githubRoutes());
 api.use('/features', featuresRoutes());
+api.use('/notifications', notificationsRoutes());
+api.use('/tickets', ticketsRoutes());
 api.use('/admin', adminRoutes());
+api.use('/admin/tickets', adminTicketRoutes());
+api.use('/admin/analytics', analyticsRoutes());
 api.use('/agent', agentRoutes());
 api.get('/stats', requireAuth, statsRoutes());
 api.get('/me', requireAuth, asyncRoute(async (req, res) => {
   const team = getDb().prepare('SELECT * FROM teams WHERE id = ?').get(req.teamId);
-  res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, role: req.user.role, teamId: req.teamId }, team });
+  res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, role: req.user.role, teamId: req.teamId },
+    team, impersonatedBy: req.impersonatedBy || null, permissions: req.permissions });
 }));
 app.use('/api', api);
 

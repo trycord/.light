@@ -126,7 +126,8 @@ export function authRoutes() {
 
   router.get('/me', requireAuth, asyncRoute(async (req, res) => {
     const u = req.user;
-    res.json({ user: pub(u), emailEnabled: emailEnabled(), branding: config.brand });
+    res.json({ user: pub(u), emailEnabled: emailEnabled(), branding: config.brand,
+      impersonatedBy: req.impersonatedBy || null, permissions: req.permissions });
   }));
 
   router.post('/password', requireAuth, asyncRoute(async (req, res) => {

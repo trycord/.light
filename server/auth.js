@@ -2,17 +2,17 @@ import jwt from 'jsonwebtoken';
 import config from './config.js';
 import { getDb } from './db.js';
 import { verifyPassword, hashPassword } from './security.js';
+import { hasPermission, permissionsFor } from './permissions.js';
 import { unauthorized, forbidden, badRequest, validateEmail, validatePassword, id, now } from './util.js';
 
 const AUDIENCE = 'trycord-light';
 const ISSUER = 'trycord-light';
 
-export function signToken(user) {
-  return jwt.sign(
-    { sub: user.id, email: user.email, role: user.role, teamId: user.team_id, tv: user.token_version || 0 },
-    config.jwtSecret,
-    { expiresIn: '24h', audience: AUDIENCE, issuer: ISSUER }
-  );
+export function signToken(user, options = {}) {
+  const payload = { sub: user.id, email: user.email, role: user.role, teamId: user.team_id, tv: user.token_version || 0 };
+  // Impersonation tokens carry the administrator id so privileged actions stay locked.
+  if (options.impersonatedBy) payload.imp = options.impersonatedBy;
+  return jwt.sign(payload, config.jwtSecret, { expiresIn: '24h', audience: AUDIENCE, issuer: ISSUER });
 }
 
 export function verifyToken(token) {
@@ -38,6 +38,8 @@ export function requireAuth(req, res, next) {
     if ((payload.tv || 0) !== (user.token_version || 0)) throw unauthorized('session_expired');
     req.user = user;
     req.teamId = user.team_id;
+    req.impersonatedBy = payload.imp || null;
+    req.permissions = permissionsFor(user);
     next();
   } catch (error) { next(error); }
 }
@@ -45,7 +47,7 @@ export function requireAuth(req, res, next) {
 export function requireAdmin(req, res, next) {
   requireAuth(req, res, (error) => {
     if (error) return next(error);
-    if (req.user.role !== 'admin') return next(forbidden('admin_required'));
+    if (!hasPermission(req.user, 'admin.access')) return next(forbidden('admin_required'));
     next();
   });
 }

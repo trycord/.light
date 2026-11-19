@@ -1,12 +1,29 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
-import { requireAdmin } from '../auth.js';
+import { requireAdmin, signToken } from '../auth.js';
+import { requireRealAdmin, hasPermission, PERMISSIONS, isValidPermission } from '../permissions.js';
 import { audit } from '../audit.js';
-import { asyncRoute, badRequest, notFound, conflict, id, now, str, int, num, json } from '../util.js';
+import { asyncRoute, badRequest, forbidden, notFound, conflict, id, now, str, int, num, json } from '../util.js';
 
 export function adminRoutes() {
   const router = Router();
   router.use(requireAdmin);
+
+  // Granular enforcement: a custom role with `admin.access` still needs the
+  // specific read/write permission for each admin section it calls.
+  router.use((req, res, next) => {
+    const p = req.path;
+    const write = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+    let needed = null;
+    if (/^\/(users|teams)/.test(p)) needed = write ? 'customers.write' : 'customers.read';
+    else if (/^\/audit/.test(p)) needed = 'audit.read';
+    else if (/^\/(products|categories)/.test(p)) needed = write ? 'products.write' : 'products.read';
+    else if (/^\/plans/.test(p)) needed = write ? 'plans.write' : 'plans.read';
+    else if (/^\/(pricing|subscriptions|transactions)/.test(p)) needed = write ? 'billing.write' : 'billing.read';
+    else if (/^\/(roles|permissions)/.test(p)) needed = write ? 'roles.write' : 'roles.read';
+    if (needed && !hasPermission(req.user, needed)) return next(forbidden('permission_required'));
+    next();
+  });
 
   /* ---------- Users ---------- */
   router.get('/users', asyncRoute(async (req, res) => {
@@ -16,7 +33,7 @@ export function adminRoutes() {
     const user = getDb().prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
     if (!user) throw notFound();
     const b = req.body || {};
-    if (b.role && !['user', 'admin'].includes(b.role)) throw badRequest('invalid_role');
+    if (b.role && b.role !== 'user' && b.role !== 'admin' && !getDb().prepare('SELECT id FROM roles WHERE id = ?').get(b.role)) throw badRequest('invalid_role');
     if (b.status && !['active', 'suspended'].includes(b.status)) throw badRequest('invalid_status');
     getDb().prepare('UPDATE users SET role = ?, status = ?, token_version = COALESCE(token_version,0)+1, updated_at = ? WHERE id = ?').run(b.role || user.role, b.status || user.status, now(), user.id);
     audit(req, 'admin.user.update', 'user', user.id, b);
@@ -154,7 +171,68 @@ export function adminRoutes() {
     res.json({ transactions: getDb().prepare('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 300').all() });
   }));
 
+  /* ---------- RBAC roles ---------- */
+  router.get('/permissions', asyncRoute(async (req, res) => {
+    res.json({ permissions: PERMISSIONS });
+  }));
+  router.get('/roles', asyncRoute(async (req, res) => {
+    const roles = getDb().prepare('SELECT * FROM roles ORDER BY system DESC, name').all().map(viewRole);
+    res.json({ roles });
+  }));
+  router.post('/roles', requireRealAdmin, asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    const name = str(b.name, 80).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+    if (!name || ['admin', 'user'].includes(name)) throw badRequest('invalid_role_name');
+    if (getDb().prepare('SELECT id FROM roles WHERE id = ? OR name = ?').get(name, name)) throw conflict('role_exists');
+    const permissions = normalizePermissions(b.permissions);
+    const rid = name; const ts = now();
+    getDb().prepare('INSERT INTO roles (id, name, description, permissions, system, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)')
+      .run(rid, name, str(b.description, 300), JSON.stringify(permissions), ts, ts);
+    audit(req, 'admin.role.create', 'role', rid, { name, permissions });
+    res.status(201).json({ role: viewRole(getDb().prepare('SELECT * FROM roles WHERE id = ?').get(rid)) });
+  }));
+  router.patch('/roles/:id', requireRealAdmin, asyncRoute(async (req, res) => {
+    const role = getDb().prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
+    if (!role) throw notFound();
+    const b = req.body || {}; const sets = []; const values = [];
+    if (b.description !== undefined) { sets.push('description = ?'); values.push(str(b.description, 300)); }
+    if (b.permissions !== undefined) { sets.push('permissions = ?'); values.push(JSON.stringify(normalizePermissions(b.permissions))); }
+    if (sets.length) { sets.push('updated_at = ?'); values.push(now(), role.id); getDb().prepare(`UPDATE roles SET ${sets.join(', ')} WHERE id = ?`).run(...values); }
+    audit(req, 'admin.role.update', 'role', role.id, b);
+    res.json({ role: viewRole(getDb().prepare('SELECT * FROM roles WHERE id = ?').get(role.id)) });
+  }));
+  router.delete('/roles/:id', requireRealAdmin, asyncRoute(async (req, res) => {
+    const role = getDb().prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
+    if (!role) throw notFound();
+    if (role.system) throw badRequest('system_role_cannot_be_deleted');
+    if (getDb().prepare('SELECT id FROM users WHERE role = ?').get(role.id)) throw conflict('role_in_use');
+    getDb().prepare('DELETE FROM roles WHERE id = ?').run(role.id);
+    audit(req, 'admin.role.delete', 'role', role.id, {});
+    res.json({ ok: true });
+  }));
+
+  /* ---------- Impersonation (real admins only, fully audited) ---------- */
+  router.post('/users/:id/impersonate', requireRealAdmin, asyncRoute(async (req, res) => {
+    const target = getDb().prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!target) throw notFound();
+    if (target.role === 'admin') throw forbidden('cannot_impersonate_admin');
+    const token = signToken(target, { impersonatedBy: req.user.id });
+    audit(req, 'admin.user.impersonate', 'user', target.id, { email: target.email });
+    res.json({ token, user: { id: target.id, email: target.email, name: target.name, role: target.role },
+      impersonatedBy: req.user.id });
+  }));
+
   return router;
+}
+
+function normalizePermissions(value) {
+  const list = Array.isArray(value) ? value : [];
+  return [...new Set(list.filter((p) => typeof p === 'string' && isValidPermission(p)))];
+}
+
+function viewRole(r) {
+  return { id: r.id, name: r.name, description: r.description, permissions: json(r.permissions, []),
+    system: !!r.system, createdAt: r.created_at, updatedAt: r.updated_at };
 }
 
 function viewProduct(p) { return {

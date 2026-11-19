@@ -4,7 +4,8 @@ import { iconImg, brandMark } from '/js/assets.js';
 
 const root = document.getElementById('admin-app');
 const overlays = document.getElementById('overlay-root');
-let admin = null, pollTimer = null, currentView = '';
+let admin = null, pollTimer = null, currentView = '', adminPermissions = [], adminImpersonatedBy = null;
+const can = (p) => adminPermissions.includes('*') || adminPermissions.includes(p);
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtTime = (t) => t ? new Date(t).toLocaleString() : '—';
@@ -19,21 +20,21 @@ function toast(m,t='info'){const e=document.createElement('div');e.className='lt
 function modal(title,body,opts={}){return new Promise(res=>{const o=document.createElement('div');o.className='lt-modal-overlay';const formBody=body.includes('<form')?body:`<form id="mf">${body}</form>`;o.innerHTML=`<div class="lt-modal"><div class="lt-modal-header"><h3 class="lt-h3">${esc(title)}</h3><button class="lt-btn lt-btn-ghost lt-btn-icon" data-close>✕</button></div><div class="lt-modal-body">${formBody}</div><div class="lt-modal-footer"><button class="lt-btn lt-btn-ghost" data-close>Cancel</button><button class="lt-btn ${opts.danger?'lt-btn-danger':'lt-btn-primary'}" data-ok>${esc(opts.ok||'Save')}</button></div></div>`;overlays.appendChild(o);const close=v=>{o.remove();res(v);};o.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>close(null)));o.querySelector('[data-ok]').addEventListener('click',()=>{const f=o.querySelector('form');if(f){if(!f.reportValidity())return;close(Object.fromEntries(new FormData(f).entries()));}else close(true);});o.addEventListener('click',e=>{if(e.target===o)close(null);});});}
 const confirmDialog=(t,m)=>modal(t,`<p style="font-size:13px;color:var(--lt-text-secondary)">${esc(m)}</p>`,{danger:true,ok:'Confirm'});
 const panel=(t,s,c,a='')=>`<div class="lt-card"><div class="lt-card-header"><div><h3 class="lt-h3">${esc(t)}</h3>${s?`<div class="lt-meta">${esc(s)}</div>`:''}</div>${a}</div><div class="lt-card-body">${c}</div></div>`;
-const table=(cols,rows)=>`<div class="lt-table-wrap"><table class="admin-table"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows||`<tr><td colspan="${cols.length}" class="admin-empty-state">No records</td></tr>`}</tbody></table></div>`;
+const table=(cols,rows)=>{const body=Array.isArray(rows)?rows.join(''):(rows||`<tr><td colspan="${cols.length}" class="admin-empty-state">No records</td></tr>`);return `<div class="lt-table-wrap"><table class="admin-table"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;};
 const loading=()=>'<div class="lt-loading"><span class="lt-spinner"></span>Loading…</div>';
 
 const NAV=[
-  {g:'Overview',items:[['dashboard','Dashboard','monitoring']]},
-  {g:'Customers',items:[['customers','Customers','teams']]},
-  {g:'Hosting',items:[['services','Services','instances'],['products','Products','applications'],['plans','Plans','templates'],['environments','Environments','settings']]},
-  {g:'Infrastructure',items:[['nodes','Nodes','nodes'],['deployments','Deployments','schedules']]},
-  {g:'Commercial',items:[['subscriptions','Subscriptions','storage'],['transactions','Transactions','security'],['pricing','Pricing','settings']]},
-  {g:'Operations',items:[['domains','Domains','network'],['backups','Backups','backups'],['audit','Audit log','security']]},
-  {g:'System',items:[['settings','Settings','settings']]},
+  {g:'Overview',items:[['dashboard','Dashboard','monitoring','admin.access'],['analytics','Analytics','monitoring','analytics.read']]},
+  {g:'Customers',items:[['customers','Customers','teams','customers.read'],['support','Support tickets','security','tickets.read']]},
+  {g:'Hosting',items:[['services','Services','instances','services.read'],['products','Products','applications','products.read'],['plans','Plans','templates','plans.read'],['environments','Environments','settings','environments.read']]},
+  {g:'Infrastructure',items:[['nodes','Nodes','nodes','nodes.read'],['deployments','Deployments','schedules','services.read']]},
+  {g:'Commercial',items:[['subscriptions','Subscriptions','storage','billing.read'],['transactions','Transactions','security','billing.read'],['pricing','Pricing','settings','billing.read']]},
+  {g:'Operations',items:[['domains','Domains','network','domains.read'],['backups','Backups','backups','backups.read'],['audit','Audit log','security','audit.read'],['notifications','Notifications','settings','notifications.read']]},
+  {g:'System',items:[['roles','Roles & access','security','roles.read'],['settings','Settings','settings','settings.read']]},
 ];
 
 function shell(){
-  const nav=NAV.map(g=>`<div class="admin-nav-group"><div class="admin-nav-label">${g.g}</div>${g.items.map(i=>`<a class="admin-nav-item" href="#/${i[0]}" data-view="${i[0]}">${iconImg(i[2],16)}<span>${i[1]}</span></a>`).join('')}</div>`).join('');
+  const nav=NAV.map(g=>{const items=g.items.filter(i=>can(i[3]));return items.length?`<div class="admin-nav-group"><div class="admin-nav-label">${g.g}</div>${items.map(i=>`<a class="admin-nav-item" href="#/${i[0]}" data-view="${i[0]}">${iconImg(i[2],16)}<span>${i[1]}</span></a>`).join('')}</div>`:'';}).join('');
   root.innerHTML=`<div class="admin-shell">
     <aside class="admin-sidebar" id="aSidebar"><a class="lt-brand" href="#/dashboard">${brandMark(30)}<span class="lt-brand-word">.light<span class="lt-brand-sub">Admin Center</span></span></a>
       ${nav}<div class="admin-health"><div class="admin-health-row"><span>Platform</span>${badge('active')}</div><div class="admin-health-row"><span>API</span>${badge('active')}</div><div class="admin-health-row"><span>Shade</span><span id="aHealth">—</span></div></div>
@@ -45,7 +46,7 @@ function shell(){
       <div class="lt-breadcrumb"><span>Administration</span><span class="sep">/</span><span class="cur" id="aCrumb">Dashboard</span></div>
       <div class="lt-topbar-spacer"></div>
       <div class="lt-global-search admin-search"><input id="aSearch" placeholder="Search records…"></div>
-      <button class="lt-icon-btn" title="Notifications">🔔</button>
+      <button class="lt-icon-btn" id="aNotifBtn" title="Notifications" style="position:relative">🔔<span class="lt-badge-count" id="aNotifCount" style="display:none">0</span></button>
       <div class="lt-user-menu"><button class="lt-btn lt-btn-ghost lt-btn-sm" id="aUser">${esc(admin?.name||admin?.email||'Admin')} ▾</button></div>
     </header><main class="admin-content" id="aView">${loading()}</main></div></div>`;
   root.querySelector('#aToggle')?.addEventListener('click',()=>{const s=root.querySelector('#aSidebar'),sc=root.querySelector('#aScrim');const o=s.classList.toggle('is-open');sc.style.display=o?'block':'none';});
@@ -53,6 +54,31 @@ function shell(){
   root.querySelector('#aUser').addEventListener('click',(e)=>{e.stopPropagation();const ex=root.querySelector('.admin-user-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(admin?.email||'')}</div><a href="/login#/settings">Account settings</a><a href="/">Public site</a><button id="aLogout">Sign out</button>`;root.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#aLogout').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');location.href='/login';});});
   // health
   try{fetch('/health').then(r=>r.json()).then(h=>{const el=root.querySelector('#aHealth');if(el)el.innerHTML=badge(h.status==='ok'?'active':'degraded');});}catch{}
+  root.querySelector('#aNotifBtn')?.addEventListener('click',(e)=>{e.stopPropagation();openAdminNotifPanel(e.currentTarget);});
+  if(adminImpersonatedBy){
+    const bar=document.createElement('div');bar.className='lt-impersonation-bar';
+    bar.innerHTML=`<span>⚠ Impersonating <strong>${esc(admin?.email||'')}</strong></span><button class="lt-btn lt-btn-sm" id="aExitImp">Exit</button>`;
+    root.querySelector('.admin-main')?.prepend(bar);
+    bar.querySelector('#aExitImp')?.addEventListener('click',()=>{api.setToken('');location.href='/login';});
+  }
+  loadAdminUnread();
+}
+
+async function loadAdminUnread(){
+  try{const r=await api.unreadNotifications();const el=root.querySelector('#aNotifCount');if(el){el.textContent=r.unread>99?'99+':r.unread;el.style.display=r.unread?'inline-block':'none';}}catch{}
+}
+async function openAdminNotifPanel(anchor){
+  const ex=document.querySelector('.lt-notif-panel');if(ex){ex.remove();return;}
+  const p=document.createElement('div');p.className='lt-notif-panel';
+  p.innerHTML='<div class="lt-notif-head">Notifications <button class="lt-btn lt-btn-ghost lt-btn-sm" id="anpReadAll">Mark all read</button></div><div id="anpList">'+loading()+'</div>';
+  document.body.appendChild(p);
+  const rect=anchor.getBoundingClientRect();p.style.top=(rect.bottom+8)+'px';p.style.right=Math.max(8,window.innerWidth-rect.right)+'px';
+  const load=async()=>{try{const r=await api.notifications(30);const list=p.querySelector('#anpList');
+    list.innerHTML=r.notifications.length?r.notifications.map(n=>`<div class="lt-notif-item ${n.read?'':'is-unread'}"><div class="lt-notif-dot ${esc(n.type)}"></div><div style="flex:1;min-width:0"><div class="lt-notif-title">${esc(n.title)}</div><div class="lt-notif-msg">${esc(n.message)}</div><div class="lt-meta">${fmtAgo(n.createdAt)}</div></div></div>`).join(''):'<div class="lt-notif-empty">You’re all caught up.</div>';
+  }catch(e){p.querySelector('#anpList').innerHTML=e.message;}};
+  p.querySelector('#anpReadAll').addEventListener('click',async()=>{try{await api.markAllNotificationsRead();await loadAdminUnread();await load();toast('All marked as read','success');}catch(e){toast(e.message,'error');}});
+  await load();loadAdminUnread();
+  setTimeout(()=>{const h=(ev)=>{if(!p.contains(ev.target)&&!anchor.contains(ev.target)){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);
 }
 
 function route(){const v=(location.hash||'#/dashboard').replace(/^#\/?/,'').split('?')[0];setNav(v);render(v);}
@@ -60,7 +86,7 @@ function setNav(v){root.querySelectorAll('[data-view]').forEach(a=>a.classList.t
 
 async function render(v){
   stopPoll();currentView=v;const view=root.querySelector('#aView');if(!view)return;
-  const R={dashboard:dashboard,customers:customers,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,settings:settings};
+  const R={dashboard:dashboard,analytics:analytics,customers:customers,support:support,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,notifications:notifications,roles:roles,settings:settings};
   view.innerHTML=loading();try{await (R[v]||dashboard)();}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;}}
 function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 function poll(fn,ms=15000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&admin)fn().catch(()=>{});},ms);}
@@ -85,12 +111,19 @@ async function dashboard(){
 }
 
 async function customers(){
-  const view=root.querySelector('#aView');let users=[];try{users=(await api.adminUsers()).users;}catch{}
+  const view=root.querySelector('#aView');let users=[],roles=[];
+  try{[users,roles]=await Promise.all([api.adminUsers(),api.roles()]);users=users.users||[];roles=roles.roles||[];}catch{}
   const q=(root.querySelector('#aSearch')?.value||'').toLowerCase();
   const list=users.filter(u=>!q||(u.email+' '+(u.name||'')+' '+(u.username||'')).toLowerCase().includes(q));
+  const roleOpts=[{value:'user',label:'user'},{value:'admin',label:'admin'},...roles.map(r=>({value:r.id,label:r.name}))];
   view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Customers</h1><p class="lt-page-subtitle">${users.length} registered accounts</p></div></div>
-    ${panel('Customer directory','',table(['ID','Email','Username','Role','Status','Joined','Last login',''],list.map(u=>`<tr><td class="lt-td-mono">${esc(u.id)}</td><td class="lt-td-strong">${esc(u.email)}</td><td>${esc(u.username||'—')}</td><td>${badge(u.role)}</td><td>${badge(u.status)}</td><td>${fmtAgo(u.created_at)}</td><td>${fmtAgo(u.last_login)}</td><td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-customer="${u.id}">Manage</button></td></tr>`)))}`;
-  view.querySelectorAll('[data-customer]').forEach(b=>b.addEventListener('click',async()=>{const u=users.find(x=>x.id===b.dataset.customer);const d=await modal('Manage customer',`<p style="font-size:13px">${esc(u.email)}</p>${sel('Role','role',['user','admin'],u.role)}${sel('Status','status',['active','suspended'],u.status)}`,{ok:'Save'});if(d){await api.updateUser(u.id,d);toast('Customer updated','success');customers();}}));
+    ${panel('Customer directory','',table(['ID','Email','Username','Role','Status','Joined','Last login',''],list.map(u=>`<tr><td class="lt-td-mono">${esc(u.id)}</td><td class="lt-td-strong">${esc(u.email)}</td><td>${esc(u.username||'—')}</td><td>${badge(u.role)}</td><td>${badge(u.status)}</td><td>${fmtAgo(u.created_at)}</td><td>${fmtAgo(u.last_login)}</td><td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-customer="${u.id}">Manage</button>${can('*')&&u.role!=='admin'?` <button class="lt-btn lt-btn-ghost lt-btn-sm" data-imp="${u.id}">Impersonate</button>`:''}</td></tr>`)))}`;
+  view.querySelectorAll('[data-customer]').forEach(b=>b.addEventListener('click',async()=>{const u=users.find(x=>x.id===b.dataset.customer);const d=await modal('Manage customer',`<p style="font-size:13px">${esc(u.email)}</p>${sel('Role','role',roleOpts,u.role)}${sel('Status','status',['active','suspended'],u.status)}`,{ok:'Save'});if(d){try{await api.updateUser(u.id,d);toast('Customer updated','success');customers();}catch(e){toast(e.message,'error');}}}));
+  view.querySelectorAll('[data-imp]').forEach(b=>b.addEventListener('click',async()=>{
+    if(!await confirmDialog('Impersonate user','A temporary session will be created as this user. This action is recorded in the audit log.'))return;
+    try{const r=await api.impersonate(b.dataset.imp);api.setToken(r.token);toast('Impersonation started — redirecting','success');location.href='/login';}
+    catch(e){toast(e.message,'error');}
+  }));
 }
 
 async function services(){
@@ -149,10 +182,100 @@ const fmtBytes=(b)=>{b=Number(b||0);return b>1073741824?(b/1073741824).toFixed(1
 async function audit(){const view=root.querySelector('#aView');let e=[];try{e=(await api.audit()).events||[];}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Audit log</h1></div>${panel('Administrative & lifecycle events','',table(['Time','Action','Target type','Target ID','Details'],e.slice(0,100).map(x=>`<tr><td class="lt-td-mono">${fmtTime(x.ts)}</td><td>${esc(x.action)}</td><td>${esc(x.target_type||'—')}</td><td class="lt-td-mono">${esc(x.target_id||'—')}</td><td class="lt-td-mono">${esc((x.details||'').slice(0,80))}</td></tr>`)))}`;}
 async function settings(){const view=root.querySelector('#aView');let b={};try{b=await api.branding();}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Platform settings</h1></div>${panel('Branding & identity','',`<p class="lt-meta">Product: ${esc(b.product)} · Owner: ${esc(b.identity?.owner)} · Domain: ${esc(b.domain)}</p><p class="lt-meta">Branding is configured by the self-hoster through environment variables. Ownership attribution is embedded in the software and cannot be removed.</p>`)}`;}
 
+async function analytics(){
+  const view=root.querySelector('#aView');let a;
+  try{a=await api.analytics();}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;return;}
+  const s=a.summary||{};
+  const cards=[['Users',s.users,'registered'],['Workspaces',s.teams,'total'],['Services',s.instances,`${s.runningInstances} running`],
+    ['Nodes online',`${s.nodesOnline}/${s.nodes}`,'connected'],['Open tickets',s.openTickets,'awaiting reply'],
+    ['Revenue',fmtMoney(s.revenueCents||0),`${s.paidTransactions||0} paid transactions`]]
+    .map(([l,v,x])=>`<div class="lt-card admin-stat"><div class="lt-label">${l}</div><div class="admin-stat-value" style="margin-top:8px">${esc(v)}</div><div class="lt-meta">${esc(x)}</div></div>`).join('');
+  const spark=(series,color)=>{const max=Math.max(1,...series.map(x=>x.count||x.amount||0));return `<div class="admin-spark">${series.map(x=>{const v=x.count??x.amount??0;return `<div class="admin-spark-bar" style="height:${Math.max(2,Math.round(v/max*100))}%;background:${color}" title="${esc(x.day)}: ${v}"></div>`;}).join('')}</div>`;};
+  const dist=(rows,key='count')=>rows?.length?rows.map(r=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--lt-border);font-size:12px"><span>${esc(r.status||r.category||r.plan_id||r.priority||'—')}</span><strong>${r[key]}</strong></div>`).join(''):'<p class="lt-meta">No data</p>';
+  view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Analytics</h1><p class="lt-page-subtitle">Platform-wide metrics from persisted data</p></div></div>
+    <div class="admin-grid admin-grid-4" style="margin-bottom:14px">${cards}</div>
+    <div class="admin-grid admin-grid-2">
+      ${panel('Signups · last 30 days','',spark(a.signups||[],'var(--lt-ember-500)'))}
+      ${panel('Revenue · last 30 days','',spark(a.revenue||[],'var(--lt-success, #4C9B8A)'))}
+      ${panel('Services by category','',dist(a.instancesByCategory))}
+      ${panel('Services by status','',dist(a.instancesByStatus))}
+      ${panel('Subscriptions by plan','',dist(a.subscriptionsByPlan))}
+      ${panel('Tickets by priority','',dist(a.ticketsByPriority))}
+      ${panel('Nodes','',table(['Node','Region','Status','Workloads','CPU','Memory'],(a.nodes||[]).map(n=>`<tr><td class="lt-td-strong">${esc(n.name)}</td><td>${esc(n.region)}</td><td>${badge(n.status)}</td><td>${n.workloads}</td><td>${Math.round(n.cpu_used)}%</td><td>${Math.round(n.mem_used)}%</td></tr>`)))}
+      ${panel('Recent activity','',table(['Time','Action','Target'],(a.recentActivity||[]).map(x=>`<tr><td class="lt-td-mono">${fmtTime(x.ts)}</td><td>${esc(x.action)}</td><td class="lt-td-mono">${esc(x.target_id||'—')}</td></tr>`)))}
+    </div>`;
+  poll(async()=>{if(currentView==='analytics')await analytics();},30000);
+}
+
+async function support(){
+  const view=root.querySelector('#aView');let t=[];
+  try{t=(await api.adminTickets()).tickets||[];}catch{}
+  const rows=t.map(x=>`<tr><td class="lt-td-strong">${esc(x.subject)}</td><td>${esc(x.userEmail||'—')}</td><td>${esc(x.category)}</td>
+    <td><span class="admin-badge ${x.priority==='urgent'||x.priority==='high'?'danger':x.priority==='low'?'neutral':'warning'}">${esc(x.priority)}</span></td>
+    <td>${badge(x.status)}</td><td>${x.messageCount}</td><td>${fmtAgo(x.updatedAt)}</td><td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-t="${esc(x.id)}">Open</button></td></tr>`).join('');
+  view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Support tickets</h1><p class="lt-page-subtitle">${t.length} customer requests</p></div></div>
+    ${panel('All tickets','',table(['Subject','Customer','Category','Priority','Status','Msgs','Updated',''],rows))}`;
+  view.querySelectorAll('[data-t]').forEach(b=>b.addEventListener('click',async()=>openAdminTicket(b.dataset.t)));
+}
+
+async function openAdminTicket(id){
+  let t;try{t=(await api.adminTicket(id)).ticket;}catch(e){toast(e.message,'error');return;}
+  const msgs=t.messages.map(m=>`<div style="padding:10px 0;border-bottom:1px solid var(--lt-border)"><div style="display:flex;justify-content:space-between"><strong>${m.isStaff?'Staff':esc(m.author?.email||'Customer')}</strong><span class="lt-meta">${fmtTime(m.createdAt)}</span></div><div style="font-size:13px;line-height:1.6;margin-top:5px;white-space:pre-wrap">${esc(m.message)}</div></div>`).join('');
+  const body=`<div style="max-height:240px;overflow:auto;margin-bottom:14px">${msgs||'<p class="lt-meta">No messages.</p>'}</div>
+    <form id="tf">${sel('Status','status',['open','pending','closed'],t.status)}${sel('Priority','priority',['low','normal','high','urgent'],t.priority)}<div class="lt-field"><label>Reply</label><textarea class="lt-textarea" name="message" placeholder="Write a reply…"></textarea></div></form>`;
+  const d=await modal(`Ticket: ${t.subject}`,body,{ok:'Update & reply'});
+  if(!d)return;
+  try{
+    if(d.status!==t.status||d.priority!==t.priority)await api.adminUpdateTicket(id,{status:d.status,priority:d.priority});
+    if(d.message?.trim())await api.adminReplyTicket(id,d.message);
+    toast('Ticket updated','success');support();
+  }catch(e){toast(e.message,'error');}
+}
+
+async function notifications(){
+  const view=root.querySelector('#aView');let r={notifications:[],unread:0};
+  try{r=await api.notifications(200);}catch{}
+  const rows=r.notifications.map(n=>`<tr><td>${badge(n.type)}</td><td class="lt-td-strong">${esc(n.title)}</td><td>${esc(n.message)}</td><td>${n.read?'read':badge('pending')}</td><td>${fmtTime(n.createdAt)}</td></tr>`).join('');
+  view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Notifications</h1><p class="lt-page-subtitle">${r.unread} unread</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-secondary" id="nReadAll">Mark all read</button><button class="lt-btn lt-btn-primary" id="nBroadcast">Broadcast</button></div></div>
+    ${panel('Notification feed','',table(['Type','Title','Message','State','Created'],rows))}`;
+  view.querySelector('#nReadAll').addEventListener('click',async()=>{try{await api.markAllNotificationsRead();await loadAdminUnread();notifications();toast('Done','success');}catch(e){toast(e.message,'error');}});
+  view.querySelector('#nBroadcast').addEventListener('click',async()=>{
+    const d=await modal('Broadcast notification',fld('Title','title','text','','required')+ta('Message','message')+sel('Type','type',['info','success','warning','danger'])+`<label class="lt-auth-terms"><input type="checkbox" name="broadcast" checked> Send to all active users</label>`,{ok:'Send'});
+    if(!d)return;d.broadcast=!!d.broadcast;
+    try{await api.broadcastNotification(d);toast('Broadcast sent','success');notifications();}catch(e){toast(e.message,'error');}
+  });
+}
+
+async function roles(){
+  const view=root.querySelector('#aView');let roles=[],perms=[];
+  try{[roles,perms]=await Promise.all([api.roles(),api.permissions()]);roles=roles.roles||[];perms=perms.permissions||[];}catch{}
+  const rows=roles.map(r=>`<tr><td class="lt-td-strong">${esc(r.name)} ${r.system?badge('active'):''}</td><td>${esc(r.description||'—')}</td>
+    <td class="lt-td-mono" style="max-width:420px;white-space:normal">${(r.permissions||[]).map(p=>`<span class="admin-badge neutral" style="margin:1px">${esc(p)}</span>`).join('')||'—'}</td>
+    <td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-r="${esc(r.id)}">Edit</button>${r.system?'':` <button class="lt-btn lt-btn-danger lt-btn-sm" data-rd="${esc(r.id)}">Delete</button>`}</td></tr>`).join('');
+  view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Roles & access</h1><p class="lt-page-subtitle">Custom roles grant a subset of administrative permissions</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-primary" id="addRole">+ New role</button></div></div>
+    ${panel('Roles','',table(['Role','Description','Permissions',''],rows))}
+    <p class="lt-meta" style="margin-top:12px">The built-in administrator role always has every permission and cannot be edited. System roles cannot be deleted.</p>`;
+  const form=(r={})=>`<form id="rf">${fld('Role ID','name','text',r.id||'','required pattern="[a-z0-9_-]+"')}${fld('Description','description','text',r.description||'')}
+    <div class="lt-field"><label>Permissions</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:220px;overflow:auto;border:1px solid var(--lt-border);border-radius:8px;padding:10px">
+    ${perms.map(p=>`<label class="lt-auth-terms" style="font-size:11px"><input type="checkbox" name="permissions" value="${esc(p)}" ${(r.permissions||[]).includes(p)?'checked':''}> ${esc(p)}</label>`).join('')}</div></div></form>`;
+  view.querySelector('#addRole').addEventListener('click',async()=>{const d=await modal('New role',form(),{ok:'Create'});if(!d)return;
+    d.permissions=Array.isArray(d.permissions)?d.permissions:[d.permissions].filter(Boolean);
+    try{await api.createRole(d);toast('Role created','success');roles();}catch(e){toast(e.message,'error');}});
+  view.querySelectorAll('[data-r]').forEach(b=>b.addEventListener('click',async()=>{const r=roles.find(x=>x.id===b.dataset.r);const d=await modal(`Edit role: ${r.name}`,form(r),{ok:'Save'});if(!d)return;
+    d.permissions=Array.isArray(d.permissions)?d.permissions:[d.permissions].filter(Boolean);
+    try{await api.updateRole(r.id,d);toast('Role saved','success');roles();}catch(e){toast(e.message,'error');}}));
+  view.querySelectorAll('[data-rd]').forEach(b=>b.addEventListener('click',async()=>{if(await confirmDialog('Delete role','Users assigned to this role must be reassigned first.')){
+    try{await api.deleteRole(b.dataset.rd);toast('Role deleted','success');roles();}catch(e){toast(e.message,'error');}}}));
+}
+
 window.addEventListener('hashchange',route);
 async function boot(){
-  try{const me=await api.me();admin=me.user;}catch{api.setToken('');location.href='/login';return;}
-  if(admin.role!=='admin'){location.href='/login';return;}
+  let me;
+  try{me=await api.me();}catch{api.setToken('');location.href='/login';return;}
+  admin=me.user;adminPermissions=me.permissions||[];adminImpersonatedBy=me.impersonatedBy||null;
+  if(!can('admin.access')){location.href='/login';return;}
   shell();route();
 }
 boot();

@@ -44,11 +44,14 @@ server/
   branding.js       - publicBranding() merges white-label + immutable watermark
   secrets.js        - auto-generates JWT_SECRET/NODE_TOKEN on first start
   audit.js          - audit logging
+  permissions.js    - permission catalogue, hasPermission / requirePermission, real-admin guard
+  notifications.js  - persisted notification helpers (users, teams, admins)
   reset-admin.js    - admin reset utility
   api/
     auth.js, billing.js, github.js, features.js, catalog.js, subscriptions.js,
     environments.js, instances.js, nodes.js, deployments.js, domains.js,
-    backups.js, schedules.js, admin.js, agent.js, stats.js
+    backups.js, schedules.js, admin.js, agent.js, stats.js,
+    notifications.js, tickets.js, analytics.js
 agent/
   config.js         - SHADE_* env config
   index.js          - agent main loop, command execution, log streaming
@@ -115,7 +118,7 @@ start.js            - process supervisor
 
 ## 6. VERIFICATION
 
-- `npm test` → 30/30 tests pass (unit, API, auth, E2E provisioning, tenant isolation, features with real TOTP computation).
+- `npm test` → 36/36 tests pass (unit, API, auth, E2E provisioning, tenant isolation, features with real TOTP, plus notifications, tickets, analytics, RBAC and impersonation).
 - Admin dashboard verified rendering via headless Chrome after fixing `poll is not a function` bug.
 - Clean routes all return HTTP 200.
 - E2E verified: register → create server → agent provisions real container → lifecycle → delete.
@@ -131,15 +134,21 @@ start.js            - process supervisor
 
 ## 8. REMAINING / NOT DONE (honest)
 
-- Customer dashboard was showing auth screen in one headless test due to a stale token in `_boot.html` (token_version mismatch after 2FA operations) — regenerate fresh token with `node C:\tmp\mkboot2.js /login` to test; the app itself is fine.
+**Completed this session (previously listed as outstanding):**
+- Granular custom RBAC roles + fully audited admin impersonation — DONE (`server/permissions.js`, `roles` table, scoped `imp` JWT, permission-aware admin nav, per-section API enforcement).
+- Support tickets backend + customer/admin UI — DONE (`server/api/tickets.js`, tables `support_tickets` / `support_ticket_messages`, threaded replies, status/priority, notifications).
+- Notifications backend + customer/admin UI — DONE (`server/notifications.js`, `server/api/notifications.js`, bell/unread badge, broadcasts, mark-read).
+- Analytics detail — DONE (`server/api/analytics.js`, admin Analytics view with real persisted-data aggregates).
+- Fixed broken customer `renderNotifications` / `renderSupport` references and the admin `table()` array-comma bug.
+- Deleted all dev-only `_boot.html` / test boot pages — no token boot artifacts remain.
+
+**Still outstanding:**
 - ACME certificate issuance delegated to Caddy (not native).
-- Granular custom RBAC roles / impersonation not implemented (single admin role).
 - Payment methods beyond Stripe not added (PayPal etc listed as possibilities only).
 - Webhook raw-body for GitHub uses `req.rawBody` from express.json verify — works.
-- `public/_boot.html` is a dev-only test artifact — DELETE before production.
 - `.env` contains real secrets (local dev) — gitignored, never commit.
-- Frontend for some admin modules (support tickets, notifications, analytics detail, roles) are nav items but use generic panels; backend for many exists but some (support tickets, notifications CRUD) are not built.
 - Git-based builds: `agent/build.js` exists but real repo builds need GITHUB credentials + proper build images tested.
+- Local Linux note: Node 26 cannot compile `better-sqlite3@11`; use Node 24 (`~/.nvm/versions/node/v24.21.0/bin`) after a Windows zip restore, and start the agent with sudo for Docker socket access.
 
 ## 9. HOW TO RUN / TEST
 

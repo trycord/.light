@@ -110,12 +110,39 @@ const api = {
   updateSchedule: (id, data) => request(`/api/schedules/${id}`, { method: 'PATCH', body: data }),
   deleteSchedule: (id) => request(`/api/schedules/${id}`, { method: 'DELETE' }),
   templates: () => request('/api/catalog/templates'),
-  plans: () => request('/api/catalog/plans'),
   adminUsers: () => request('/api/admin/users'),
   updateUser: (id, data) => request(`/api/admin/users/${id}`, { method: 'PATCH', body: data }),
   audit: () => request('/api/admin/audit'),
   teams: () => request('/api/admin/teams'),
   setTeamPlan: (id, planId) => request(`/api/admin/teams/${id}/plan`, { method: 'PATCH', body: { planId } }),
+
+  // Notifications
+  notifications: (limit) => request('/api/notifications' + (limit ? '?limit=' + limit : '')),
+  unreadNotifications: () => request('/api/notifications/unread'),
+  markNotificationRead: (id) => request(`/api/notifications/${id}/read`, { method: 'PATCH', body: {} }),
+  markAllNotificationsRead: () => request('/api/notifications/read-all', { method: 'POST', body: {} }),
+  deleteNotification: (id) => request(`/api/notifications/${id}`, { method: 'DELETE' }),
+  broadcastNotification: (data) => request('/api/notifications', { method: 'POST', body: data }),
+
+  // Support tickets
+  tickets: (all) => request('/api/tickets' + (all ? '?all=true' : '')),
+  ticket: (id) => request(`/api/tickets/${id}`),
+  createTicket: (data) => request('/api/tickets', { method: 'POST', body: data }),
+  replyTicket: (id, message) => request(`/api/tickets/${id}/messages`, { method: 'POST', body: { message } }),
+  updateTicket: (id, data) => request(`/api/tickets/${id}`, { method: 'PATCH', body: data }),
+  adminTickets: (status) => request('/api/admin/tickets' + (status ? '?status=' + encodeURIComponent(status) : '')),
+  adminTicket: (id) => request(`/api/admin/tickets/${id}`),
+  adminUpdateTicket: (id, data) => request(`/api/admin/tickets/${id}`, { method: 'PATCH', body: data }),
+  adminReplyTicket: (id, message) => request(`/api/admin/tickets/${id}/messages`, { method: 'POST', body: { message } }),
+
+  // Analytics & RBAC
+  analytics: () => request('/api/admin/analytics'),
+  roles: () => request('/api/admin/roles'),
+  permissions: () => request('/api/admin/permissions'),
+  createRole: (data) => request('/api/admin/roles', { method: 'POST', body: data }),
+  updateRole: (id, data) => request(`/api/admin/roles/${id}`, { method: 'PATCH', body: data }),
+  deleteRole: (id) => request(`/api/admin/roles/${id}`, { method: 'DELETE' }),
+  impersonate: (id) => request(`/api/admin/users/${id}/impersonate`, { method: 'POST', body: {} }),
 };
 
 window.__LT_API__ = api;

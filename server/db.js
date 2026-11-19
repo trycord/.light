@@ -206,6 +206,23 @@ const TABLES = {
     id INTEGER PRIMARY KEY AUTOINCREMENT, team_id TEXT, user_id TEXT, action TEXT NOT NULL,
     target_type TEXT NOT NULL DEFAULT '', target_id TEXT NOT NULL DEFAULT '',
     details TEXT NOT NULL DEFAULT '{}', ip TEXT NOT NULL DEFAULT '', ts INTEGER NOT NULL)`,
+  notifications: `CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY, user_id TEXT, team_id TEXT,
+    type TEXT NOT NULL DEFAULT 'info', title TEXT NOT NULL,
+    message TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '{}',
+    read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
+  support_tickets: `CREATE TABLE IF NOT EXISTS support_tickets (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, user_id TEXT NOT NULL,
+    subject TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'general',
+    priority TEXT NOT NULL DEFAULT 'normal', status TEXT NOT NULL DEFAULT 'open',
+    assigned_to TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER)`,
+  support_ticket_messages: `CREATE TABLE IF NOT EXISTS support_ticket_messages (
+    id TEXT PRIMARY KEY, ticket_id TEXT NOT NULL, user_id TEXT NOT NULL,
+    message TEXT NOT NULL, is_staff INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
+  roles: `CREATE TABLE IF NOT EXISTS roles (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT NOT NULL DEFAULT '',
+    permissions TEXT NOT NULL DEFAULT '[]', system INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 };
 
 const LEGACY_COLUMNS = {
@@ -251,6 +268,11 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(status, sort_order)',
   'CREATE INDEX IF NOT EXISTS idx_subscriptions_team ON subscriptions(team_id, id)',
   'CREATE INDEX IF NOT EXISTS idx_transactions_team ON transactions(team_id, id)',
+  'CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_notifications_team ON notifications(team_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_tickets_team ON support_tickets(team_id, status, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_tickets_status ON support_tickets(status, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_ticket_messages ON support_ticket_messages(ticket_id, created_at)',
 ];
 
 function migrate() {
@@ -399,6 +421,15 @@ function seed() {
       db.prepare('INSERT INTO team_members (team_id, user_id, role, created_at) VALUES (?, ?, ?, ?)').run(teamId, uid, 'owner', ts);
     })();
   }
+
+  // System RBAC roles. Built-in 'admin' is implicit and always has every permission;
+  // these are opt-in examples that an administrator can clone or edit.
+  const insertRole = db.prepare('INSERT OR IGNORE INTO roles (id, name, description, permissions, system, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)');
+  for (const r of [
+    ['support', 'Support agent', 'Handles customer support tickets', ['admin.access', 'tickets.read', 'tickets.write', 'customers.read', 'notifications.read']],
+    ['analyst', 'Analyst', 'Read-only analytics and commercial reporting', ['admin.access', 'analytics.read', 'customers.read', 'billing.read', 'services.read', 'audit.read']],
+    ['readonly', 'Read-only', 'Can browse the administration center without making changes', ['admin.access', 'customers.read', 'services.read', 'products.read', 'plans.read', 'environments.read', 'nodes.read', 'billing.read', 'domains.read', 'backups.read', 'audit.read', 'tickets.read', 'notifications.read', 'analytics.read', 'roles.read', 'settings.read']],
+  ]) insertRole.run(r[0], r[1], r[2], JSON.stringify(r[3]), ts, ts);
 
   if (config.nodeToken) {
     const nid = process.env.NODE_ID || 'node-01';
