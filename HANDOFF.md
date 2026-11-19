@@ -142,6 +142,9 @@ start.js            - process supervisor
 - Fixed broken customer `renderNotifications` / `renderSupport` references and the admin `table()` array-comma bug.
 - Deleted all dev-only `_boot.html` / test boot pages — no token boot artifacts remain.
 
+**Platform decisions applied this session:**
+- Only the `free` plan exists. A one-time migration (`only_free_plan`) reassigned all subscriptions/teams to Free and deleted every other plan; the seed now inserts only Free.
+
 **Still outstanding:**
 - ACME certificate issuance delegated to Caddy (not native).
 - Payment methods beyond Stripe not added (PayPal etc listed as possibilities only).

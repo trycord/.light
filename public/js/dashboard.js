@@ -72,7 +72,7 @@ function renderAuth(mode='login') {
     ${!reg?`<div class="lt-auth-divider">or continue with</div><div class="lt-field"><label for="f-sso">Organization email (SSO)</label><input class="lt-input" id="f-sso" type="email" placeholder="you@company.com"></div><button class="lt-btn lt-btn-secondary" id="ssoBtn" style="width:100%">${esc(brand.sso?.label||'Continue with SSO')}</button>`:''}
     <div class="lt-auth-footer">${esc(brand.attribution||'.light POWERED BY TRYCORD')} · ${esc(brand.tagline||'Universal hosting platform')}<div class="lt-auth-watermark"><span class="lt-wm-mark">ΔΓΟ</span> <a href="${esc(brand.watermark?.source||'https://trycord.dev')}" target="_blank">${esc(brand.watermark?.short||'POWERED BY TRYCORD')}</a></div></div>
   </div></section></div>`;
-  app.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>renderAuth(b.dataset.mode)));
+  app.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click',()=>{const mode=b.dataset.mode;if(location.hash!==`#/${mode}`)location.hash=`#/${mode}`;renderAuth(mode);}));
   app.querySelector('#togglePw')?.addEventListener('click',()=>{const i=app.querySelector('#f-password'),b=app.querySelector('#togglePw');const s=i.type==='password';i.type=s?'text':'password';b.textContent=s?'◌':'◉';});
   app.querySelector('#forgotBtn')?.addEventListener('click',async()=>{const d=await modal('Reset password',field('Email or username','identity','text','','required'),{confirm:'Send link'});if(!d)return;try{const r=await api.forgotPassword(d.identity);toast(r.ok?'Reset link sent':(r.message||'Email disabled — contact administrator'),r.ok?'success':'info');}catch(e){toast(e.message,'error');}});
   app.querySelector('#ssoBtn')?.addEventListener('click',()=>{const s=brand.sso||{},email=app.querySelector('#f-sso')?.value.trim();if(!s.enabled||!s.url){toast('SSO not configured — contact your administrator','info');return;}if(!email){toast('Enter your organization email','warning');return;}location.href=s.url+(s.url.includes('?')?'&':'?')+'login_hint='+encodeURIComponent(email);});
@@ -88,14 +88,16 @@ function renderAuth(mode='login') {
 
 const NAV=[
   {group:'Overview',items:[{v:'overview',label:'Dashboard',i:'monitoring'}]},
-  {group:'Hosting',items:[{v:'servers',label:'All Servers',i:'instances'},{v:'game',label:'Game Servers',i:'game-servers'},{v:'web',label:'Applications',i:'applications'},{v:'websites',label:'Websites',i:'network'},{v:'database',label:'Databases',i:'storage'}]},
+  {group:'Hosting',items:[{v:'market',label:'Marketplace',i:'applications'},{v:'servers',label:'All Servers',i:'instances'},{v:'game',label:'Game Servers',i:'game-servers'},{v:'web',label:'Applications',i:'applications'},{v:'websites',label:'Websites',i:'network'},{v:'database',label:'Databases',i:'storage'}]},
   {group:'Management',items:[{v:'deployments',label:'Deployments',i:'schedules'},{v:'domains',label:'Domains',i:'network'},{v:'backups',label:'Backups',i:'backups'},{v:'schedules',label:'Schedules',i:'schedules'},{v:'files',label:'Files',i:'storage'}]},
   {group:'Account',items:[{v:'usage',label:'Usage & Resources',i:'monitoring'},{v:'billing',label:'Billing & Plans',i:'settings'},{v:'notifications',label:'Notifications',i:'settings'},{v:'support',label:'Support',i:'security'},{v:'settings',label:'Settings',i:'settings'},{v:'admin',label:'Administration',i:'security',admin:true}]},
 ];
+// Views that leave the customer SPA and load a separate application.
+const EXTERNAL_VIEWS = { admin: '/admin' };
 
 function renderShell(){
   const nav=NAV.map(g=>{const items=g.items.filter(i=>!i.admin||session.user.role==='admin');if(!items.length)return '';
-    return `<nav class="lt-nav-section"><div class="lt-nav-section-label">${esc(g.group)}</div>${items.map(i=>`<a class="lt-nav-item" href="#/${i.v}" data-nav="${i.v}">${iconImg(i.i,17)}<span>${esc(i.label)}</span></a>`).join('')}</nav>`;}).join('');
+    return `<nav class="lt-nav-section"><div class="lt-nav-section-label">${esc(g.group)}</div>${items.map(i=>`<a class="lt-nav-item" href="${EXTERNAL_VIEWS[i.v]||`#/${i.v}`}" data-nav="${i.v}">${iconImg(i.i,17)}<span>${esc(i.label)}</span></a>`).join('')}</nav>`;}).join('');
   app.innerHTML=`<div class="lt-shell">
     <aside class="lt-sidebar" id="sidebar"><a class="lt-brand" href="#/overview">${brandMark(32)}<span class="lt-brand-word">${esc(brand.product||'.light')}<span class="lt-brand-sub">${esc((brand.tagline||'Universal hosting platform').split(' ')[0])}</span></span></a>${nav}
     <div class="lt-nav-footer"><div class="lt-watermark"><span class="lt-wm-mark">ΔΓΟ</span> <a href="https://trycord.dev" target="_blank">POWERED BY TRYCORD</a></div></div></aside>
@@ -111,7 +113,7 @@ function renderShell(){
     </header><main class="lt-content" id="view">${loading()}</main></div></div>`;
   app.querySelector('#navToggle')?.addEventListener('click',()=>{const s=app.querySelector('#sidebar'),sc=app.querySelector('#scrim');const open=s.classList.toggle('is-open');sc.style.display=open?'block':'none';});
   app.querySelector('#scrim')?.addEventListener('click',()=>{app.querySelector('#sidebar').classList.remove('is-open');app.querySelector('#scrim').style.display='none';});
-  app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="#/admin" ${session.user.role!=='admin'?'style="display:none"':''}>Administration</a><a href="/">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});
+  app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="/admin" ${session.user.role!=='admin'?'style="display:none"':''}>Administration</a><a href="/">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});
   app.querySelector('#globalSearch')?.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&e.target.value.trim()){serversState.search=e.target.value.trim();location.hash='#/servers';setTimeout(()=>renderServers(),50);}});
   app.querySelector('#notifBtn')?.addEventListener('click',(e)=>{e.stopPropagation();openNotifPanel(e.currentTarget);});
   if(session?.impersonatedBy){
@@ -143,14 +145,22 @@ async function openNotifPanel(anchor){
   await load();loadUnread();
   setTimeout(()=>{const h=(ev)=>{if(!p.contains(ev.target)&&!anchor.contains(ev.target)){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);
 }
-function setActive(v){app.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===v));const labels={overview:'Dashboard',servers:'All Servers',game:'Game Servers',web:'Applications',websites:'Websites',database:'Databases',deployments:'Deployments',domains:'Domains',backups:'Backups',schedules:'Schedules',files:'Files',usage:'Usage & Resources',billing:'Billing & Plans',notifications:'Notifications',support:'Support',settings:'Settings',admin:'Administration',server:'Server',verify:'Verify',reset:'Reset'};const c=app.querySelector('#crumb');if(c)c.textContent=labels[v]||v;}
+function setActive(v){app.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===v));const labels={overview:'Dashboard',market:'Marketplace',servers:'All Servers',game:'Game Servers',web:'Applications',websites:'Websites',database:'Databases',deployments:'Deployments',domains:'Domains',backups:'Backups',schedules:'Schedules',files:'Files',usage:'Usage & Resources',billing:'Billing & Plans',notifications:'Notifications',support:'Support',settings:'Settings',admin:'Administration',server:'Server',verify:'Verify',reset:'Reset'};const c=app.querySelector('#crumb');if(c)c.textContent=labels[v]||v;}
 function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 function poll(fn,ms=8000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&session)fn().catch(()=>{});},ms);}
 function parseHash(){const raw=(location.hash||'#/overview').replace(/^#\/?/,'');const [p,q]=raw.split('?');const [v,param]=p.split('/');return{v:v||'overview',param,query:new URLSearchParams(q||'')};}
 
 /* ---------- router ---------- */
-async function navigate(){if(!session)return;const{v,param,query}=parseHash();setActive(v);stopPoll();currentView=v;currentParam=param;const view=app.querySelector('#view');if(!view)return;
-  const R={overview:renderOverview,servers:renderServers,game:()=>renderServers('game'),web:()=>renderServers('web'),websites:()=>renderServers('website'),database:()=>renderServers('database'),deployments:renderDeployments,domains:renderDomains,backups:renderBackups,schedules:renderSchedules,files:renderFiles,usage:renderUsage,billing:renderBilling,notifications:renderNotifications,support:renderSupport,settings:renderSettings,admin:renderAdmin,server:()=>renderServer(param),verify:()=>renderVerify(query),reset:()=>renderReset(query)};
+async function navigate(){
+  const{v,param,query}=parseHash();
+  const publicRoute=['verify','reset'].includes(v);
+  if(!session&&!publicRoute)return;
+  if(!app.querySelector('#view')){
+    if(session)renderShell();
+    else app.innerHTML='<main class="lt-content" id="view"></main>';
+  }
+  setActive(v);stopPoll();currentView=v;currentParam=param;const view=app.querySelector('#view');if(!view)return;
+  const R={overview:renderOverview,market:()=>renderMarketplace(),marketplace:()=>renderMarketplace(),servers:renderServers,game:()=>renderServers('game'),web:()=>renderServers('web'),websites:()=>renderServers('website'),database:()=>renderServers('database'),deployments:renderDeployments,domains:renderDomains,backups:renderBackups,schedules:renderSchedules,files:renderFiles,usage:renderUsage,billing:renderBilling,notifications:renderNotifications,support:renderSupport,settings:renderSettings,admin:renderAdmin,server:()=>renderServer(param),verify:()=>renderVerify(query),reset:()=>renderReset(query)};
   view.innerHTML=loading();try{await (R[v]||renderOverview)();}catch(e){view.innerHTML=errState(e);}
 }
 
@@ -158,14 +168,20 @@ window.addEventListener('hashchange',navigate);
 window.addEventListener('lt:unauthorized',()=>{toast('Session expired','error');api.setToken('');session=null;renderAuth('login');});
 
 async function boot(){try{brand=await api.branding();}catch{}document.documentElement.setAttribute('data-theme',localStorage.getItem('lt_theme')||'dark');document.title=brand.docTitle||'.light';let f=document.querySelector('link[rel=icon]');if(f&&brand.favicon)f.href=brand.favicon;
-  if(!api.token()){const h=(location.hash||'').toLowerCase();renderAuth(h.includes('register')?'register':'login');return;}
-  try{session=await api.me();renderShell();await navigate();await loadUnread();}catch(e){api.setToken('');renderAuth('login');}
+  const{v}=parseHash();
+  if(!api.token()){
+    // Email links (#/verify, #/reset) must work even before signing in.
+    if(['verify','reset'].includes(v)){await navigate();return;}
+    renderAuth(['register','signup'].includes(v)?'register':'login');return;
+  }
+  try{session=await api.me();renderShell();await navigate();await loadUnread();}
+  catch(e){api.setToken('');const{v:hashView}=parseHash();if(['verify','reset'].includes(hashView)){await navigate();}else renderAuth('login');}
 }
 boot();
 
 /* ---------- views ---------- */
 async function renderVerify(q){const v=app.querySelector('#view'),t=q?.get('token');let msg='',ok=false;if(t){try{await api.verifyEmail(t);ok=true;msg='Your email has been verified.';}catch(e){msg=e.message;}}else msg='Open the verification link from your email.';
-  v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Verify email</h1></div>${section('Verification','', `<p style="font-size:13px;color:var(--lt-text-secondary)">${esc(msg)}</p><div style="margin-top:16px;display:flex;gap:8px"><button class="lt-btn lt-btn-secondary" id="resend">Resend verification</button><a class="lt-btn lt-btn-primary" href="#/overview">Continue</a></div>`)}`;
+  v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Verify email</h1></div>${section('Verification','', `<p style="font-size:13px;color:var(--lt-text-secondary)">${esc(msg)}</p><div style="margin-top:16px;display:flex;gap:8px"><button class="lt-btn lt-btn-secondary" id="resend">Resend verification</button><a class="lt-btn lt-btn-primary" href="${session?'#/overview':'/login'}">Continue</a></div>`)}`;
   v.querySelector('#resend')?.addEventListener('click',async()=>{try{const r=await api.resendVerification();toast(r.ok?'Sent':(r.reason||'Unavailable'),r.ok?'success':'info');}catch(e){toast(e.message,'error');}});
 }
 async function renderReset(q){const v=app.querySelector('#view'),t=q?.get('token');
@@ -195,7 +211,7 @@ async function renderServers(category='all'){
   const pages=Math.max(1,Math.ceil(rows.length/serversState.per));if(serversState.page>pages)serversState.page=pages;
   const paged=rows.slice((serversState.page-1)*serversState.per,serversState.page*serversState.per);
   const cats=[['all','All Servers'],['game','Game Servers'],['web','Applications'],['website','Websites'],['database','Databases']];
-  const table=paged.map(i=>`<tr><td><a class="lt-td-strong" href="#/server/${i.id}" style="color:var(--lt-text);text-decoration:none">${esc(i.name)}</a><div class="lt-meta">${esc(i.image)}</div></td><td>${esc(i.category)}</td><td>${badge(i.status)}</td><td class="lt-td-mono">${i.cpuCores} / ${i.memoryMb}MB</td><td class="lt-td-mono">${(i.ports||[]).map(p=>p.container).join(', ')||'—'}</td><td>${fmtAgo(i.createdAt)}</td><td><a class="lt-btn lt-btn-ghost lt-btn-sm" href="#/server/${i.id}">Manage</a></td></tr>`).join('');
+  const table=paged.map(i=>`<tr><td><a class="lt-td-strong" href="#/server/${i.id}" style="color:var(--lt-text);text-decoration:none">${esc(i.name)}</a><div class="lt-meta">${esc(i.image)}</div></td><td>${esc(i.category)}</td><td>${badge(i.status)}</td><td class="lt-td-mono">${i.cpuCores} / ${i.memoryMb}MB</td><td class="lt-td-mono">${(i.ports||[]).map(p=>p.host?`${p.container}→${p.host}`:`${p.container} (auto)`).join(', ')||'—'}</td><td>${fmtAgo(i.createdAt)}</td><td><a class="lt-btn lt-btn-ghost lt-btn-sm" href="#/server/${i.id}">Manage</a></td></tr>`).join('');
   v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">${(cats.find(c=>c[0]===serversState.category)||cats[0])[1]}</h1><p class="lt-page-subtitle">${list.instances.length} total services</p></div><div class="lt-page-actions"><button class="lt-btn lt-btn-primary" id="createBtn">+ Create Server</button></div></div>
     <div class="lt-toolbar"><div class="lt-search-field"><input class="lt-input" id="srvSearch" placeholder="Search servers…" value="${esc(serversState.search)}"></div>
       ${selectField('Status','statusFilter',[['all','All statuses'],['running','Running'],['stopped','Stopped'],['deploying','Deploying'],['error','Error']],serversState.status)}

@@ -5,7 +5,11 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import autoSecrets from './server/secrets.js';
+// Load .env in the supervisor so both child processes (panel + Shade) inherit
+// the same configuration. Previously only the panel loaded it via server/config.js.
+dotenv.config();
 autoSecrets();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

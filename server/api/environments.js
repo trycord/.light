@@ -33,8 +33,8 @@ export function environmentsRoutes() {
     const J = (v) => JSON.stringify(v ?? []);
     getDb().prepare(`INSERT INTO environments (id, name, category, description, icon, versions, default_version, image, image_digest, architectures,
       default_command, default_entrypoint, working_dir, build_capable, package_managers, default_env, exposed_ports, healthcheck, storage,
-      resource_recommendations, lifecycle, security, status, featured, sort_order, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      resource_recommendations, lifecycle, security, version_images, status, featured, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(eid, str(b.name), str(b.category || 'runtime'), str(b.description, 1000), str(b.icon || '◈', 20), J(b.versions), str(b.defaultVersion || b.versions?.[0] || 'latest'),
         str(b.image), str(b.imageDigest || '', 200), J(b.architectures || ['amd64']), str(b.defaultCommand || '', 500), str(b.defaultEntrypoint || '', 300),
         str(b.workingDir || '/app', 200), b.buildCapable ? 1 : 0, J(b.packageManagers), JSON.stringify(b.defaultEnv || {}), J(b.exposedPorts),

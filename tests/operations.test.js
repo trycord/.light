@@ -29,6 +29,17 @@ const email = `ops-${suffix}@test.dev`;
 const password = 'ops-test-password-123';
 let adminToken, userToken, userId, teamId;
 
+test('platform offers only the Free plan', async () => {
+  const token = await adminLogin();
+  const admin = await req('/api/admin/plans', { token });
+  assert.equal(admin.status, 200);
+  assert.deepEqual(admin.body.plans.map((p) => p.id), ['free']);
+  const catalog = await req('/api/catalog/plans', { token });
+  assert.equal(catalog.status, 200);
+  assert.ok(catalog.body.plans.length >= 1);
+  assert.deepEqual([...new Set(catalog.body.plans.map((p) => p.id))], ['free']);
+});
+
 test('setup: admin and customer credentials', async () => {
   adminToken = await adminLogin();
   const reg = await req('/api/auth/register', { method: 'POST', body: { email, password, name: 'Ops Test', username: `ops_${suffix}`, acceptTerms: true } });

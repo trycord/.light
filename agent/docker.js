@@ -65,6 +65,28 @@ function parsePort(port) {
   return { port: Number(match[1]), protocol: match[2] || 'tcp' };
 }
 
+/**
+ * Build Docker port bindings from a service's requested ports.
+ * A host value of 0 (or unset) means "auto" — Docker picks a free ephemeral
+ * host port. This prevents `Bind for 0.0.0.0:80 failed: port is already allocated`
+ * when several services expose the same container port.
+ */
+export function buildPortBindings(ports = []) {
+  const exposedPorts = {};
+  const portBindings = {};
+  for (const p of ports || []) {
+    if (!p) continue;
+    const parsed = parsePort(p.protocol ? `${p.container}/${p.protocol}` : p.container);
+    if (!parsed) continue;
+    const key = `${parsed.port}/${parsed.protocol}`;
+    exposedPorts[key] = {};
+    const host = Number(p.host);
+    const hostPort = Number.isFinite(host) && host > 0 ? String(Math.trunc(host)) : '';
+    portBindings[key] = [{ HostIp: '0.0.0.0', HostPort: hostPort }];
+  }
+  return { exposedPorts, portBindings };
+}
+
 async function ensureImage(image) {
   try { await getDocker().getImage(image).inspect(); return; } catch { /* pull */ }
   await new Promise((resolve, reject) => {
@@ -87,15 +109,10 @@ export async function createInstance(payload) {
     fs.mkdirSync(hostPath, { recursive: true });
     binds.push(`${hostPath}:${volume.path}`);
   });
-  const portBindings = {};
-  const exposedPorts = {};
-  for (const p of ports || []) {
-    const parsed = parsePort(p.container);
-    if (!parsed) continue;
-    const key = `${parsed.port}/${parsed.protocol}`;
-    exposedPorts[key] = {};
-    portBindings[key] = [{ HostPort: String(p.host || parsed.port) }];
-  }
+  const { exposedPorts, portBindings } = buildPortBindings(ports);
+  // A failed previous attempt can leave a created-but-unstarted container behind.
+  const stale = d.getContainer(containerName(instanceId));
+  try { await stale.inspect(); try { await stale.remove({ force: true }); } catch { /* ignore */ } } catch { /* none */ }
   const container = await d.createContainer({
     Image: image,
     name: containerName(instanceId),
@@ -119,7 +136,18 @@ export async function createInstance(payload) {
     },
   });
   await container.start();
-  return { containerId: container.id, name: containerName(instanceId) };
+  // Report the real host ports allocated by Docker back to the control plane.
+  const info = await container.inspect();
+  const assigned = [];
+  for (const p of ports || []) {
+    if (!p) continue;
+    const parsed = parsePort(p.protocol ? `${p.container}/${p.protocol}` : p.container);
+    if (!parsed) continue;
+    const key = `${parsed.port}/${parsed.protocol}`;
+    const binding = info.NetworkSettings?.Ports?.[key]?.[0];
+    assigned.push({ container: parsed.port, host: binding?.HostPort ? Number(binding.HostPort) : 0, protocol: parsed.protocol });
+  }
+  return { containerId: container.id, name: containerName(instanceId), ports: assigned };
 }
 
 async function withContainer(instanceId, fn) {

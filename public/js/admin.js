@@ -81,7 +81,12 @@ async function openAdminNotifPanel(anchor){
   setTimeout(()=>{const h=(ev)=>{if(!p.contains(ev.target)&&!anchor.contains(ev.target)){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);
 }
 
-function route(){const v=(location.hash||'#/dashboard').replace(/^#\/?/,'').split('?')[0];setNav(v);render(v);}
+function route(){
+  const v=(location.hash||'#/dashboard').replace(/^#\/?/,'').split('?')[0]||'dashboard';
+  const allowed=NAV.flatMap(g=>g.items).filter(i=>can(i[3])).map(i=>i[0]);
+  if(!allowed.includes(v)){const fallback=allowed[0]||'dashboard';if(v!==fallback){location.replace('#/'+fallback);return;}}
+  setNav(v);render(v);
+}
 function setNav(v){root.querySelectorAll('[data-view]').forEach(a=>a.classList.toggle('active',a.dataset.view===v));const c=root.querySelector('#aCrumb');if(c)c.textContent=v.charAt(0).toUpperCase()+v.slice(1);}
 
 async function render(v){

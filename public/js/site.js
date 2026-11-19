@@ -52,7 +52,7 @@ function layout(brand, content, active = '') {
     <header class="site-header"><div class="site-wrap site-nav">
       <a href="/" class="site-brand"><img src="${esc(brand.logo || '/assets/logos/light-primary.svg')}" height="34" alt="${product}"></a>
       <nav class="site-links">
-        <a href="/#products" class="${active === 'products' ? 'active' : ''}">Products</a>
+        <a href="/hosting" class="${active === 'products' ? 'active' : ''}">Products</a>
         <a href="/#features">Features</a>
         <a href="/pricing" class="${active === 'pricing' ? 'active' : ''}">Pricing</a>
         <a href="/docs">Docs</a><a href="/about">About</a>
@@ -67,7 +67,7 @@ function layout(brand, content, active = '') {
       <div class="site-footer-grid">
         <div><div class="site-brand" style="margin-bottom:10px"><img src="${esc(brand.wordmark || '/assets/logos/light-wordmark.svg')}" height="26" alt="${product}"></div>
           <p class="site-muted">Universal hosting for games, apps, websites and more. Infrastructure made simple.</p></div>
-        <div><h4>Product</h4><a href="/#products">Products</a><a href="/pricing">Pricing</a><a href="/docs">Documentation</a></div>
+        <div><h4>Product</h4><a href="/hosting">Products</a><a href="/pricing">Pricing</a><a href="/docs">Documentation</a></div>
         <div><h4>Company</h4><a href="/about">About</a><a href="/contact">Contact</a><a href="/legal">Legal</a></div>
         <div><h4>Account</h4><a href="/login">Dashboard</a><a href="/login#register">Create account</a></div>
       </div>

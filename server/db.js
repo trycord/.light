@@ -105,6 +105,7 @@ const TABLES = {
     exposed_ports TEXT NOT NULL DEFAULT '[]', healthcheck TEXT NOT NULL DEFAULT '{}',
     storage TEXT NOT NULL DEFAULT '{}', resource_recommendations TEXT NOT NULL DEFAULT '{}',
     lifecycle TEXT NOT NULL DEFAULT '[]', security TEXT NOT NULL DEFAULT '{}',
+    version_images TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL DEFAULT 'published', featured INTEGER NOT NULL DEFAULT 0,
     sort_order INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
   builds: `CREATE TABLE IF NOT EXISTS builds (
@@ -202,6 +203,7 @@ const TABLES = {
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
     ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '')`,
+  migrations: `CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`,
   audit_logs: `CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, team_id TEXT, user_id TEXT, action TEXT NOT NULL,
     target_type TEXT NOT NULL DEFAULT '', target_id TEXT NOT NULL DEFAULT '',
@@ -238,7 +240,8 @@ const LEGACY_COLUMNS = {
   nodes: { availability: "TEXT NOT NULL DEFAULT 'active'", cpu_used: 'REAL NOT NULL DEFAULT 0', mem_used: 'REAL NOT NULL DEFAULT 0', disk_used: 'REAL NOT NULL DEFAULT 0', net_in: 'REAL NOT NULL DEFAULT 0', net_out: 'REAL NOT NULL DEFAULT 0', temp: 'REAL NOT NULL DEFAULT 0' },
   deployments: { instance_id: "TEXT NOT NULL DEFAULT ''", team_id: "TEXT NOT NULL DEFAULT ''", source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", ref: "TEXT NOT NULL DEFAULT 'main'", commit_sha: "TEXT NOT NULL DEFAULT ''", command: "TEXT NOT NULL DEFAULT ''", created_at: 'INTEGER NOT NULL DEFAULT 0' },
   metric_samples: { instance_id: 'TEXT', temp: 'REAL NOT NULL DEFAULT 0' },
-  instances: { volumes_json: "TEXT NOT NULL DEFAULT '[]'", category: "TEXT NOT NULL DEFAULT 'web'", type: "TEXT NOT NULL DEFAULT 'custom'", container_id: 'TEXT', environment_id: 'TEXT', environment_version: 'TEXT', source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", build_command: "TEXT NOT NULL DEFAULT ''", install_command: "TEXT NOT NULL DEFAULT ''" },
+  instances: { volumes_json: "TEXT NOT NULL DEFAULT '[]'", category: "TEXT NOT NULL DEFAULT 'web'", type: "TEXT NOT NULL DEFAULT 'custom'", container_id: 'TEXT', environment_id: 'TEXT', environment_version: 'TEXT', source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", build_command: "TEXT NOT NULL DEFAULT ''", install_command: "TEXT NOT NULL DEFAULT ''", health_status: "TEXT NOT NULL DEFAULT 'unknown'", provision_attempts: 'INTEGER NOT NULL DEFAULT 0', generation: 'INTEGER NOT NULL DEFAULT 1' },
+  environments: { version_images: "TEXT NOT NULL DEFAULT '{}'" },
 };
 
 const INDEXES = [
@@ -288,6 +291,18 @@ function migrate() {
 
 function seed() {
   const ts = now();
+
+  // One-time platform decision: only the Free plan is offered. Reassign any
+  // subscriptions/workspaces on other plans to Free before removing them.
+  if (!db.prepare("SELECT name FROM migrations WHERE name = 'only_free_plan'").get()) {
+    db.transaction(() => {
+      db.prepare("UPDATE subscriptions SET plan_id = 'free', source = 'preset', custom_config = '{}', price_monthly = 0, updated_at = ? WHERE plan_id IS NOT NULL AND plan_id <> 'free'").run(ts);
+      db.prepare("UPDATE teams SET plan_id = 'free', updated_at = ? WHERE plan_id IS NOT NULL AND plan_id <> 'free'").run(ts);
+      db.prepare("DELETE FROM plans WHERE id <> 'free'").run();
+      db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('only_free_plan', ?)").run(ts);
+    })();
+  }
+
   // Pricing configuration (server-side source of truth for custom plans).
   if (!db.prepare('SELECT id FROM pricing_config LIMIT 1').get()) {
     db.prepare(`INSERT INTO pricing_config (id, currency, tax_percent, price_cpu, price_memory_mb, price_disk_gb, price_network_gb, price_instance,
@@ -323,43 +338,85 @@ function seed() {
   ];
   for (const p of products) insertProduct.run(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], JSON.stringify(p[8]), JSON.stringify(p[9]), 'published', p[10], p[11], p[12], 'USD', ts, ts);
 
-  // Shade universal environment registry (data-driven runtime catalogue).
+  // Shade runtime catalogue. Debian is the fixed OS foundation for every
+  // workload — only the runtime and its explicit versions are selectable.
   const insertEnv = db.prepare(`INSERT OR IGNORE INTO environments (id, name, category, description, icon, versions, default_version, image, image_digest,
     architectures, default_command, default_entrypoint, working_dir, build_capable, package_managers, default_env, exposed_ports, healthcheck,
-    storage, resource_recommendations, lifecycle, security, status, featured, sort_order, created_at, updated_at)
+    storage, resource_recommendations, lifecycle, security, version_images, status, featured, sort_order, created_at, updated_at)
     VALUES (@id, @name, @category, @description, @icon, @versions, @default_version, @image, @image_digest,
     @architectures, @default_command, @default_entrypoint, @working_dir, @build_capable, @package_managers, @default_env, @exposed_ports, @healthcheck,
-    @storage, @resource_recommendations, @lifecycle, @security, @status, @featured, @sort_order, @created_at, @updated_at)`);
+    @storage, @resource_recommendations, @lifecycle, @security, @version_images, @status, @featured, @sort_order, @created_at, @updated_at)`);
   const J = (v) => JSON.stringify(v ?? []);
-  const E = (id, name, category, description, icon, versions, def, image, cmd, ports, opts = {}) => ({
-    id, name, category, description, icon, versions: J(versions), default_version: def, image, image_digest: opts.digest || '',
-    architectures: J(['amd64','arm64']), default_command: cmd, default_entrypoint: '', working_dir: opts.dir || '/app',
-    build_capable: opts.build ? 1 : 0, package_managers: J(opts.pm || []), default_env: J(opts.env || {}),
-    exposed_ports: J(ports), healthcheck: J({}), storage: J(opts.storage || {}), resource_recommendations: J({}),
-    lifecycle: J(opts.lifecycle || ['start','stop','restart','deploy']), security: J({}),
-    status: 'published', featured: opts.featured ? 1 : 0, sort_order: opts.order || 0, created_at: ts, updated_at: ts,
-  });
+  // `images` maps every selectable version to an exact Debian-based image ref.
+  // No version is ever substituted: a missing mapping is a seed error.
+  const E = (id, name, category, description, icon, versions, def, images, cmd, ports, opts = {}) => {
+    const map = typeof images === 'string' ? Object.fromEntries(versions.map((v) => [v, images])) : images;
+    const missing = versions.filter((v) => !map[v]);
+    if (missing.length) throw new Error(`runtime ${id} has no image for version(s): ${missing.join(', ')}`);
+    return {
+      id, name, category, description, icon, versions: J(versions), default_version: def, image: map[def], image_digest: opts.digest || '',
+      architectures: J(['amd64','arm64']), default_command: cmd, default_entrypoint: '', working_dir: opts.dir || '/app',
+      build_capable: opts.build ? 1 : 0, package_managers: J(opts.pm || []), default_env: J(opts.env || {}),
+      exposed_ports: J(ports), healthcheck: J(opts.healthcheck || {}), storage: J(opts.storage || {}), resource_recommendations: J({}),
+      lifecycle: J(opts.lifecycle || ['start','stop','restart','deploy']), security: J(opts.security || {}),
+      version_images: J(map), status: 'published', featured: opts.featured ? 1 : 0,
+      sort_order: opts.order || 0, created_at: ts, updated_at: ts,
+    };
+  };
   const persistent = { persistent: true };
   const envs = [
-    E('node','Node.js','runtime','JavaScript and TypeScript runtime','◈',['18','20','22','24'],'22','node:22-alpine','npm start',['3000'],{build:1,pm:['npm','yarn','pnpm'],featured:1,order:1}),
-    E('bun','Bun','runtime','Fast JavaScript runtime and toolkit','◈',['latest','1.1'],'latest','oven/bun:1-alpine','bun run start',['3000'],{build:1,pm:['bun','npm'],order:2}),
-    E('deno','Deno','runtime','Secure TypeScript runtime','◈',['latest','2.0'],'latest','denoland/deno:alpine','deno run --allow-net --allow-env main.ts',['8000'],{build:1,pm:['deno'],order:3}),
-    E('python','Python','runtime','Python with pip, Poetry and uv','◈',['3.11','3.12','3.13'],'3.12','python:3.12-alpine','python main.py',['8000'],{build:1,pm:['pip','pipx','poetry','uv'],featured:1,order:4}),
-    E('java','OpenJDK / JVM','runtime','Java with Maven and Gradle','◈',['17','21','25'],'21','eclipse-temurin:21-jre-alpine','java -jar application.jar',['8080'],{build:1,pm:['maven','gradle'],order:5}),
-    E('dotnet','.NET','runtime','.NET SDK and ASP.NET Core','◈',['8','9','10'],'10','mcr.microsoft.com/dotnet/aspnet:10.0-alpine','dotnet application.dll',['8080'],{build:1,pm:['dotnet','nuget'],order:6}),
-    E('go','Go','runtime','Go compiled applications','◈',['latest','1.22'],'latest','golang:1.22-alpine','./application',['8080'],{build:1,pm:['go'],order:7}),
-    E('rust','Rust','runtime','Rust compiled applications','◈',['latest','1.75'],'latest','rust:1.75-alpine','./application',['8080'],{build:1,pm:['cargo'],order:8}),
-    E('php','PHP','runtime','PHP applications and frameworks','◈',['8.2','8.3'],'8.3','php:8.3-cli-alpine','php -S 0.0.0.0:8080 -t public',['8080'],{build:1,pm:['composer'],order:9}),
-    E('ruby','Ruby','runtime','Ruby and Rails applications','◈',['3.2','3.3'],'3.3','ruby:3.3-alpine','bundle exec ruby app.rb',['8080'],{build:1,pm:['bundler','gem'],order:10}),
-    E('postgres','PostgreSQL','database','PostgreSQL relational database','▤',['16','15','14'],'16','postgres:16-alpine','',['5432'],{dir:'/var/lib/postgresql/data',env:{POSTGRES_PASSWORD:''},storage:persistent,featured:1,order:11,lifecycle:['start','stop','restart','backup','restore']}),
-    E('mariadb','MariaDB','database','MariaDB relational database','▤',['11','10'],'11','mariadb:11-alpine','',['3306'],{dir:'/var/lib/mysql',env:{MARIADB_ROOT_PASSWORD:''},storage:persistent,order:12,lifecycle:['start','stop','restart','backup','restore']}),
-    E('mongodb','MongoDB','database','MongoDB document database','▤',['7','6'],'7','mongo:7','',['27017'],{dir:'/data/db',storage:persistent,order:13,lifecycle:['start','stop','restart','backup','restore']}),
-    E('redis','Redis','database','Redis in-memory data store','▤',['7','6'],'7','redis:7-alpine','',['6379'],{dir:'/data',storage:persistent,featured:1,order:14,lifecycle:['start','stop','restart','backup','restore']}),
-    E('valkey','Valkey','database','Valkey open-source Redis alternative','▤',['latest'],'latest','valkey/valkey:alpine','',['6379'],{dir:'/data',storage:persistent,order:15,lifecycle:['start','stop','restart','backup','restore']}),
-    E('minecraft-java','Minecraft Java','game','Minecraft Java Edition server','◆',['1.21.4','1.20.6','latest'],'1.21.4','itzg/minecraft-server:java21','',['25565'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,featured:1,order:16,lifecycle:['start','stop','restart','backup','restore']}),
-    E('minecraft-bedrock','Minecraft Bedrock','game','Minecraft Bedrock Edition server','◆',['latest'],'latest','itzg/minecraft-bedrock-server','',['19132/udp'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,order:17,lifecycle:['start','stop','restart','backup','restore']}),
-    E('discord-bot','Discord Bot','general','Discord bots and background workers','◇',['node','python'],'node','node:22-alpine','npm start',[],{build:1,pm:['npm'],featured:1,order:18}),
-    E('static-site','Static Site','web','Static websites served by Nginx','◇',['latest'],'latest','nginx:alpine','',['80'],{dir:'/usr/share/nginx/html',featured:1,order:19}),
+    E('node','Node.js','runtime','JavaScript and TypeScript on Debian','◈',['18','20','22','24'],'22',
+      {18:'node:18-bookworm',20:'node:20-bookworm',22:'node:22-bookworm',24:'node:24-bookworm'},'npm start',['3000'],{build:1,pm:['npm','yarn','pnpm'],featured:1,order:1}),
+    E('bun','Bun','runtime','Fast JavaScript runtime on Debian','◈',['1.1','1.2'],'1.2',
+      {'1.1':'oven/bun:1.1-slim','1.2':'oven/bun:1.2-slim'},'bun run start',['3000'],{build:1,pm:['bun','npm'],order:2}),
+    E('deno','Deno','runtime','Secure TypeScript runtime on Debian','◈',['1.46','2.0'],'2.0',
+      {'1.46':'denoland/deno:1.46.3','2.0':'denoland/deno:2.0.0'},'deno run --allow-net --allow-env main.ts',['8000'],{build:1,pm:['deno'],order:3}),
+    E('python','Python','runtime','Python with pip, Poetry and uv on Debian','◈',['3.11','3.12','3.13'],'3.12',
+      {'3.11':'python:3.11-slim-bookworm','3.12':'python:3.12-slim-bookworm','3.13':'python:3.13-slim-bookworm'},'python main.py',['8000'],{build:1,pm:['pip','pipx','poetry','uv'],featured:1,order:4}),
+    E('java','Java / JVM','runtime','Java with Maven and Gradle on Debian','◈',['17','21'],'21',
+      {17:'openjdk:17-slim',21:'openjdk:21-slim'},'java -jar application.jar',['8080'],{build:1,pm:['maven','gradle'],order:5}),
+    E('dotnet','.NET','runtime','.NET SDK and ASP.NET Core on Debian','◈',['8','9'],'8',
+      {8:'mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim',9:'mcr.microsoft.com/dotnet/sdk:9.0-bookworm-slim'},'dotnet run',['8080'],{build:1,pm:['dotnet','nuget'],order:6}),
+    E('go','Go','runtime','Go applications on Debian','◈',['1.22','1.23'],'1.23',
+      {'1.22':'golang:1.22-bookworm','1.23':'golang:1.23-bookworm'},'go run .',['8080'],{build:1,pm:['go'],order:7}),
+    E('rust','Rust','runtime','Rust applications on Debian','◈',['1.75','1.82'],'1.82',
+      {'1.75':'rust:1.75-slim-bookworm','1.82':'rust:1.82-slim-bookworm'},'./application',['8080'],{build:1,pm:['cargo'],order:8}),
+    E('php','PHP','runtime','PHP applications and frameworks on Debian','◈',['8.2','8.3'],'8.3',
+      {'8.2':'php:8.2-cli-bookworm','8.3':'php:8.3-cli-bookworm'},'php -S 0.0.0.0:8080 -t public',['8080'],{build:1,pm:['composer'],order:9}),
+    E('ruby','Ruby','runtime','Ruby and Rails on Debian','◈',['3.2','3.3'],'3.3',
+      {'3.2':'ruby:3.2-slim-bookworm','3.3':'ruby:3.3-slim-bookworm'},'bundle exec ruby app.rb',['8080'],{build:1,pm:['bundler','gem'],order:10}),
+    E('cpp','C / C++','runtime','C and C++ compiled applications on Debian','◈',['12','13','14'],'14',
+      {12:'gcc:12-bookworm',13:'gcc:13-bookworm',14:'gcc:14-bookworm'},'./application',['8080'],{build:1,pm:['gcc','g++','make'],order:11}),
+    E('zig','Zig','runtime','Zig applications built on Debian','◈',['0.13','0.14'],'0.13',
+      {'0.13':'debian:bookworm-slim','0.14':'debian:bookworm-slim'},'./application',['8080'],{build:1,pm:['zig'],order:12}),
+    E('lua','Lua','runtime','Lua applications on Debian','◈',['5.1','5.4'],'5.4',
+      {'5.1':'lua:5.1-bookworm','5.4':'lua:5.4-bookworm'},'lua main.lua',['8080'],{build:1,pm:['luarocks'],order:13}),
+    E('perl','Perl','runtime','Perl applications on Debian','◈',['5.36','5.38'],'5.38',
+      {'5.36':'perl:5.36-slim-bookworm','5.38':'perl:5.38-slim-bookworm'},'perl app.pl',['8080'],{build:1,pm:['cpanm'],order:14}),
+    E('elixir','Elixir','runtime','Elixir / BEAM applications on Debian','◈',['1.15','1.16'],'1.16',
+      {'1.15':'elixir:1.15-slim','1.16':'elixir:1.16-slim'},'mix run --no-halt',['4000'],{build:1,pm:['mix','hex'],order:15}),
+    E('erlang','Erlang','runtime','Erlang / OTP applications on Debian','◈',['25','26'],'26',
+      {25:'erlang:25-slim',26:'erlang:26-slim'},'erl -noshell -s main start',['8080'],{build:1,pm:['rebar3'],order:16}),
+    E('swift','Swift','runtime','Swift applications on Debian','◈',['5.9','5.10'],'5.10',
+      {'5.9':'swift:5.9-slim','5.10':'swift:5.10-slim'},'./application',['8080'],{build:1,pm:['swiftpm'],order:17}),
+    E('postgres','PostgreSQL','database','PostgreSQL relational database','▤',['14','15','16'],'16',
+      {14:'postgres:14-bookworm',15:'postgres:15-bookworm',16:'postgres:16-bookworm'},'',['5432'],{dir:'/var/lib/postgresql/data',env:{POSTGRES_PASSWORD:''},storage:persistent,featured:1,order:18,lifecycle:['start','stop','restart','backup','restore']}),
+    E('mariadb','MariaDB','database','MariaDB relational database','▤',['10','11'],'11',
+      {10:'mariadb:10',11:'mariadb:11'},'',['3306'],{dir:'/var/lib/mysql',env:{MARIADB_ROOT_PASSWORD:''},storage:persistent,order:19,lifecycle:['start','stop','restart','backup','restore']}),
+    E('mongodb','MongoDB','database','MongoDB document database','▤',['6','7'],'7',
+      {6:'mongo:6',7:'mongo:7'},'',['27017'],{dir:'/data/db',storage:persistent,order:20,lifecycle:['start','stop','restart','backup','restore']}),
+    E('redis','Redis','database','Redis in-memory data store','▤',['6','7'],'7',
+      {6:'redis:6-bookworm',7:'redis:7-bookworm'},'',['6379'],{dir:'/data',storage:persistent,featured:1,order:21,lifecycle:['start','stop','restart','backup','restore']}),
+    E('valkey','Valkey','database','Valkey open-source Redis alternative','▤',['8'],'8',
+      {8:'valkey/valkey:8-bookworm'},'',['6379'],{dir:'/data',storage:persistent,order:22,lifecycle:['start','stop','restart','backup','restore']}),
+    E('minecraft-java','Minecraft Java','game','Minecraft Java Edition server','◆',['1.20.6','1.21.4'],'1.21.4',
+      {'1.20.6':'itzg/minecraft-server:java21','1.21.4':'itzg/minecraft-server:java21'},'',['25565'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,featured:1,order:23,lifecycle:['start','stop','restart','backup','restore']}),
+    E('minecraft-bedrock','Minecraft Bedrock','game','Minecraft Bedrock Edition server','◆',['latest'],'latest',
+      'itzg/minecraft-bedrock-server','',['19132/udp'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,order:24,lifecycle:['start','stop','restart','backup','restore']}),
+    E('discord-bot','Discord Bot','general','Discord bots and background workers','◇',['node','python'],'node',
+      {node:'node:22-bookworm',python:'python:3.12-slim-bookworm'},'npm start',[],{build:1,pm:['npm'],featured:1,order:25}),
+    E('static-site','Static Site','web','Static websites served by Nginx','◇',['latest'],'latest',
+      'nginx:bookworm','',['80'],{dir:'/usr/share/nginx/html',featured:1,order:26}),
   ];
   for (const e of envs) insertEnv.run(e);
 
@@ -374,13 +431,9 @@ function seed() {
   const insertPlan = db.prepare(`INSERT OR IGNORE INTO plans (id, name, description, category, product_id, cpu_cores, memory_mb, disk_gb, network_gb, instances,
     price_monthly, price_yearly, interval, currency, features, restrictions, status, featured, sort_order, available, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  // Only the free plan is offered on this platform.
   const planData = [
     ['free','Free','Free plan to get started','shared',null,1,512,4,10,3,0,0,'monthly','USD',['Community support','Project subdomain','Basic monitoring'],['Limited resources'],'published',1,1,1],
-    ['starter','Starter','For small personal projects','shared',null,2,2048,20,100,5,800,8000,'monthly','USD',['Email support','Custom domains','Backups'],[],'published',0,2,1],
-    ['basic','Basic','For growing applications','shared',null,2,4096,40,250,10,1600,16000,'monthly','USD',['Priority support','Backups','Monitoring'],[],'published',1,3,1],
-    ['pro','Pro','For production workloads','shared',null,4,8192,80,500,20,3200,32000,'monthly','USD',['Priority support','Advanced monitoring','Backups','SSL'],[],'published',0,4,1],
-    ['advanced','Advanced','For demanding services','dedicated',null,8,16384,160,1000,50,6400,64000,'monthly','USD',['Dedicated resources','Priority support','SSL','Backups'],[],'published',0,5,1],
-    ['enterprise','Enterprise','Custom allocation','dedicated',null,16,32768,500,2000,100,12800,128000,'monthly','USD',['Dedicated resources','Dedicated support','SLA available'],['Contact for custom allocations'],'published',0,6,1],
   ];
   for (const p of planData) insertPlan.run(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], JSON.stringify(p[14]), JSON.stringify(p[15]), p[16], p[17], p[18], p[19], ts, ts);
 

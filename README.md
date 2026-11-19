@@ -48,7 +48,8 @@ Legacy `.html` URLs still redirect to the same pages.
 
 ## Commercial platform
 
-- Backend-configurable products, categories, preset plans and custom pricing (`pricing_config`).
+- Only the **Free** plan is offered; all other plans have been removed and existing workspaces/subscriptions migrated to Free.
+- Backend-configurable products, categories and custom pricing (`pricing_config`).
 - Server-side pricing engine (`server/pricing.js`) — client estimates are never trusted.
 - Subscriptions, transactions, manual activation when no payment provider is configured.
 - Build Your Own Plan configurator with authoritative server-side validation.

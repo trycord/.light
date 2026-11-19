@@ -58,7 +58,17 @@ export function agentRoutes() {
     const sets = [];
     const values = [];
     if (status) { sets.push('status = ?'); values.push(str(status, 40)); }
-    if (command.type === 'instance.create' && ok && result.containerId) { sets.push('container_id = ?'); values.push(str(result.containerId, 200)); }
+    if (command.type === 'instance.create' && ok) {
+      if (result.containerId) { sets.push('container_id = ?'); values.push(str(result.containerId, 200)); }
+      // Docker allocates ephemeral host ports at start time — store the real
+      // mapping so the panel shows where a service is actually reachable.
+      if (Array.isArray(result.ports) && result.ports.length) {
+        const row = getDb().prepare('SELECT ports_json FROM instances WHERE id = ?').get(command.instance_id);
+        let configured = [];
+        try { configured = JSON.parse(row?.ports_json || '[]'); } catch { configured = []; }
+        sets.push('ports_json = ?'); values.push(JSON.stringify(mergeAssignedPorts(configured, result.ports)));
+      }
+    }
     if (sets.length) {
       sets.push('updated_at = ?'); values.push(now(), command.instance_id);
       getDb().prepare(`UPDATE instances SET ${sets.join(', ')} WHERE id = ?`).run(...values);
@@ -105,3 +115,13 @@ function pruneLogs() {
   getDb().prepare('DELETE FROM logs WHERE ts < ?').run(now() - 24 * 60 * 60 * 1000);
 }
 function parse(value) { try { return JSON.parse(value || '{}'); } catch { return {}; } }
+
+/** Merge Docker-assigned host ports into the configured port list. */
+export function mergeAssignedPorts(configured = [], assigned = []) {
+  const byKey = new Map((Array.isArray(assigned) ? assigned : [])
+    .map((p) => [`${p.container}/${p.protocol || 'tcp'}`, Number(p.host) || 0]));
+  return (Array.isArray(configured) ? configured : []).map((p) => {
+    const host = byKey.get(`${p.container}/${p.protocol || 'tcp'}`);
+    return host === undefined ? p : { ...p, host };
+  });
+}
