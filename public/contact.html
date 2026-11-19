@@ -12,7 +12,7 @@ async function boot(){
   const b = await loadBranding();
   const content = `<div class="site-prose">
     <h1>Contact & Support</h1>
-    <p>Need help? Check the <a href="/docs.html">documentation</a> first, then reach out to your operator.</p>
+    <p>Need help? Check the <a href="/docs">documentation</a> first, then reach out to your operator.</p>
     <h2>Support email</h2><p>${b.supportEmail ? `<a href="mailto:${esc(b.supportEmail)}">${esc(b.supportEmail)}</a>` : 'No support email configured by the operator.'}</p>
     <h2>Contact form</h2>
     <form id="contactForm" onsubmit="event.preventDefault();document.getElementById('contactMsg').textContent='Your operator has not configured a contact endpoint. Please use the support email above.'">

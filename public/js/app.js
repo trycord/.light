@@ -91,7 +91,7 @@ function renderAuth(mode = 'login') {
   app.innerHTML = `<div class="lt-auth">
     <section class="lt-auth-brand-panel">
       <div class="lt-auth-brand-inner">
-        <a href="/site.html" class="lt-auth-logo">${brandMark(40)}<span>${esc(brand.product)}</span></a>
+        <a href="/" class="lt-auth-logo">${brandMark(40)}<span>${esc(brand.product)}</span></a>
         <div class="lt-auth-visual" aria-hidden="true">
           <div class="v-glow"></div><div class="v-ring"></div><div class="v-ring alt"></div>
           <div class="v-stack">
@@ -128,7 +128,7 @@ function renderAuth(mode = 'login') {
             </div>
           </div>
           ${isReg
-            ? `<label class="lt-auth-terms"><input type="checkbox" name="acceptTerms" required><span>I accept the <a href="/legal.html" target="_blank">Terms of Service</a> and <a href="/legal.html" target="_blank">Privacy Policy</a>.</span></label>`
+            ? `<label class="lt-auth-terms"><input type="checkbox" name="acceptTerms" required><span>I accept the <a href="/legal" target="_blank">Terms of Service</a> and <a href="/legal" target="_blank">Privacy Policy</a>.</span></label>`
             : `<div style="text-align:right;margin:-2px 0 8px"><button type="button" id="forgotBtn" class="lt-auth-link">Forgot password?</button></div>`}
           <div class="lt-auth-error" id="authError" role="alert"></div>
           <button class="lt-btn lt-btn-primary" type="submit" style="width:100%;margin-top:8px">${isReg ? 'Create account' : 'Sign in'}</button>

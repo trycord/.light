@@ -21,7 +21,7 @@ async function boot(){
         <div class="price">${p.price_monthly ? '$' + (p.price_monthly/100).toFixed(0) + '<span style="font-size:14px;color:var(--lt-text-muted)">/mo</span>' : 'Free'}</div>
         <p class="site-muted">${esc(p.description || '')}</p>
         <ul><li>${p.memory_mb} MB RAM</li><li>${p.disk_gb} GB storage</li><li>${p.cpu_cores} CPU cores</li><li>Up to ${p.instances} instances</li><li>Live console & logs</li><li>Backups & domains</li></ul>
-        <a href="/index.html#register" class="lt-btn ${p.id === 'shared' ? 'lt-btn-primary' : 'lt-btn-secondary'}" style="margin-top:auto">Get Started</a>
+        <a href="/login#register" class="lt-btn ${p.id === 'shared' ? 'lt-btn-primary' : 'lt-btn-secondary'}" style="margin-top:auto">Get Started</a>
       </div>`).join('') || '<div class="site-muted">No plans configured yet.</div>'}
     </div>
     <div class="site-draft" style="max-width:1040px;margin:30px auto 0">Pricing and plan data are loaded from the platform configuration. Contact your operator or administrator for billing, upgrades and custom allocations.</div>

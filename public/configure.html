@@ -57,7 +57,7 @@ async function boot(){
   document.querySelectorAll('[data-iv]').forEach(el=>el.addEventListener('click',()=>{document.querySelectorAll('[data-iv]').forEach(x=>x.classList.remove('active'));el.classList.add('active');state.interval=el.dataset.iv;refresh();}));
   document.getElementById('activate').addEventListener('click',async()=>{
     let r;try{r=await api.activatePlan({custom:{cpuCores:state.cpuCores,memoryMb:state.memoryMb,diskGb:state.diskGb,networkGb:state.networkGb,instances:state.instances},interval:state.interval});}catch(e){alert(e.message);return;}
-    location.href='/index.html#/billing?activated='+(r.subscription?.id||'1');
+    location.href='/login#/billing?activated='+(r.subscription?.id||'1');
   });
   refresh();
 }

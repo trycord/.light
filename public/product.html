@@ -17,7 +17,7 @@ async function boot(){
   const p = data.product||{}, plans=data.plans||[], locs=data.locations||[];
   const interval = new URLSearchParams(location.search).get('interval')==='yearly'?'yearly':'monthly';
   const content = `<section class="site-section"><div class="site-wrap">
-    <a href="/hosting.html" class="site-muted" style="text-decoration:none">← Hosting marketplace</a>
+    <a href="/hosting" class="site-muted" style="text-decoration:none">← Hosting marketplace</a>
     <div style="display:flex;gap:22px;align-items:center;margin:26px 0">
       <div style="width:70px;height:70px;border-radius:16px;background:rgba(255,77,36,.12);border:1px solid var(--lt-border-ember);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--lt-ember-500)">${esc(p.icon)}</div>
       <div><h1 style="font-size:2.2rem;font-weight:800;letter-spacing:-.03em;margin:0">${esc(p.name)}</h1><p class="site-muted" style="margin:6px 0 0">${esc(p.shortDescription||'')}</p></div>
@@ -32,13 +32,13 @@ async function boot(){
       <div class="site-grid" style="margin-top:18px">
         ${plans.map(pl=>`<div class="site-plan ${pl.featured?'featured':''}"><h3>${esc(pl.name)}</h3><div class="price">$${(pl.price/100).toFixed(0)}<span style="font-size:13px;color:var(--lt-text-muted)">/${interval==='yearly'?'yr':'mo'}</span></div>
           <p class="site-muted">${esc(pl.description||'')}</p><ul><li>${pl.memoryMb} MB RAM</li><li>${pl.cpuCores} vCPU</li><li>${pl.diskGb} GB storage</li><li>${pl.instances} instances</li>${(pl.features||[]).map(f=>`<li>✓ ${esc(f)}</li>`).join('')}</ul>
-          <a href="/index.html?plan=${pl.id}#register" class="lt-btn ${pl.featured?'lt-btn-primary':'lt-btn-secondary'}">Get ${esc(pl.name)}</a></div>`).join('') || '<div class="site-muted">No plans available for this product.</div>'}
+          <a href="/login?plan=${pl.id}#register" class="lt-btn ${pl.featured?'lt-btn-primary':'lt-btn-secondary'}">Get ${esc(pl.name)}</a></div>`).join('') || '<div class="site-muted">No plans available for this product.</div>'}
       </div>
     </div>
-    <div style="text-align:center;margin-top:34px"><a href="/configure.html" class="lt-btn lt-btn-secondary">Build your own plan</a></div>
+    <div style="text-align:center;margin-top:34px"><a href="/configure" class="lt-btn lt-btn-secondary">Build your own plan</a></div>
   </div></section>`;
   document.getElementById('site').innerHTML = layout(b, content, 'products');
-  document.querySelectorAll('[data-i]').forEach(el=>el.addEventListener('click',()=>{location.href='/product.html?id='+encodeURIComponent(slug)+'&interval='+el.dataset.i;}));
+  document.querySelectorAll('[data-i]').forEach(el=>el.addEventListener('click',()=>{location.href='/product?id='+encodeURIComponent(slug)+'&interval='+el.dataset.i;}));
 }
 boot();
 </script></body></html>

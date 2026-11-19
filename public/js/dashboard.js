@@ -47,7 +47,7 @@ function renderAuth(mode='login') {
   stopPoll();
   const reg=mode==='register';
   app.innerHTML=`<div class="lt-auth"><section class="lt-auth-brand-panel"><div class="lt-auth-brand-inner">
-    <a href="/site.html" class="lt-auth-logo">${brandMark(40)}<span>${esc(brand.product||'.light')}</span></a>
+    <a href="/" class="lt-auth-logo">${brandMark(40)}<span>${esc(brand.product||'.light')}</span></a>
     <div class="lt-auth-visual" aria-hidden="true"><div class="v-glow"></div><div class="v-ring"></div><div class="v-ring alt"></div><div class="v-stack">
       <div class="lt-auth-node"><div class="row"><span class="led"></span><span class="lt-meta">node-01 · online</span><span class="bars"><i></i><i></i><i></i><i></i></span></div><div class="line"></div><div class="line short"></div></div>
       <div class="lt-auth-node"><div class="row"><span class="led"></span><span class="lt-meta">node-02 · online</span><span class="bars"><i></i><i></i><i></i><i></i></span></div><div class="line"></div><div class="line short"></div></div>
@@ -65,7 +65,7 @@ function renderAuth(mode='login') {
       ${reg?field('Username','username','text','','autocomplete="username" required pattern="[a-zA-Z0-9_]+" placeholder="your_username"'):''}
       ${reg?field('Email','email','email','','autocomplete="email" required placeholder="you@example.com"'):`<div class="lt-field"><label for="f-email">Username or email</label><input class="lt-input" id="f-email" name="email" type="text" autocomplete="username" required placeholder="you@example.com or username"></div>`}
       <div class="lt-field"><label for="f-password">Password</label><div class="lt-input-wrap"><input class="lt-input" id="f-password" name="password" type="password" autocomplete="${reg?'new-password':'current-password'}" required minlength="${reg?10:1}" placeholder="${reg?'At least 10 characters':'Enter your password'}"><button type="button" class="lt-auth-eye" id="togglePw" aria-label="Show password">◉</button></div></div>
-      ${reg?`<label class="lt-auth-terms"><input type="checkbox" name="acceptTerms" required><span>I accept the <a href="/legal.html" target="_blank">Terms of Service</a> and <a href="/legal.html" target="_blank">Privacy Policy</a>.</span></label>`:`<div style="text-align:right;margin:-2px 0 8px"><button type="button" id="forgotBtn" class="lt-auth-link">Forgot password?</button></div>`}
+      ${reg?`<label class="lt-auth-terms"><input type="checkbox" name="acceptTerms" required><span>I accept the <a href="/legal" target="_blank">Terms of Service</a> and <a href="/legal" target="_blank">Privacy Policy</a>.</span></label>`:`<div style="text-align:right;margin:-2px 0 8px"><button type="button" id="forgotBtn" class="lt-auth-link">Forgot password?</button></div>`}
       <div class="lt-auth-error" id="authError" role="alert"></div>
       <button class="lt-btn lt-btn-primary" type="submit" style="width:100%;margin-top:8px">${reg?'Create account':'Sign in'}</button>
     </form>
@@ -106,12 +106,12 @@ function renderShell(){
       <div class="lt-topbar-spacer"></div>
       <div class="lt-global-search"><input id="globalSearch" placeholder="Search servers, domains…" aria-label="Search"></div>
       <button class="lt-icon-btn" id="notifBtn" title="Notifications" style="position:relative">🔔<span class="lt-badge-count" id="notifCount" style="display:none">0</span></button>
-      <a class="lt-icon-btn" href="/docs.html" title="Help">?</a>
+      <a class="lt-icon-btn" href="/docs" title="Help">?</a>
       <div class="lt-user-menu"><button class="lt-btn lt-btn-ghost lt-btn-sm" id="userBtn">${esc(session.user.name||session.user.username||session.user.email)} ▾</button></div>
     </header><main class="lt-content" id="view">${loading()}</main></div></div>`;
   app.querySelector('#navToggle')?.addEventListener('click',()=>{const s=app.querySelector('#sidebar'),sc=app.querySelector('#scrim');const open=s.classList.toggle('is-open');sc.style.display=open?'block':'none';});
   app.querySelector('#scrim')?.addEventListener('click',()=>{app.querySelector('#sidebar').classList.remove('is-open');app.querySelector('#scrim').style.display='none';});
-  app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="#/admin" ${session.user.role!=='admin'?'style="display:none"':''}>Administration</a><a href="/site.html">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});
+  app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="#/admin" ${session.user.role!=='admin'?'style="display:none"':''}>Administration</a><a href="/">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});
   app.querySelector('#globalSearch')?.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&e.target.value.trim()){serversState.search=e.target.value.trim();location.hash='#/servers';setTimeout(()=>renderServers(),50);}});
 }
 function setActive(v){app.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===v));const labels={overview:'Dashboard',servers:'All Servers',game:'Game Servers',web:'Applications',websites:'Websites',database:'Databases',deployments:'Deployments',domains:'Domains',backups:'Backups',schedules:'Schedules',files:'Files',usage:'Usage & Resources',billing:'Billing & Plans',notifications:'Notifications',support:'Support',settings:'Settings',admin:'Administration',server:'Server',verify:'Verify',reset:'Reset'};const c=app.querySelector('#crumb');if(c)c.textContent=labels[v]||v;}
@@ -129,7 +129,7 @@ window.addEventListener('hashchange',navigate);
 window.addEventListener('lt:unauthorized',()=>{toast('Session expired','error');api.setToken('');session=null;renderAuth('login');});
 
 async function boot(){try{brand=await api.branding();}catch{}document.documentElement.setAttribute('data-theme',localStorage.getItem('lt_theme')||'dark');document.title=brand.docTitle||'.light';let f=document.querySelector('link[rel=icon]');if(f&&brand.favicon)f.href=brand.favicon;
-  if(!api.token()){renderAuth('login');return;}
+  if(!api.token()){const h=(location.hash||'').toLowerCase();renderAuth(h.includes('register')?'register':'login');return;}
   try{session=await api.me();renderShell();await navigate();}catch(e){api.setToken('');renderAuth('login');}
 }
 boot();
@@ -290,13 +290,6 @@ async function renderUsage(){const v=app.querySelector('#view'),[us,me]=await Pr
   v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Usage & Resources</h1><p class="lt-page-subtitle">Your current resource consumption</p></div>
     ${section('Usage overview','',`<div class="lt-grid lt-grid-3">${[['Services',us.instances?.running||0],['Nodes online',us.nodes?.online||0],['Deployments',us.deployments?.success||0]].map(([l,x])=>`<div class="lt-card" style="padding:18px"><div class="lt-kpi-label">${l}</div><div class="lt-kpi" style="margin-top:8px">${x}</div></div>`).join('')}</div>`)}`;
 }
-async function renderBilling(){const v=app.querySelector('#view'),[plans,me]=await Promise.all([api.plans(),api.me()]);const cur=plans.plans.find(p=>p.id===me.team?.plan_id)||plans.plans[0];
-  v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Billing & Plans</h1></div><div class="lt-grid lt-grid-2">
-    ${section('Current plan',cur?.name,`<p class="lt-meta">${esc(cur?.description||'')}</p><div class="lt-grid lt-grid-3" style="margin-top:14px">${[['RAM',(cur?.memory_mb||0)+' MB'],['Storage',(cur?.disk_gb||0)+' GB'],['Instances',cur?.instances||0]].map(([l,x])=>`<div><div class="lt-meta">${l}</div><div style="font-weight:700;font-size:18px">${x}</div></div>`).join('')}</div>`)}
-    ${section('Available plans','',plans.plans.map(p=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--lt-border)"><span>${esc(p.name)}</span><span class="lt-meta">${p.memory_mb}MB · ${p.disk_gb}GB · ${p.price_monthly?'$'+(p.price_monthly/100)+'/mo':'Free'}</span></div>`).join(''))}</div>`;
-}
-async function renderNotifications(){const v=app.querySelector('#view');v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Notifications</h1></div>${section('Notification preferences','',`<p class="lt-meta">Notifications are delivered according to your operator's email configuration. Configure email delivery in your environment settings.</p>`)}`;}
-async function renderSupport(){const v=app.querySelector('#view');v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Support</h1></div>${section('Get help','',`<p style="color:var(--lt-text-secondary);font-size:13px;line-height:1.6">Need assistance? Check the <a href="/docs.html" style="color:var(--lt-ember-500)">documentation</a> or contact your operator at <a href="mailto:${esc(brand.supportEmail||'support@trycord.dev')}" style="color:var(--lt-ember-500)">${esc(brand.supportEmail||'support@trycord.dev')}</a>.</p>`)}`;}
 async function renderSettings(){const v=app.querySelector('#view'),[me,sessions]=await Promise.all([api.me(),api.sessions()]);
   v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Settings</h1></div><div class="lt-grid lt-grid-2">
     ${section('Profile','',`<form id="pf">${field('Name','name','text',me.user.name||'')}${field('Username','username','text',me.user.username||'')}<button class="lt-btn lt-btn-primary" type="submit">Save</button></form>`)}
@@ -315,4 +308,49 @@ async function renderAdmin(){const v=app.querySelector('#view'),[users,teams,aud
     ${section('Users','',`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th></tr></thead><tbody>${users.users.map(u=>`<tr><td class="lt-td-strong">${esc(u.email)}</td><td>${esc(u.name||'—')}</td><td>${badge(u.role)}</td><td>${badge(u.status)}</td></tr>`).join('')}</tbody></table></div>`)}
     ${section('Workspaces','',`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Name</th><th>Members</th><th>Services</th><th>Plan</th></tr></thead><tbody>${teams.teams.map(t=>`<tr><td class="lt-td-strong">${esc(t.name)}</td><td>${t.members}</td><td>${t.instances}</td><td>${esc(t.plan_id)}</td></tr>`).join('')}</tbody></table></div>`)}
     ${section('Audit log','',`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Time</th><th>Action</th><th>Target</th></tr></thead><tbody>${audit.events.slice(0,30).map(e=>`<tr><td class="lt-td-mono">${fmtTime(e.ts)}</td><td>${esc(e.action)}</td><td>${esc(e.target_id||'—')}</td></tr>`).join('')}</tbody></table></div>`)}</div>`;
+}
+
+/* ---------- commercial dashboard views ---------- */
+async function renderMarketplace(){
+  const v=app.querySelector('#view');let cats=[],prods=[];
+  try{[cats,prods]=await Promise.all([api.categories(),api.products()]);cats=cats.categories||[];prods=prods.products||[];}catch{}
+  const active=currentParam||'all';
+  const filtered=active==='all'?prods:prods.filter(p=>p.categoryId===active);
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Browse Hosting</h1><p class="lt-page-subtitle">Choose what you want to host and deploy in minutes</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-secondary" id="custom">Build your own plan</button><a class="lt-btn lt-btn-primary" href="/hosting">Full catalogue ↗</a></div></div>
+    <div class="lt-tabs">${['all',...cats.map(c=>c.id)].map(c=>`<button class="lt-tab ${c===active?'active':''}" data-cat="${c}">${c==='all'?'All products':esc((cats.find(x=>x.id===c)||{}).name||c)}</button>`).join('')}</div>
+    ${filtered.length?`<div class="lt-grid lt-grid-3">${filtered.map(p=>`<div class="lt-card lt-card-hover" style="padding:0;overflow:hidden">
+      <div style="height:96px;background:linear-gradient(135deg,var(--lt-ember-alpha-12),var(--lt-success-dim));display:flex;align-items:center;justify-content:center;font-size:36px;color:var(--lt-ember-500)">${esc(p.icon)}</div>
+      <div style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lt-badge lt-badge-neutral">${esc((cats.find(c=>c.id===p.categoryId)||{}).name||p.categoryId)}</span>${p.featured?'<span class="lt-badge lt-badge-ember">Featured</span>':''}</div>
+        <div style="font-weight:750;font-size:15px;margin-top:10px">${esc(p.name)}</div><div class="lt-meta" style="margin-top:3px">${esc(p.shortDescription)}</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px">${(p.features||[]).slice(0,3).map(f=>`<span class="lt-badge lt-badge-neutral" style="font-size:10px">${esc(f)}</span>`).join('')}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px"><span style="font-weight:700">From $${(p.startingPriceMonthly/100).toFixed(0)}/mo</span><a class="lt-btn lt-btn-primary lt-btn-sm" href="/product?id=${p.slug}">View Plans</a></div>
+      </div></div>`).join('')}</div>`:empty('No products','Products will appear here once configured by an administrator.')}`;
+  v.querySelectorAll('[data-cat]').forEach(b=>b.addEventListener('click',()=>{location.hash='#/market/'+b.dataset.cat;}));
+  v.querySelector('#custom').addEventListener('click',()=>{location.href='/configure';});
+}
+
+async function renderBilling(){
+  const v=app.querySelector('#view');let sub={},plan=null,history=[];
+  try{const [s,h]=await Promise.all([api.subscription(),api.billingHistory()]);sub=s.subscription||{};plan=s.plan;history=h.transactions||[];}catch{}
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Plans & Billing</h1><p class="lt-page-subtitle">Your current plan, usage and billing history</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-secondary" id="browse">Browse plans</button><button class="lt-btn lt-btn-primary" id="custom">Build your own plan</button></div></div>
+    <div class="lt-grid lt-grid-2">
+      ${section('Current plan',sub.source==='custom'?'Custom configuration':(plan?.name||'Free'),`<div class="lt-grid lt-grid-3">${[['RAM',(plan?.memoryMb||sub.customConfig?.memoryMb||512)+' MB'],['CPU',(plan?.cpuCores||sub.customConfig?.cpuCores||1)+' cores'],['Storage',(plan?.diskGb||sub.customConfig?.diskGb||4)+' GB']].map(([l,x])=>`<div><div class="lt-meta">${l}</div><div style="font-weight:700;font-size:18px">${x}</div></div>`).join('')}</div>
+        <div class="lt-meta" style="margin-top:14px">Status: ${badge(sub.status||'active')} · Price: $${((sub.priceMonthly||0)/100).toFixed(2)}/${sub.currency||'USD'}</div>`)}
+      ${section('Available plans','Click to switch plans',`<div id="planList"><div class="lt-loading"><span class="lt-spinner"></span></div></div>`)}
+      ${section('Billing history','',history.length?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Description</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${history.map(t=>`<tr><td class="lt-td-strong">${esc(t.description)}</td><td class="lt-td-mono">$${(t.amount/100).toFixed(2)} ${esc(t.currency)}</td><td>${badge(t.status)}</td><td>${fmtTime(t.createdAt)}</td></tr>`).join('')}</tbody></table></div>`:empty('No transactions','Plan activations and payments will appear here.'))}
+    </div>`;
+  v.querySelector('#browse').addEventListener('click',()=>{location.hash='#/market';});
+  v.querySelector('#custom').addEventListener('click',()=>{location.href='/configure';});
+  // load plans for switching
+  try{const pl=(await api.plans()).plans||[];const list=v.querySelector('#planList');
+    if(list)list.innerHTML=pl.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--lt-border)">
+      <div><div style="font-weight:700">${esc(p.name)} ${sub.planId===p.id?badge('active'):''}</div><div class="lt-meta">${p.memoryMb}MB · ${p.cpuCores} vCPU · ${p.diskGb}GB</div></div>
+      <div style="display:flex;align-items:center;gap:10px"><span style="font-weight:700">$${(p.price/100).toFixed(0)}/${p.interval==='yearly'?'yr':'mo'}</span>${sub.planId===p.id?'':`<button class="lt-btn lt-btn-secondary lt-btn-sm" data-plan="${p.id}">Select</button>`}</div></div>`).join('');
+    list?.querySelectorAll('[data-plan]').forEach(b=>b.addEventListener('click',async()=>{
+      if(!await confirmDialog('Switch plan','Activate this plan? Your existing services are preserved.','Activate'))return;
+      try{await api.activatePlan({planId:b.dataset.plan});toast('Plan activated','success');renderBilling();}catch(e){toast(e.message,'error');}
+    }));
+  }catch{}
 }

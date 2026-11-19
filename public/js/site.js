@@ -50,16 +50,16 @@ function layout(brand, content, active = '') {
     <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
   </head><body>
     <header class="site-header"><div class="site-wrap site-nav">
-      <a href="/site.html" class="site-brand"><img src="${esc(brand.logo || '/assets/logos/light-primary.svg')}" height="34" alt="${product}"></a>
+      <a href="/" class="site-brand"><img src="${esc(brand.logo || '/assets/logos/light-primary.svg')}" height="34" alt="${product}"></a>
       <nav class="site-links">
-        <a href="/site.html#products" class="${active === 'products' ? 'active' : ''}">Products</a>
-        <a href="/site.html#features">Features</a>
-        <a href="/pricing.html" class="${active === 'pricing' ? 'active' : ''}">Pricing</a>
-        <a href="/docs.html">Docs</a><a href="/about.html">About</a>
+        <a href="/#products" class="${active === 'products' ? 'active' : ''}">Products</a>
+        <a href="/#features">Features</a>
+        <a href="/pricing" class="${active === 'pricing' ? 'active' : ''}">Pricing</a>
+        <a href="/docs">Docs</a><a href="/about">About</a>
       </nav>
       <div class="site-actions">
-        <a href="/index.html" class="lt-btn lt-btn-ghost">Sign in</a>
-        <a href="/index.html#register" class="lt-btn lt-btn-primary">Get Started</a>
+        <a href="/login" class="lt-btn lt-btn-ghost">Sign in</a>
+        <a href="/login#register" class="lt-btn lt-btn-primary">Get Started</a>
       </div>
     </div></header>
     <main>${content}</main>
@@ -67,9 +67,9 @@ function layout(brand, content, active = '') {
       <div class="site-footer-grid">
         <div><div class="site-brand" style="margin-bottom:10px"><img src="${esc(brand.wordmark || '/assets/logos/light-wordmark.svg')}" height="26" alt="${product}"></div>
           <p class="site-muted">Universal hosting for games, apps, websites and more. Infrastructure made simple.</p></div>
-        <div><h4>Product</h4><a href="/site.html#products">Products</a><a href="/pricing.html">Pricing</a><a href="/docs.html">Documentation</a></div>
-        <div><h4>Company</h4><a href="/about.html">About</a><a href="/contact.html">Contact</a><a href="/legal.html">Legal</a></div>
-        <div><h4>Account</h4><a href="/index.html">Dashboard</a><a href="/index.html#register">Create account</a></div>
+        <div><h4>Product</h4><a href="/#products">Products</a><a href="/pricing">Pricing</a><a href="/docs">Documentation</a></div>
+        <div><h4>Company</h4><a href="/about">About</a><a href="/contact">Contact</a><a href="/legal">Legal</a></div>
+        <div><h4>Account</h4><a href="/login">Dashboard</a><a href="/login#register">Create account</a></div>
       </div>
       <div class="site-footer-bottom">
         <span>${esc(brand.attribution || '.light is a Trycord product')} · © 2026 Trycord</span>

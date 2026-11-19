@@ -18,15 +18,15 @@
         <h1>Host anything.<br><span class="hl">Without the infrastructure headache.</span></h1>
         <p>Game servers, web applications, websites, bots and databases — deployed in moments and managed from one beautifully simple dashboard.</p>
         <div class="site-cta">
-          <a href="/index.html#register" class="lt-btn lt-btn-primary">Get Started — It's Free</a>
-          <a href="/site.html#products" class="lt-btn lt-btn-secondary">Explore Products</a>
+          <a href="/login#register" class="lt-btn lt-btn-primary">Get Started — It's Free</a>
+          <a href="/#products" class="lt-btn lt-btn-secondary">Explore Products</a>
         </div>
       </div></section>
 
       <section class="site-section alt" id="products"><div class="site-wrap">
         <div class="site-heading"><h2>One platform. Every workload.</h2><p>From game servers to production applications, ${esc(b.product || '.light')} gives you the same simple experience everywhere.</p></div>
         <div class="site-grid">
-          ${PRODUCTS.map(p => `<a href="/product.html?id=${p.id}" class="site-card" style="text-decoration:none">
+          ${PRODUCTS.map(p => `<a href="/product?id=${p.id}" class="site-card" style="text-decoration:none">
             <div class="site-card-icon" style="background:${p.color}1a;color:${p.color}">${p.icon}</div>
             <h3>${p.title}</h3><p>${p.desc}</p></a>`).join('')}
         </div>
@@ -66,7 +66,7 @@
       <section class="site-cta-band"><div class="site-wrap">
         <h2>Ready to host something?</h2>
         <p>Create your free account and deploy your first server in minutes.</p>
-        <a href="/index.html#register" class="lt-btn lt-btn-primary">Create Your First Server</a>
+        <a href="/login#register" class="lt-btn lt-btn-primary">Create Your First Server</a>
       </div></section>`;
       document.getElementById('site').innerHTML = layout(b, content);
 
@@ -77,7 +77,7 @@
         if (el) el.innerHTML = (plans.plans || []).slice(0,3).map(p => `<div class="site-plan ${p.id === 'shared' ? 'featured' : ''}">
           <h3>${esc(p.name)}</h3><div class="price">${p.price_monthly ? '$' + (p.price_monthly/100).toFixed(0) + '/mo' : 'Free'}</div>
           <ul><li>${p.memory_mb} MB RAM</li><li>${p.disk_gb} GB storage</li><li>${p.cpu_cores} CPU cores</li><li>${p.instances} instances</li></ul>
-          <a href="/index.html#register" class="lt-btn ${p.id === 'shared' ? 'lt-btn-primary' : 'lt-btn-secondary'}">Get Started</a></div>`).join('');
+          <a href="/login#register" class="lt-btn ${p.id === 'shared' ? 'lt-btn-primary' : 'lt-btn-secondary'}">Get Started</a></div>`).join('');
       } catch { /* pricing loads on pricing page */ }
     }
     boot();

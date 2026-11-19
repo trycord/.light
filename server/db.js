@@ -95,6 +95,34 @@ const TABLES = {
     image TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', versions TEXT NOT NULL DEFAULT '[]',
     command TEXT NOT NULL DEFAULT '', ports TEXT NOT NULL DEFAULT '[]', env TEXT NOT NULL DEFAULT '{}',
     official INTEGER NOT NULL DEFAULT 1)`,
+  environments: `CREATE TABLE IF NOT EXISTS environments (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+    icon TEXT NOT NULL DEFAULT '◈', versions TEXT NOT NULL DEFAULT '[]', default_version TEXT NOT NULL DEFAULT '',
+    image TEXT NOT NULL, image_digest TEXT NOT NULL DEFAULT '', architectures TEXT NOT NULL DEFAULT '["amd64"]',
+    default_command TEXT NOT NULL DEFAULT '', default_entrypoint TEXT NOT NULL DEFAULT '',
+    working_dir TEXT NOT NULL DEFAULT '/app', build_capable INTEGER NOT NULL DEFAULT 0,
+    package_managers TEXT NOT NULL DEFAULT '[]', default_env TEXT NOT NULL DEFAULT '{}',
+    exposed_ports TEXT NOT NULL DEFAULT '[]', healthcheck TEXT NOT NULL DEFAULT '{}',
+    storage TEXT NOT NULL DEFAULT '{}', resource_recommendations TEXT NOT NULL DEFAULT '{}',
+    lifecycle TEXT NOT NULL DEFAULT '[]', security TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'published', featured INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  builds: `CREATE TABLE IF NOT EXISTS builds (
+    id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, team_id TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'upload', repo_url TEXT NOT NULL DEFAULT '', ref TEXT NOT NULL DEFAULT '',
+    commit_sha TEXT NOT NULL DEFAULT '', install_command TEXT NOT NULL DEFAULT '', build_command TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'queued', logs TEXT NOT NULL DEFAULT '', artifact_path TEXT NOT NULL DEFAULT '',
+    image TEXT NOT NULL DEFAULT '', started_at INTEGER, finished_at INTEGER, created_at INTEGER NOT NULL)`,
+  github_connections: `CREATE TABLE IF NOT EXISTS github_connections (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'github',
+    account_login TEXT NOT NULL DEFAULT '', access_token_encrypted TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  webhook_events: `CREATE TABLE IF NOT EXISTS webhook_events (
+    id TEXT PRIMARY KEY, provider TEXT NOT NULL DEFAULT 'github', event_id TEXT NOT NULL,
+    payload TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'processed', created_at INTEGER NOT NULL)`,
+  trycord_releases: `CREATE TABLE IF NOT EXISTS trycord_releases (
+    id TEXT PRIMARY KEY, version TEXT NOT NULL, image TEXT NOT NULL, release_notes TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'published', created_at INTEGER NOT NULL)`,
   instances: `CREATE TABLE IF NOT EXISTS instances (
     id TEXT PRIMARY KEY, team_id TEXT NOT NULL, node_id TEXT, name TEXT NOT NULL,
     category TEXT NOT NULL DEFAULT 'web', type TEXT NOT NULL DEFAULT 'custom',
@@ -157,7 +185,7 @@ const LEGACY_COLUMNS = {
   nodes: { availability: "TEXT NOT NULL DEFAULT 'active'", cpu_used: 'REAL NOT NULL DEFAULT 0', mem_used: 'REAL NOT NULL DEFAULT 0', disk_used: 'REAL NOT NULL DEFAULT 0', net_in: 'REAL NOT NULL DEFAULT 0', net_out: 'REAL NOT NULL DEFAULT 0', temp: 'REAL NOT NULL DEFAULT 0' },
   deployments: { instance_id: "TEXT NOT NULL DEFAULT ''", team_id: "TEXT NOT NULL DEFAULT ''", source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", ref: "TEXT NOT NULL DEFAULT 'main'", commit_sha: "TEXT NOT NULL DEFAULT ''", command: "TEXT NOT NULL DEFAULT ''", created_at: 'INTEGER NOT NULL DEFAULT 0' },
   metric_samples: { instance_id: 'TEXT', temp: 'REAL NOT NULL DEFAULT 0' },
-  instances: { volumes_json: "TEXT NOT NULL DEFAULT '[]'", category: "TEXT NOT NULL DEFAULT 'web'", type: "TEXT NOT NULL DEFAULT 'custom'", container_id: 'TEXT' },
+  instances: { volumes_json: "TEXT NOT NULL DEFAULT '[]'", category: "TEXT NOT NULL DEFAULT 'web'", type: "TEXT NOT NULL DEFAULT 'custom'", container_id: 'TEXT', environment_id: 'TEXT', environment_version: 'TEXT', source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", build_command: "TEXT NOT NULL DEFAULT ''", install_command: "TEXT NOT NULL DEFAULT ''" },
 };
 
 const INDEXES = [
@@ -177,6 +205,9 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_audit_team ON audit_logs(team_id, id)',
   'CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, id)',
   'CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id, sort_order)',
+  'CREATE INDEX IF NOT EXISTS idx_environments_category ON environments(category, sort_order)',
+  'CREATE INDEX IF NOT EXISTS idx_builds_instance ON builds(instance_id, id)',
+  'CREATE INDEX IF NOT EXISTS idx_webhook_events ON webhook_events(event_id)',
   'CREATE INDEX IF NOT EXISTS idx_products_status ON products(status, sort_order)',
   'CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(status, sort_order)',
   'CREATE INDEX IF NOT EXISTS idx_subscriptions_team ON subscriptions(team_id, id)',
@@ -230,6 +261,53 @@ function seed() {
     ['docker', 'custom', 'Custom Docker', 'docker', 'Run any container image', 'Bring your own Docker image with full control over commands, ports and volumes.', '/assets/icons/templates.svg', '◉', ['Custom images','Resource limits','Volumes'], ['docker','custom'], 1, 1, 300],
   ];
   for (const p of products) insertProduct.run(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], JSON.stringify(p[8]), JSON.stringify(p[9]), 'published', p[10], p[11], p[12], 'USD', ts, ts);
+
+  // Shade universal environment registry (data-driven runtime catalogue).
+  const insertEnv = db.prepare(`INSERT OR IGNORE INTO environments (id, name, category, description, icon, versions, default_version, image, image_digest,
+    architectures, default_command, default_entrypoint, working_dir, build_capable, package_managers, default_env, exposed_ports, healthcheck,
+    storage, resource_recommendations, lifecycle, security, status, featured, sort_order, created_at, updated_at)
+    VALUES (@id, @name, @category, @description, @icon, @versions, @default_version, @image, @image_digest,
+    @architectures, @default_command, @default_entrypoint, @working_dir, @build_capable, @package_managers, @default_env, @exposed_ports, @healthcheck,
+    @storage, @resource_recommendations, @lifecycle, @security, @status, @featured, @sort_order, @created_at, @updated_at)`);
+  const J = (v) => JSON.stringify(v ?? []);
+  const E = (id, name, category, description, icon, versions, def, image, cmd, ports, opts = {}) => ({
+    id, name, category, description, icon, versions: J(versions), default_version: def, image, image_digest: opts.digest || '',
+    architectures: J(['amd64','arm64']), default_command: cmd, default_entrypoint: '', working_dir: opts.dir || '/app',
+    build_capable: opts.build ? 1 : 0, package_managers: J(opts.pm || []), default_env: J(opts.env || {}),
+    exposed_ports: J(ports), healthcheck: J({}), storage: J(opts.storage || {}), resource_recommendations: J({}),
+    lifecycle: J(opts.lifecycle || ['start','stop','restart','deploy']), security: J({}),
+    status: 'published', featured: opts.featured ? 1 : 0, sort_order: opts.order || 0, created_at: ts, updated_at: ts,
+  });
+  const persistent = { persistent: true };
+  const envs = [
+    E('node','Node.js','runtime','JavaScript and TypeScript runtime','◈',['18','20','22','24'],'22','node:22-alpine','npm start',['3000'],{build:1,pm:['npm','yarn','pnpm'],featured:1,order:1}),
+    E('bun','Bun','runtime','Fast JavaScript runtime and toolkit','◈',['latest','1.1'],'latest','oven/bun:1-alpine','bun run start',['3000'],{build:1,pm:['bun','npm'],order:2}),
+    E('deno','Deno','runtime','Secure TypeScript runtime','◈',['latest','2.0'],'latest','denoland/deno:alpine','deno run --allow-net --allow-env main.ts',['8000'],{build:1,pm:['deno'],order:3}),
+    E('python','Python','runtime','Python with pip, Poetry and uv','◈',['3.11','3.12','3.13'],'3.12','python:3.12-alpine','python main.py',['8000'],{build:1,pm:['pip','pipx','poetry','uv'],featured:1,order:4}),
+    E('java','OpenJDK / JVM','runtime','Java with Maven and Gradle','◈',['17','21','25'],'21','eclipse-temurin:21-jre-alpine','java -jar application.jar',['8080'],{build:1,pm:['maven','gradle'],order:5}),
+    E('dotnet','.NET','runtime','.NET SDK and ASP.NET Core','◈',['8','9','10'],'10','mcr.microsoft.com/dotnet/aspnet:10.0-alpine','dotnet application.dll',['8080'],{build:1,pm:['dotnet','nuget'],order:6}),
+    E('go','Go','runtime','Go compiled applications','◈',['latest','1.22'],'latest','golang:1.22-alpine','./application',['8080'],{build:1,pm:['go'],order:7}),
+    E('rust','Rust','runtime','Rust compiled applications','◈',['latest','1.75'],'latest','rust:1.75-alpine','./application',['8080'],{build:1,pm:['cargo'],order:8}),
+    E('php','PHP','runtime','PHP applications and frameworks','◈',['8.2','8.3'],'8.3','php:8.3-cli-alpine','php -S 0.0.0.0:8080 -t public',['8080'],{build:1,pm:['composer'],order:9}),
+    E('ruby','Ruby','runtime','Ruby and Rails applications','◈',['3.2','3.3'],'3.3','ruby:3.3-alpine','bundle exec ruby app.rb',['8080'],{build:1,pm:['bundler','gem'],order:10}),
+    E('postgres','PostgreSQL','database','PostgreSQL relational database','▤',['16','15','14'],'16','postgres:16-alpine','',['5432'],{dir:'/var/lib/postgresql/data',env:{POSTGRES_PASSWORD:''},storage:persistent,featured:1,order:11,lifecycle:['start','stop','restart','backup','restore']}),
+    E('mariadb','MariaDB','database','MariaDB relational database','▤',['11','10'],'11','mariadb:11-alpine','',['3306'],{dir:'/var/lib/mysql',env:{MARIADB_ROOT_PASSWORD:''},storage:persistent,order:12,lifecycle:['start','stop','restart','backup','restore']}),
+    E('mongodb','MongoDB','database','MongoDB document database','▤',['7','6'],'7','mongo:7','',['27017'],{dir:'/data/db',storage:persistent,order:13,lifecycle:['start','stop','restart','backup','restore']}),
+    E('redis','Redis','database','Redis in-memory data store','▤',['7','6'],'7','redis:7-alpine','',['6379'],{dir:'/data',storage:persistent,featured:1,order:14,lifecycle:['start','stop','restart','backup','restore']}),
+    E('valkey','Valkey','database','Valkey open-source Redis alternative','▤',['latest'],'latest','valkey/valkey:alpine','',['6379'],{dir:'/data',storage:persistent,order:15,lifecycle:['start','stop','restart','backup','restore']}),
+    E('minecraft-java','Minecraft Java','game','Minecraft Java Edition server','◆',['1.21.4','1.20.6','latest'],'1.21.4','itzg/minecraft-server:java21','',['25565'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,featured:1,order:16,lifecycle:['start','stop','restart','backup','restore']}),
+    E('minecraft-bedrock','Minecraft Bedrock','game','Minecraft Bedrock Edition server','◆',['latest'],'latest','itzg/minecraft-bedrock-server','',['19132/udp'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,order:17,lifecycle:['start','stop','restart','backup','restore']}),
+    E('discord-bot','Discord Bot','general','Discord bots and background workers','◇',['node','python'],'node','node:22-alpine','npm start',[],{build:1,pm:['npm'],featured:1,order:18}),
+    E('static-site','Static Site','web','Static websites served by Nginx','◇',['latest'],'latest','nginx:alpine','',['80'],{dir:'/usr/share/nginx/html',featured:1,order:19}),
+  ];
+  for (const e of envs) insertEnv.run(e);
+
+  // Official Trycord release (only when a real image is configured by the operator).
+  const trycordImage = process.env.TRYCORD_IMAGE || '';
+  if (trycordImage && !db.prepare('SELECT id FROM trycord_releases LIMIT 1').get()) {
+    db.prepare('INSERT INTO trycord_releases (id, version, image, release_notes, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id('trc'), process.env.TRYCORD_VERSION || 'stable', trycordImage, 'Operator-published Trycord release', 'published', ts);
+  }
 
   // Preset plans (configurable, not hardcoded in UI).
   const insertPlan = db.prepare(`INSERT OR IGNORE INTO plans (id, name, description, category, product_id, cpu_cores, memory_mb, disk_gb, network_gb, instances,

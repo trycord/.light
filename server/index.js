@@ -26,6 +26,7 @@ import { adminRoutes } from './api/admin.js';
 import { agentRoutes } from './api/agent.js';
 import { statsRoutes } from './api/stats.js';
 import { subscriptionsRoutes } from './api/subscriptions.js';
+import { environmentsRoutes } from './api/environments.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(__dirname, '..');
@@ -64,6 +65,7 @@ api.use('/backups', backupsRoutes());
 api.use('/schedules', schedulesRoutes());
 api.use('/catalog', catalogRoutes());
 api.use('/subscriptions', subscriptionsRoutes());
+api.use('/environments', environmentsRoutes());
 api.use('/admin', adminRoutes());
 api.use('/agent', agentRoutes());
 api.get('/stats', requireAuth, statsRoutes());
@@ -75,13 +77,32 @@ app.use('/api', api);
 
 app.use(express.static(path.join(appDir, 'public')));
 app.use('/assets', express.static(path.join(appDir, 'assets')));
-app.get('/', (req, res) => res.sendFile(path.join(appDir, 'public', 'site.html')));
-const PUBLIC_PAGES = ['site','pricing','docs','about','contact','legal','product','hosting','configure','features','faq'];
+// Clean, human-friendly routes (no .html exposed to visitors).
+const send = (file) => (req, res) => res.sendFile(path.join(appDir, 'public', file));
+
+app.get('/', send('site.html'));
+app.get('/hosting', send('hosting.html'));
+app.get('/hosting/:category', send('hosting.html'));
+app.get('/product/:slug', send('product.html'));
+app.get('/pricing', send('pricing.html'));
+app.get('/configure', send('configure.html'));
+app.get('/docs', send('docs.html'));
+app.get('/about', send('about.html'));
+app.get('/contact', send('contact.html'));
+app.get('/legal', send('legal.html'));
+app.get('/features', send('features.html'));
+app.get('/faq', send('faq.html'));
+app.get('/login', send('index.html'));
+app.get('/register', send('index.html'));
+// Administration — independent application; serves admin.html for /admin and all sub-routes.
+app.get(['/admin', /^\/admin\/.*/], send('admin.html'));
+// Legacy .html URLs still work (backward compatibility).
+const PUBLIC_PAGES = ['site','pricing','docs','about','contact','legal','product','hosting','configure','features','faq','admin'];
 app.get('/:page.html', (req, res, next) => {
-  if (PUBLIC_PAGES.includes(req.params.page)) return res.sendFile(path.join(appDir, 'public', `${req.params.page}.html`));
+  if (PUBLIC_PAGES.includes(req.params.page)) return send(`${req.params.page}.html`)(req, res);
   next();
 });
-app.get(/^\/(?!api|health|assets).*/, (req, res) => res.sendFile(path.join(appDir, 'public', 'index.html')));
+app.get(/^\/(?!api|health|assets).*/, send('index.html'));
 app.use((req, res) => res.status(404).json({ error: 'not_found' }));
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
