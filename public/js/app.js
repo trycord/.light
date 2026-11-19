@@ -70,6 +70,8 @@ function section(title, subtitle, content, actions = '') { return `<div class="l
 
 /* ---------- branding ---------- */
 function applyBranding() {
+  const savedTheme = localStorage.getItem('lt_theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', savedTheme);
   document.title = brand.docTitle || brand.product;
   const root = document.documentElement;
   root.style.setProperty('--lt-ember-500', brand.primaryColor || '#FF4D24');
@@ -533,16 +535,49 @@ async function renderSchedules() {
 
 async function renderAccount() {
   const view = app.querySelector('#view');
-  const [me, plans] = await Promise.all([api.me(), api.plans()]);
-  const current = plans.plans.find((p) => p.id === me.team.plan_id) || plans.plans[0];
-  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">Account & plans</h1><p class="lt-page-subtitle">Profile, security, and resource plan</p></div></div>
+  const [me, plans, sessions] = await Promise.all([api.me(), api.plans(), api.sessions()]);
+  const current = plans.plans.find((p) => p.id === me.team?.plan_id) || plans.plans[0];
+  const user = me.user;
+  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">Account & plans</h1><p class="lt-page-subtitle">Profile, security, appearance and resources</p></div></div>
     <div class="lt-grid lt-grid-2">
-      ${section('Profile', 'Your account details', `<div class="lt-grid lt-grid-2"><div><div class="lt-meta">Name</div><div style="font-weight:650">${esc(me.user.name || '—')}</div></div><div><div class="lt-meta">Email</div><div style="font-weight:650">${esc(me.user.email)}</div></div><div><div class="lt-meta">Role</div><div style="font-weight:650">${esc(me.user.role)}</div></div><div><div class="lt-meta">Workspace</div><div style="font-weight:650">${esc(me.team?.name || '—')}</div></div></div>`)}
+      ${section('Profile', 'Your account details', `<form id="profileForm">
+        ${field('Name', 'name', 'text', user.name || '')}
+        ${field('Username', 'username', 'text', user.username || '')}
+        <div class="lt-meta" style="margin-bottom:12px">Email: ${esc(user.email)}</div>
+        <button class="lt-btn lt-btn-primary" type="submit">Save profile</button></form>`)}
+      ${section('Appearance', 'Dashboard visual identity', `<div class="lt-field"><label>Theme</label>
+        <div style="display:flex;gap:8px">
+          <button class="lt-btn ${document.documentElement.getAttribute('data-theme') !== 'light' ? 'lt-btn-primary' : 'lt-btn-secondary'}" data-theme-btn="dark">Dark</button>
+          <button class="lt-btn ${document.documentElement.getAttribute('data-theme') === 'light' ? 'lt-btn-primary' : 'lt-btn-secondary'}" data-theme-btn="light">Light</button>
+        </div></div>`)}
       ${section('Current plan', current?.name || 'Free', `<div class="lt-meta">${esc(current?.description || '')}</div><div class="lt-grid lt-grid-3" style="margin-top:14px">${[['Memory', `${current?.memory_mb || 0} MB`], ['Storage', `${current?.disk_gb || 0} GB`], ['Instances', current?.instances || 0]].map(([l, v]) => `<div><div class="lt-meta">${l}</div><div style="font-weight:700;font-size:18px">${v}</div></div>`).join('')}</div>`)}
-      ${section('Available plans', 'Upgrade or downgrade your workspace allocation', `<div class="lt-grid lt-grid-3">${plans.plans.map((p) => `<div class="lt-card" style="padding:14px"><div style="font-weight:700">${esc(p.name)}</div><div class="lt-meta">${p.memory_mb} MB · ${p.disk_gb} GB · ${p.instances} instances</div><div style="margin-top:10px;font-weight:700">${p.price_monthly ? `$${(p.price_monthly / 100).toFixed(0)}/mo` : 'Free'}</div></div>`).join('')}</div>`)}
-      ${section('Change password', 'Update your account credentials', `<form id="passwordForm">${field('Current password', 'currentPassword', 'password')}${field('New password (min 10 characters)', 'newPassword', 'password', '', 'minlength="10"')}<button class="lt-btn lt-btn-primary" type="submit">Update password</button></form>`)}
+      ${section('Available plans', 'Upgrade or downgrade your allocation', `<div class="lt-grid lt-grid-3">${plans.plans.map((p) => `<div class="lt-card" style="padding:14px"><div style="font-weight:700">${esc(p.name)}</div><div class="lt-meta">${p.memory_mb} MB · ${p.disk_gb} GB · ${p.instances} instances</div><div style="margin-top:10px;font-weight:700">${p.price_monthly ? '$' + (p.price_monthly / 100).toFixed(0) + '/mo' : 'Free'}</div></div>`).join('')}</div>`)}
+      ${section('Change password', 'Update your credentials', `<form id="passwordForm">${field('Current password', 'currentPassword', 'password')}${field('New password (min 10 characters)', 'newPassword', 'password', '', 'minlength="10"')}<button class="lt-btn lt-btn-primary" type="submit">Update password</button></form>`)}
+      ${section('Active sessions', 'Devices signed in to your account', `<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Device</th><th>IP</th><th>Last seen</th><th></th></tr></thead><tbody>${(sessions.sessions || []).map((s) => `<tr><td class="lt-td-mono">${esc((s.user_agent || 'Unknown').slice(0, 50))}</td><td class="lt-td-mono">${esc(s.ip || '—')}</td><td>${fmtTime(s.last_seen)}</td><td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-session="${s.id}">Revoke</button></td></tr>`).join('') || '<tr><td colspan="4" class="lt-meta">No active sessions recorded</td></tr>'}</tbody></table></div>`)}
+      ${section('Danger zone', 'Irreversible actions', `<button class="lt-btn lt-btn-danger" id="deleteAccount">Delete account</button><p class="lt-meta" style="margin-top:8px">Permanently deletes your account, workspaces and all services.</p>`)}
     </div>`;
-  view.querySelector('#passwordForm').addEventListener('submit', async (e) => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.target).entries()); try { const r = await api.changePassword(data); api.setToken(r.token); toast('Password updated', 'success'); e.target.reset(); } catch (error) { toast(error.message, 'error'); } });
+
+  view.querySelector('#profileForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    try { await api.updateProfile(data); toast('Profile saved', 'success'); renderAccount(); } catch (error) { toast(error.message, 'error'); }
+  });
+  view.querySelector('#passwordForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    try { const r = await api.changePassword(data); api.setToken(r.token); toast('Password updated', 'success'); e.target.reset(); } catch (error) { toast(error.message, 'error'); }
+  });
+  view.querySelectorAll('[data-theme-btn]').forEach((b) => b.addEventListener('click', async () => {
+    const theme = b.dataset.themeBtn;
+    document.documentElement.setAttribute('data-theme', theme);
+    try { await api.updateProfile({ theme }); localStorage.setItem('lt_theme', theme); toast('Theme updated', 'success'); renderAccount(); } catch (error) { toast(error.message, 'error'); }
+  }));
+  view.querySelectorAll('[data-session]').forEach((b) => b.addEventListener('click', async () => { await api.deleteSession(b.dataset.session); toast('Session revoked', 'success'); renderAccount(); }));
+  view.querySelector('#deleteAccount').addEventListener('click', async () => {
+    const ok = await modal('Delete account', `<p style="color:var(--lt-text-secondary);font-size:13px;line-height:1.6">This permanently deletes your account, workspaces and all services. Type <strong>DELETE</strong> to confirm.</p>${field('Confirmation', 'confirm', 'text', '', 'placeholder="DELETE"')}`, { danger: true, confirm: 'Delete account' });
+    if (!ok || ok.confirm !== 'DELETE') return;
+    try { await api.deleteAccount(); api.setToken(''); session = null; renderAuth('login'); toast('Account deleted', 'info'); } catch (error) { toast(error.message, 'error'); }
+  });
 }
 
 async function renderAdmin() {
