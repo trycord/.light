@@ -146,6 +146,21 @@ const api = {
   deleteRole: (id) => request(`/api/admin/roles/${id}`, { method: 'DELETE' }),
   impersonate: (id) => request(`/api/admin/users/${id}/impersonate`, { method: 'POST', body: {} }),
 
+  // Product/plan checkout
+  createOrder: (data) => request('/api/checkout', { method: 'POST', body: data }),
+  order: (id) => request(`/api/checkout/${id}`),
+  orders: () => request('/api/checkout'),
+  confirmManual: (id) => request(`/api/checkout/${id}/confirm-manual`, { method: 'POST', body: { confirm: 'CONFIRM_MANUAL' } }),
+  retryOrder: (id) => request(`/api/checkout/${id}/retry`, { method: 'POST', body: {} }),
+  cancelOrder: (id) => request(`/api/checkout/${id}/cancel`, { method: 'POST', body: {} }),
+  adminOrders: () => request('/api/admin/orders'),
+  adminOrder: (id) => request(`/api/admin/orders/${id}`),
+  adminApproveOrder: (id) => request(`/api/admin/orders/${id}/approve`, { method: 'POST', body: { confirm: 'APPROVE_MANUAL' } }),
+  adminRetryOrder: (id) => request(`/api/admin/orders/${id}/retry`, { method: 'POST', body: {} }),
+  adminCancelOrder: (id) => request(`/api/admin/orders/${id}/cancel`, { method: 'POST', body: {} }),
+  adminSettings: () => request('/api/admin/settings'),
+  updateAdminSettings: (data) => request('/api/admin/settings', { method: 'PATCH', body: { settings: data } }),
+
   // Backwards-compatible aliases used by the legacy standalone pages.
   getNodes: () => request('/api/nodes'),
   getNodeMetrics: (id, range = 60) => request(`/api/nodes/${id}/metrics?range=${range}`),

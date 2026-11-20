@@ -4,6 +4,9 @@ import { requireAdmin, signToken } from '../auth.js';
 import { requireRealAdmin, hasPermission, requirePermission, PERMISSIONS, isValidPermission } from '../permissions.js';
 import { queueCommand } from '../commands.js';
 import { provisionPayload } from './instances.js';
+import { viewOrder, markOrderPaid, addOrderEvent } from '../orders.js';
+import { provisionOrder, retryOrder } from '../provisioning.js';
+import { publicSettings, updateSettings } from '../settings.js';
 import { audit } from '../audit.js';
 import { asyncRoute, badRequest, forbidden, notFound, conflict, id, now, str, int, num, json } from '../util.js';
 
@@ -23,6 +26,7 @@ export function adminRoutes() {
     else if (/^\/plans/.test(p)) needed = write ? 'plans.write' : 'plans.read';
     else if (/^\/(pricing|subscriptions|transactions)/.test(p)) needed = write ? 'billing.write' : 'billing.read';
     else if (/^\/(roles|permissions)/.test(p)) needed = write ? 'roles.write' : 'roles.read';
+    else if (/^\/orders/.test(p)) needed = write ? 'orders.write' : 'orders.read';
     if (needed && !hasPermission(req.user, needed)) return next(forbidden('permission_required'));
     next();
   });
@@ -171,6 +175,55 @@ export function adminRoutes() {
   }));
   router.get('/transactions', asyncRoute(async (req, res) => {
     res.json({ transactions: getDb().prepare('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 300').all() });
+  }));
+
+  /* ---------- Runtime settings (brand, payments, Cloudflare, mail, proxy) ---------- */
+  router.get('/settings', asyncRoute(async (req, res) => {
+    res.json({ settings: publicSettings() });
+  }));
+  router.patch('/settings', requirePermission('settings.write'), asyncRoute(async (req, res) => {
+    const values = req.body?.settings && typeof req.body.settings === 'object' ? req.body.settings : req.body || {};
+    const settings = updateSettings(values);
+    audit(req, 'admin.settings.update', 'settings', 'default', { keys: Object.keys(values) });
+    res.json({ settings, requiresRestart: ['PLATFORM_DOMAIN','CONTROL_BASE_URL','ALLOW_SIGNUP','ALLOW_CUSTOM_PLANS'].filter((k) => k in values) });
+  }));
+
+  /* ---------- Orders & provisioning ---------- */
+  router.get('/orders', asyncRoute(async (req, res) => {
+    const limit = Math.min(500, Math.max(1, int(req.query.limit, 200)));
+    const rows = getDb().prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT ?').all(limit);
+    res.json({ orders: rows.map(viewOrder) });
+  }));
+  router.get('/orders/:id', asyncRoute(async (req, res) => {
+    const row = getDb().prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+    if (!row) throw notFound();
+    res.json({ order: viewOrder(row) });
+  }));
+  router.post('/orders/:id/approve', requirePermission('orders.write'), asyncRoute(async (req, res) => {
+    // Manual approval is only honest for zero-total orders or when no gateway
+    // is configured. Never fabricate a card payment.
+    if (str(req.body?.confirm, 40) !== 'APPROVE_MANUAL') throw badRequest('confirmation_required');
+    const row = getDb().prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+    if (!row) throw notFound();
+    if (row.total > 0) throw badRequest('cannot_manually_approve_paid_order');
+    const paid = markOrderPaid(row.id, { provider: 'manual', reference: `admin:${req.user.id}` });
+    const result = provisionOrder(paid.order.id);
+    audit(req, 'admin.order.approve', 'order', row.id, {});
+    res.json({ order: viewOrder(result.order), instanceId: result.instance?.id || null });
+  }));
+  router.post('/orders/:id/retry', requirePermission('orders.write'), asyncRoute(async (req, res) => {
+    const result = retryOrder(req.params.id);
+    audit(req, 'admin.order.retry', 'order', req.params.id, {});
+    res.json({ order: viewOrder(result.order), instanceId: result.instance?.id || null });
+  }));
+  router.post('/orders/:id/cancel', requirePermission('orders.write'), asyncRoute(async (req, res) => {
+    const row = getDb().prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+    if (!row) throw notFound();
+    if (!['awaiting_payment', 'payment_processing', 'failed'].includes(row.status)) throw badRequest('order_not_cancellable');
+    getDb().prepare("UPDATE orders SET status = 'cancelled', updated_at = ? WHERE id = ?").run(now(), row.id);
+    addOrderEvent(row.id, 'cancelled', 'Cancelled by administrator');
+    audit(req, 'admin.order.cancel', 'order', row.id, {});
+    res.json({ order: viewOrder(getDb().prepare('SELECT * FROM orders WHERE id = ?').get(row.id)) });
   }));
 
   /* ---------- Service ports (admin allocation by server ID) ---------- */

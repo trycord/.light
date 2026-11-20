@@ -28,7 +28,7 @@ const NAV=[
   {g:'Customers',items:[['customers','Customers','teams','customers.read'],['support','Support tickets','security','tickets.read']]},
   {g:'Hosting',items:[['services','Services','instances','services.read'],['products','Products','applications','products.read'],['plans','Plans','templates','plans.read'],['environments','Environments','settings','environments.read']]},
   {g:'Infrastructure',items:[['nodes','Nodes','nodes','nodes.read'],['deployments','Deployments','schedules','services.read']]},
-  {g:'Commercial',items:[['subscriptions','Subscriptions','storage','billing.read'],['transactions','Transactions','security','billing.read'],['pricing','Pricing','settings','billing.read']]},
+  {g:'Commercial',items:[['orders','Orders & provisioning','schedules','orders.read'],['subscriptions','Subscriptions','storage','billing.read'],['transactions','Transactions','security','billing.read'],['pricing','Pricing','settings','billing.read']]},
   {g:'Operations',items:[['domains','Domains','network','domains.read'],['backups','Backups','backups','backups.read'],['audit','Audit log','security','audit.read'],['notifications','Notifications','settings','notifications.read']]},
   {g:'System',items:[['roles','Roles & access','security','roles.read'],['settings','Settings','settings','settings.read']]},
 ];
@@ -91,7 +91,7 @@ function setNav(v){root.querySelectorAll('[data-view]').forEach(a=>a.classList.t
 
 async function render(v){
   stopPoll();currentView=v;const view=root.querySelector('#aView');if(!view)return;
-  const R={dashboard:dashboard,analytics:analytics,customers:customers,support:support,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,notifications:notifications,roles:roles,settings:settings};
+  const R={dashboard:dashboard,analytics:analytics,customers:customers,orders:orders,support:support,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,notifications:notifications,roles:roles,settings:settings};
   view.innerHTML=loading();try{await (R[v]||dashboard)();}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;}}
 function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 function poll(fn,ms=15000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&admin)fn().catch(()=>{});},ms);}
@@ -201,6 +201,44 @@ async function nodes(){
 }
 
 async function deployments(){const view=root.querySelector('#aView');let d=[];try{d=(await api.deployments()).deployments;}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Deployments</h1></div>${panel('All deployments','',table(['ID','Instance','Status','Source','Version','Time'],d.map(x=>`<tr><td class="lt-td-mono">${esc(x.id)}</td><td>${esc(x.instanceName||x.instanceId)}</td><td>${badge(x.status)}</td><td>${esc(x.source)}</td><td class="lt-td-mono">${esc(x.version)}</td><td>${fmtTime(x.createdAt)}</td></tr>`)))}`;}
+async function orders(){
+  const view=root.querySelector('#aView');let o=[];try{o=(await api.adminOrders()).orders||[];}catch{}
+  view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Orders & provisioning</h1><p class="lt-page-subtitle">Every purchase, payment and workload from order to container</p></div></div>
+    ${panel('Orders',`${o.length} total`,table(['Order','Customer','Plan / product','Service','Status','Attempts','Total','Date',''],o.map(x=>`<tr>
+      <td class="lt-td-mono">${esc(x.id)}</td><td class="lt-td-mono">${esc(x.teamId)}</td>
+      <td>${esc(x.planSnapshot?.name||x.planId||'Custom')}${x.productId?` · ${esc(x.productId)}`:''}</td>
+      <td>${esc(x.serviceName)}</td><td>${badge(x.status)}</td><td>${x.provisionAttempts}</td>
+      <td>${fmtMoney(x.total,x.currency)}</td><td>${fmtAgo(x.createdAt)}</td>
+      <td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-o="${esc(x.id)}">Inspect</button></td></tr>`)))}`;
+  view.querySelectorAll('[data-o]').forEach(b=>b.addEventListener('click',async()=>openAdminOrder(b.dataset.o)));
+}
+
+async function openAdminOrder(id){
+  let r;try{r=await api.adminOrder(id);}catch(e){toast(e.message,'error');return;}
+  const o=r.order;
+  const timeline=(o.events||[]).map(e=>`<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--lt-border);font-size:12px"><span class="lt-td-mono">${fmtTime(e.ts)}</span><b>${esc(e.status)}</b><span class="lt-meta">${esc(e.message)}</span></div>`).join('');
+  const body=`<div style="font-size:12px;display:grid;gap:6px">
+    <div><b>Order</b> <span class="lt-td-mono">${esc(o.id)}</span></div>
+    <div><b>Customer</b> <span class="lt-td-mono">${esc(o.teamId)}</span></div>
+    <div><b>Plan snapshot</b> <pre style="white-space:pre-wrap;font-size:11px">${esc(JSON.stringify(o.planSnapshot,null,2))}</pre></div>
+    <div><b>Workload</b> ${esc(o.instanceId||'not created')} · Runtime ${esc(o.environmentId||'—')} ${esc(o.runtimeVersion||'')}</div>
+    <div><b>Payment</b> ${esc(o.provider||'none')} · ${esc(o.status)} · ${fmtMoney(o.total,o.currency)}</div>
+    ${o.failureReason?`<div class="lt-badge lt-badge-danger">${esc(o.failureReason)}</div>`:''}</div>
+    <div style="margin-top:14px"><b>Timeline</b>${timeline}</div>
+    <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+      ${o.total===0&&o.status==='awaiting_payment'?`<button type="button" class="lt-btn lt-btn-primary lt-btn-sm" id="oApprove">Approve free order</button>`:''}
+      ${['failed','paid'].includes(o.status)?`<button type="button" class="lt-btn lt-btn-secondary lt-btn-sm" id="oRetry">Retry provisioning</button>`:''}
+      ${['awaiting_payment','payment_processing','failed'].includes(o.status)?`<button type="button" class="lt-btn lt-btn-danger lt-btn-sm" id="oCancel">Cancel</button>`:''}
+    </div>`;
+  const promise=modal(`Order ${o.id}`,body,{ok:'Close'});
+  const box=document.querySelector('.lt-modal-overlay:last-of-type');
+  const close=()=>box?.querySelector('[data-close]')?.click();
+  box?.querySelector('#oApprove')?.addEventListener('click',async()=>{try{await api.adminApproveOrder(o.id);close();toast('Order approved and provisioning started','success');orders();}catch(e){toast(e.message,'error');}});
+  box?.querySelector('#oRetry')?.addEventListener('click',async()=>{try{await api.adminRetryOrder(o.id);close();toast('Provisioning retried','success');orders();}catch(e){toast(e.message,'error');}});
+  box?.querySelector('#oCancel')?.addEventListener('click',async()=>{if(!await confirmDialog('Cancel order','This cannot be undone.'))return;try{await api.adminCancelOrder(o.id);close();toast('Order cancelled','success');orders();}catch(e){toast(e.message,'error');}});
+  await promise;
+}
+
 async function subscriptions(){const view=root.querySelector('#aView');let s=[];try{s=(await api.adminSubscriptions()).subscriptions||[];}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Subscriptions</h1></div>${panel('All subscriptions','',table(['ID','Team','Plan','Status','Price','Started'],s.map(x=>`<tr><td class="lt-td-mono">${esc(x.id)}</td><td class="lt-td-mono">${esc(x.team_id)}</td><td>${esc(x.plan_id||'custom')}</td><td>${badge(x.status)}</td><td>${fmtMoney(x.price_monthly,x.currency)}</td><td>${fmtTime(x.started_at)}</td></tr>`)))}`;}
 async function transactions(){const view=root.querySelector('#aView');let t=[];try{t=(await api.adminTransactions()).transactions||[];}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Transactions</h1></div>${panel('All transactions','',table(['ID','Type','Description','Amount','Status','Provider','Date'],t.map(x=>`<tr><td class="lt-td-mono">${esc(x.id)}</td><td>${esc(x.type)}</td><td>${esc(x.description)}</td><td>${fmtMoney(x.amount,x.currency)}</td><td>${badge(x.status)}</td><td>${esc(x.provider)}</td><td>${fmtTime(x.created_at)}</td></tr>`)))}`;}
 async function pricing(){const view=root.querySelector('#aView');let c={};try{c=(await api.adminPricing()).config||{};}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Pricing configuration</h1><p class="lt-page-subtitle">Authoritative custom-plan pricing rules</p></div>${panel('Build Your Own Plan pricing','',`<form id="pf" class="admin-grid admin-grid-3">
@@ -215,7 +253,34 @@ async function domains(){const view=root.querySelector('#aView');let d=[];try{d=
 async function backups(){const view=root.querySelector('#aView');let b=[];try{b=(await api.backupsAll()).backups||[];}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Backups</h1></div>${panel('All backups','',table(['Name','Instance','Status','Size','Created','Location'],b.map(x=>`<tr><td class="lt-td-strong">${esc(x.name)}</td><td class="lt-td-mono">${esc(x.instance_id)}</td><td>${badge(x.status)}</td><td>${fmtBytes(x.size_bytes)}</td><td>${fmtTime(x.created_at)}</td><td class="lt-td-mono">${esc(x.location||'—')}</td></tr>`)))}`;}
 const fmtBytes=(b)=>{b=Number(b||0);return b>1073741824?(b/1073741824).toFixed(1)+' GB':b>1048576?(b/1048576).toFixed(1)+' MB':b+' B';};
 async function audit(){const view=root.querySelector('#aView');let e=[];try{e=(await api.audit()).events||[];}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Audit log</h1></div>${panel('Administrative & lifecycle events','',table(['Time','Action','Target type','Target ID','Details'],e.slice(0,100).map(x=>`<tr><td class="lt-td-mono">${fmtTime(x.ts)}</td><td>${esc(x.action)}</td><td>${esc(x.target_type||'—')}</td><td class="lt-td-mono">${esc(x.target_id||'—')}</td><td class="lt-td-mono">${esc((x.details||'').slice(0,80))}</td></tr>`)))}`;}
-async function settings(){const view=root.querySelector('#aView');let b={};try{b=await api.branding();}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Platform settings</h1></div>${panel('Branding & identity','',`<p class="lt-meta">Product: ${esc(b.product)} · Owner: ${esc(b.identity?.owner)} · Domain: ${esc(b.domain)}</p><p class="lt-meta">Branding is configured by the self-hoster through environment variables. Ownership attribution is embedded in the software and cannot be removed.</p>`)}`;}
+async function settings(){
+  const view=root.querySelector('#aView');let s={};
+  try{s=(await api.adminSettings()).settings||{};}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;return;}
+  const sections={general:'General & platform',payments:'Payments',cloudflare:'Cloudflare tunnels',mail:'Email / mail delivery',proxy:'Reverse proxy & TLS',runtime:'Runtime image'};
+  const fieldFor=(k,m)=>{
+    const v=m.value??'';
+    if(m.type==='bool')return `<label class="lt-auth-terms"><input type="checkbox" name="${esc(k)}" ${String(v)==='true'?'checked':''}> ${esc(m.label)}</label>`;
+    return fld(m.label,k,m.type==='secret'?'password':'text',v,m.type==='secret'?'autocomplete="new-password"':'');
+  };
+  view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Platform settings</h1>
+    <p class="lt-page-subtitle">Edit every configurable integration. Secrets are masked — leave blank to keep the current value.</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-primary" id="saveSettings">Save changes</button></div></div>
+    <form id="settingsForm" class="admin-grid admin-grid-2">
+    ${Object.entries(sections).map(([key,title])=>{
+      const keys=Object.entries(s).filter(([k,m])=>m.section===key);
+      return keys.length?panel(title,'',keys.map(([k,m])=>fieldFor(k,m)).join('')):'';
+    }).join('')}
+    </form>
+    <p class="lt-meta" style="margin-top:12px">Ownership attribution is embedded in the software and cannot be changed here. Some general settings require an application restart.</p>`;
+  view.querySelector('#saveSettings').addEventListener('click',async()=>{
+    const form=view.querySelector('#settingsForm');const values={};
+    for(const el of form.elements){if(!el.name)continue;values[el.name]=el.type==='checkbox'?el.checked:el.value;}
+    try{const r=await api.updateAdminSettings(values);toast('Settings saved','success');
+      if(r.requiresRestart?.length)toast('Some changes require a restart: '+r.requiresRestart.join(', '),'warning');
+      settings();
+    }catch(e){toast(e.message,'error');}
+  });
+}
 
 async function analytics(){
   const view=root.querySelector('#aView');let a;

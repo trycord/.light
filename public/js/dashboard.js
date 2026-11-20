@@ -9,6 +9,7 @@ let serversState = { search: '', category: 'all', status: 'all', sort: 'name', d
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtNum = (n) => Number(n || 0).toLocaleString();
+const fmtMoney = (c, cur='USD') => new Intl.NumberFormat(undefined, { style:'currency', currency:cur||'USD' }).format(Number(c||0)/100);
 const fmtBytes = (b) => { b = Number(b || 0); if (b > 1073741824) return (b/1073741824).toFixed(1)+' GB'; if (b > 1048576) return (b/1048576).toFixed(1)+' MB'; return b+' B'; };
 const fmtTime = (ts) => ts ? new Date(ts).toLocaleString() : '—';
 const fmtAgo = (ts) => { if (!ts) return 'never'; const s=Math.floor((Date.now()-ts)/1000); if(s<60)return s+'s'; if(s<3600)return Math.floor(s/60)+'m'; if(s<86400)return Math.floor(s/3600)+'h'; return Math.floor(s/86400)+'d'; };
@@ -94,7 +95,7 @@ const NAV=[
   {group:'Hosting',items:[{v:'market',label:'Marketplace',i:'applications'},{v:'servers',label:'All Servers',i:'instances'},{v:'game',label:'Game Servers',i:'game-servers'},{v:'web',label:'Applications',i:'applications'},{v:'websites',label:'Websites',i:'network'},{v:'database',label:'Databases',i:'storage'}]},
   {group:'Management',items:[{v:'deployments',label:'Deployments',i:'schedules'},{v:'domains',label:'Domains',i:'network'},{v:'backups',label:'Backups',i:'backups'},{v:'schedules',label:'Schedules',i:'schedules'},{v:'files',label:'Files',i:'storage'}]},
   // Full-screen drag-and-drop file manager lives at its own clean URL.
-  {group:'Account',items:[{v:'usage',label:'Usage & Resources',i:'monitoring'},{v:'billing',label:'Billing & Plans',i:'settings'},{v:'notifications',label:'Notifications',i:'settings'},{v:'support',label:'Support',i:'security'},{v:'settings',label:'Settings',i:'settings'},{v:'admin',label:'Administration',i:'security',admin:true}]},
+  {group:'Account',items:[{v:'usage',label:'Usage & Resources',i:'monitoring'},{v:'orders',label:'Orders & provisioning',i:'schedules'},{v:'billing',label:'Billing & Plans',i:'settings'},{v:'notifications',label:'Notifications',i:'settings'},{v:'support',label:'Support',i:'security'},{v:'settings',label:'Settings',i:'settings'},{v:'admin',label:'Administration',i:'security',admin:true}]},
 ];
 // Views that leave the customer SPA and load a separate application.
 const EXTERNAL_VIEWS = { admin: '/admin', files: '/files' };
@@ -149,7 +150,7 @@ async function openNotifPanel(anchor){
   await load();loadUnread();
   setTimeout(()=>{const h=(ev)=>{if(!p.contains(ev.target)&&!anchor.contains(ev.target)){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);
 }
-function setActive(v){app.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===v));const labels={overview:'Dashboard',market:'Marketplace',servers:'All Servers',game:'Game Servers',web:'Applications',websites:'Websites',database:'Databases',deployments:'Deployments',domains:'Domains',backups:'Backups',schedules:'Schedules',files:'Files',usage:'Usage & Resources',billing:'Billing & Plans',notifications:'Notifications',support:'Support',settings:'Settings',admin:'Administration',server:'Server',verify:'Verify',reset:'Reset'};const c=app.querySelector('#crumb');if(c)c.textContent=labels[v]||v;}
+function setActive(v){app.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===v));const labels={overview:'Dashboard',market:'Marketplace',servers:'All Servers',game:'Game Servers',web:'Applications',websites:'Websites',database:'Databases',deployments:'Deployments',domains:'Domains',backups:'Backups',schedules:'Schedules',files:'Files',usage:'Usage & Resources',orders:'Orders & provisioning',billing:'Billing & Plans',notifications:'Notifications',support:'Support',settings:'Settings',admin:'Administration',server:'Server',verify:'Verify',reset:'Reset'};const c=app.querySelector('#crumb');if(c)c.textContent=labels[v]||v;}
 function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 function poll(fn,ms=8000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&session)fn().catch(()=>{});},ms);}
 function parseHash(){const raw=(location.hash||'#/overview').replace(/^#\/?/,'');const [p,q]=raw.split('?');const [v,param]=p.split('/');return{v:v||'overview',param,query:new URLSearchParams(q||'')};}
@@ -164,7 +165,7 @@ async function navigate(){
     else app.innerHTML='<main class="lt-content" id="view"></main>';
   }
   setActive(v);stopPoll();currentView=v;currentParam=param;const view=app.querySelector('#view');if(!view)return;
-  const R={overview:renderOverview,market:()=>renderMarketplace(),marketplace:()=>renderMarketplace(),servers:renderServers,game:()=>renderServers('game'),web:()=>renderServers('web'),websites:()=>renderServers('website'),database:()=>renderServers('database'),deployments:renderDeployments,domains:renderDomains,backups:renderBackups,schedules:renderSchedules,files:renderFiles,usage:renderUsage,billing:renderBilling,notifications:renderNotifications,support:renderSupport,settings:renderSettings,admin:renderAdmin,server:()=>renderServer(param),verify:()=>renderVerify(query),reset:()=>renderReset(query)};
+  const R={overview:renderOverview,market:()=>renderMarketplace(),marketplace:()=>renderMarketplace(),servers:renderServers,game:()=>renderServers('game'),web:()=>renderServers('web'),websites:()=>renderServers('website'),database:()=>renderServers('database'),deployments:renderDeployments,domains:renderDomains,backups:renderBackups,schedules:renderSchedules,files:renderFiles,usage:renderUsage,orders:renderOrders,billing:renderBilling,notifications:renderNotifications,support:renderSupport,settings:renderSettings,admin:renderAdmin,server:()=>renderServer(param),verify:()=>renderVerify(query),reset:()=>renderReset(query)};
   view.innerHTML=loading();try{await (R[v]||renderOverview)();}catch(e){view.innerHTML=errState(e);}
 }
 
@@ -198,16 +199,84 @@ async function renderReset(q){const v=app.querySelector('#view'),t=q?.get('token
   v.querySelector('#rf')?.addEventListener('submit',async(e)=>{e.preventDefault();const pw=new FormData(e.target).get('password');try{await api.resetPassword(t,pw);toast('Password updated — sign in','success');api.setToken('');session=null;renderAuth('login');}catch(err){toast(err.message,'error');}});
 }
 
-async function renderOverview(){const v=app.querySelector('#view');const [st,ins,deps,nodes]=await Promise.all([api.stats(),api.instances(),api.deployments(),api.nodes()]);
+async function renderOverview(){
+  const v=app.querySelector('#view');
+  const [st,ins,deps,nodes,orders,domains,notes]=await Promise.all([
+    api.stats().catch(()=>({})),api.instances().catch(()=>({instances:[]})),
+    api.deployments().catch(()=>({deployments:[]})),api.nodes().catch(()=>({nodes:[]})),
+    api.orders().catch(()=>({orders:[]})),api.domains().catch(()=>({domains:[]})),
+    api.notifications(8).catch(()=>({notifications:[]})),
+  ]);
+  const prefs=loadPrefs();document.documentElement.setAttribute('data-density',prefs.density);
+  const services=ins.instances||[];
+  const metrics=await Promise.all(services.slice(0,8).map(i=>api.metrics(i.id,5).catch(()=>({metrics:[]}))));
+  const latest=(idx)=>metrics[idx]?.metrics?.[metrics[idx].metrics.length-1]||{};
   const running=st.instances?.running||0,online=nodes.nodes.filter(n=>n.status==='online').length;
-  const kpis=[['Total services',ins.instances.length,`${running} running`],['Running',running,'active now'],['Nodes online',`${online}/${nodes.nodes.length}`,'connected'],['Deployments',deps.deployments.length,'total']]
-    .map(([l,val,s])=>`<div class="lt-card" style="padding:18px"><div class="lt-kpi-label">${l}</div><div class="lt-kpi" style="margin-top:8px">${esc(val)}</div><div class="lt-kpi-sub">${esc(s)}</div></div>`).join('');
-  const onb=ins.instances.length===0?`<div class="lt-card" style="padding:28px;border-color:var(--lt-border-ember);margin-bottom:16px"><div style="font-size:20px;font-weight:800">Welcome to ${esc(brand.product||'.light')} 👋</div><p style="color:var(--lt-text-secondary);font-size:13px;line-height:1.6;max-width:620px;margin:8px 0 16px">Create your first server to host a game, website, application, bot or database. Choose a template or bring your own image — the platform handles the rest.</p><a class="lt-btn lt-btn-primary" href="#/servers">Create Your First Server</a></div>`:'';
-  const rows=ins.instances.slice(0,6).map(i=>`<tr><td><a class="lt-td-strong" href="#/server/${i.id}" style="color:var(--lt-text);text-decoration:none">${esc(i.name)}</a><div class="lt-meta">${esc(i.image)}</div></td><td>${badge(i.status)}</td><td>${esc(i.category)}</td><td class="lt-td-mono">${i.memoryMb} MB</td><td>${fmtAgo(i.updatedAt)}</td></tr>`).join('');
-  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Dashboard</h1><p class="lt-page-subtitle">Your hosting at a glance</p></div><div class="lt-page-actions"><a class="lt-btn lt-btn-primary" href="#/servers">Create Your First Server</a></div></div>${onb}
-    <div class="lt-grid lt-grid-4" style="margin-bottom:16px">${kpis}</div>
-    ${section('Recent services','',rows?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Memory</th><th>Updated</th></tr></thead><tbody>${rows}</tbody></table></div>`:empty('No services yet','Create your first server to get started.','<a class="lt-btn lt-btn-primary" href="#/servers">Create Server</a>'))}`;
+  const plan=(await api.subscription().catch(()=>({}))).plan||{};
+
+  const onb=services.length===0?`<div class="lt-card" style="padding:28px;border-color:var(--lt-border-ember);margin-bottom:16px">
+    <div style="font-size:20px;font-weight:800">Welcome to ${esc(brand.product||'.light')} 👋</div>
+    <p style="color:var(--lt-text-secondary);font-size:13px;line-height:1.6;max-width:640px;margin:8px 0 16px">Browse a hosting plan to deploy a game, website, application, bot or database. ${esc(brand.product||'.light')} and Shade handle the Debian runtime, resources and networking underneath.</p>
+    <a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting plans</a></div>`:'';
+
+  const cards=services.slice(0,8).map((i,idx)=>{const m=latest(idx);return `<a class="lt-card" href="#/server/${esc(i.id)}" style="padding:18px;text-decoration:none;color:var(--lt-text);display:block">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+      <div style="min-width:0"><div style="font-weight:800;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(i.name)}</div>
+        <div class="lt-meta">${esc(i.environmentId||i.image||i.category)} ${esc(i.environmentVersion||'')} · ${esc(plan.name||'plan')}</div></div>${badge(i.status)}</div>
+    <div class="lt-grid lt-grid-3" style="gap:8px;margin-top:16px">
+      ${[['CPU',(m.cpu||0)+'%'],['RAM',i.memoryMb+' MB'],['DISK',(m.disk||0)+'%']].map(([l,x])=>`<div><div class="lt-label">${l}</div><div style="font-weight:800;font-size:14px;margin-top:2px">${x}</div></div>`).join('')}
+    </div>
+    <div class="lt-meta" style="margin-top:12px">${(i.ports||[]).map(p=>p.host?`${p.container}→${p.host}`:p.container).join(', ')||'no ports'} · updated ${fmtAgo(i.updatedAt)}</div>
+  </a>`;}).join('');
+
+  const widgets={
+    stats:()=>`<div class="lt-grid lt-grid-4">${[['Services',services.length,`${running} running`],['Nodes',`${online}/${nodes.nodes.length}`,'connected'],['Orders',(orders.orders||[]).length,'total'],['Deployments',(deps.deployments||[]).length,'all time']]
+      .map(([l,x,s])=>`<div class="lt-card" style="padding:18px"><div class="lt-kpi-label">${l}</div><div class="lt-kpi" style="margin-top:8px">${esc(x)}</div><div class="lt-kpi-sub">${esc(s)}</div></div>`).join('')}</div>`,
+    services:()=>section('Your services',`${services.length} provisioned`,cards||empty('No services yet','Purchase a plan to get your first service.','<a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting</a>')),
+    orders:()=>section('Recent orders','',(orders.orders||[]).length?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Order</th><th>Plan</th><th>Status</th><th>Service</th></tr></thead><tbody>${(orders.orders||[]).slice(0,5).map(o=>`<tr><td class="lt-td-mono">${esc(o.id)}</td><td>${esc(o.planSnapshot?.name||o.planId||'Custom')}</td><td>${badge(o.status)}</td><td>${o.instanceId?`<a href="#/server/${esc(o.instanceId)}">Manage</a>`:'—'}</td></tr>`).join('')}</tbody></table></div>`:'<p class="lt-meta">No orders yet.</p>'),
+    deployments:()=>section('Deployments','',(deps.deployments||[]).length?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Service</th><th>Status</th><th>Time</th></tr></thead><tbody>${(deps.deployments||[]).slice(0,5).map(d=>`<tr><td>${esc(d.instanceName||d.instanceId)}</td><td>${badge(d.status)}</td><td>${fmtAgo(d.createdAt)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="lt-meta">No deployments yet.</p>'),
+    domains:()=>section('Domains','',(domains.domains||[]).length?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Domain</th><th>SSL</th><th>Status</th></tr></thead><tbody>${(domains.domains||[]).slice(0,5).map(d=>`<tr><td class="lt-td-mono">${esc(d.domain)}</td><td>${badge(d.ssl_status)}</td><td>${badge(d.verified?'active':'pending')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="lt-meta">No domains yet.</p>'),
+    activity:()=>section('Notifications','',(notes.notifications||[]).length?(notes.notifications||[]).slice(0,6).map(n=>`<div style="padding:9px 0;border-bottom:1px solid var(--lt-border);font-size:12px"><b>${esc(n.title)}</b><div class="lt-meta">${esc(n.message)} · ${fmtAgo(n.createdAt)}</div></div>`).join(''):'<p class="lt-meta">All caught up.</p>'),
+  };
+  const order=prefs.widgets.filter(id=>widgets[id]);
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Dashboard</h1><p class="lt-page-subtitle">Your hosting at a glance · ${esc(plan.name||'Free')} plan</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-secondary" id="customizeDash">Customize</button><a class="lt-btn lt-btn-primary" href="/hosting">Get hosting</a></div></div>
+    ${onb}<div id="widgetArea" style="display:grid;gap:16px">${order.map(id=>widgets[id]()).join('')}</div>
+    <div id="dashCustom" style="display:none"></div>`;
+  v.querySelector('#customizeDash').addEventListener('click',()=>showDashCustomizer(v,prefs));
   poll(async()=>{if(currentView==='overview')await renderOverview();});
+}
+
+function showDashCustomizer(v,prefs){
+  const box=v.querySelector('#dashCustom');
+  if(box.style.display==='block'){box.style.display='none';box.innerHTML='';return;}
+  box.style.display='block';
+  const row=(w,i)=>`<div class="lt-row" style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--lt-border)">
+    <input type="checkbox" data-w="${w.id}" ${prefs.widgets.includes(w.id)?'checked':''}>
+    <span style="flex:1">${esc(w.label)}</span>
+    <button class="lt-btn lt-btn-ghost lt-btn-sm" data-move="up" data-id="${w.id}">↑</button>
+    <button class="lt-btn lt-btn-ghost lt-btn-sm" data-move="down" data-id="${w.id}">↓</button></div>`;
+  box.innerHTML=`<div class="lt-card" style="padding:18px;margin-bottom:16px"><h3 class="lt-h3">Customize dashboard</h3>
+    <p class="lt-meta">Changes save automatically and persist across sessions.</p>
+    ${WIDGETS.map(row).join('')}
+    <div class="lt-field" style="margin-top:14px"><label>Density</label><select class="lt-select" id="dashDensity">
+      ${['compact','comfortable','spacious'].map(d=>`<option value="${d}" ${prefs.density===d?'selected':''}>${d}</option>`).join('')}</select></div>
+    <div style="display:flex;gap:8px;margin-top:14px"><button class="lt-btn lt-btn-secondary lt-btn-sm" id="dashReset">Restore defaults</button><button class="lt-btn lt-btn-primary lt-btn-sm" id="dashDone">Done</button></div>
+  </div>`;
+  const commit=()=>{savePrefs(prefs);renderOverview();};
+  box.querySelectorAll('[data-w]').forEach(el=>el.addEventListener('change',()=>{
+    if(el.checked&&!prefs.widgets.includes(el.dataset.w))prefs.widgets.push(el.dataset.w);
+    if(!el.checked)prefs.widgets=prefs.widgets.filter(x=>x!==el.dataset.w);
+    commit();
+  }));
+  box.querySelectorAll('[data-move]').forEach(el=>el.addEventListener('click',()=>{
+    const i=prefs.widgets.indexOf(el.dataset.id),j=el.dataset.move==='up'?i-1:i+1;
+    if(i<0||j<0||j>=prefs.widgets.length)return;
+    [prefs.widgets[i],prefs.widgets[j]]=[prefs.widgets[j],prefs.widgets[i]];commit();
+  }));
+  box.querySelector('#dashDensity').addEventListener('change',e=>{prefs.density=e.target.value;commit();});
+  box.querySelector('#dashReset').addEventListener('click',()=>{Object.assign(prefs,DEFAULT_PREFS);commit();});
+  box.querySelector('#dashDone').addEventListener('click',()=>{box.style.display='none';box.innerHTML='';});
 }
 
 async function renderServers(category='all'){
@@ -221,20 +290,19 @@ async function renderServers(category='all'){
   const paged=rows.slice((serversState.page-1)*serversState.per,serversState.page*serversState.per);
   const cats=[['all','All Servers'],['game','Game Servers'],['web','Applications'],['website','Websites'],['database','Databases']];
   const table=paged.map(i=>`<tr><td><a class="lt-td-strong" href="#/server/${i.id}" style="color:var(--lt-text);text-decoration:none">${esc(i.name)}</a><div class="lt-meta">${esc(i.image)}</div></td><td>${esc(i.category)}</td><td>${badge(i.status)}</td><td class="lt-td-mono">${i.cpuCores} / ${i.memoryMb}MB</td><td class="lt-td-mono">${(i.ports||[]).map(p=>p.host?`${p.container}→${p.host}`:`${p.container} (auto)`).join(', ')||'—'}</td><td>${fmtAgo(i.createdAt)}</td><td><a class="lt-btn lt-btn-ghost lt-btn-sm" href="#/server/${i.id}">Manage</a></td></tr>`).join('');
-  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">${(cats.find(c=>c[0]===serversState.category)||cats[0])[1]}</h1><p class="lt-page-subtitle">${list.instances.length} total services</p></div><div class="lt-page-actions"><button class="lt-btn lt-btn-primary" id="createBtn">+ Create Server</button></div></div>
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">${(cats.find(c=>c[0]===serversState.category)||cats[0])[1]}</h1><p class="lt-page-subtitle">${list.instances.length} total services</p></div><div class="lt-page-actions"><a class="lt-btn lt-btn-primary" href="/hosting">+ Get hosting</a></div></div>
     <div class="lt-toolbar"><div class="lt-search-field"><input class="lt-input" id="srvSearch" placeholder="Search servers…" value="${esc(serversState.search)}"></div>
       ${selectField('Status','statusFilter',[['all','All statuses'],['running','Running'],['stopped','Stopped'],['deploying','Deploying'],['error','Error']],serversState.status)}
       ${selectField('Sort','sortField',[['name','Name'],['createdAt','Created'],['status','Status'],['category','Type']],serversState.sort)}</div>
     ${table?`<div class="lt-card"><div class="lt-table-wrap"><table class="lt-table"><thead><tr><th class="sortable" data-sort="name">Name</th><th>Type</th><th class="sortable" data-sort="status">Status</th><th>CPU / RAM</th><th>Ports</th><th>Created</th><th></th></tr></thead><tbody>${table}</tbody></table></div><div class="lt-pagination"><span>Showing ${paged.length} of ${rows.length}</span><div style="display:flex;gap:6px"><button class="lt-btn lt-btn-ghost lt-btn-sm" id="prev" ${serversState.page<=1?'disabled':''}>Prev</button><span style="padding:6px">${serversState.page}/${pages}</span><button class="lt-btn lt-btn-ghost lt-btn-sm" id="next" ${serversState.page>=pages?'disabled':''}>Next</button></div></div></div>`
-      :empty('No servers found','Create a server or adjust your filters.','<button class="lt-btn lt-btn-primary" id="createBtn2">Create Server</button>')}`;
+      :empty('No services yet','Purchase a hosting plan to get your first service.','<a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting</a>')}`;
   v.querySelector('#srvSearch')?.addEventListener('input',e=>{serversState.search=e.target.value;serversState.page=1;renderServers(serversState.category);});
   v.querySelector('#statusFilter')?.addEventListener('change',e=>{serversState.status=e.target.value;renderServers(serversState.category);});
   v.querySelector('#sortField')?.addEventListener('change',e=>{serversState.sort=e.target.value;renderServers(serversState.category);});
   v.querySelectorAll('[data-sort]')?.forEach(th=>th.addEventListener('click',()=>{serversState.dir=serversState.sort===th.dataset.sort?-serversState.dir:1;serversState.sort=th.dataset.sort;renderServers(serversState.category);}));
   v.querySelector('#prev')?.addEventListener('click',()=>{serversState.page--;renderServers(serversState.category);});
   v.querySelector('#next')?.addEventListener('click',()=>{serversState.page++;renderServers(serversState.category);});
-  const create=()=>openCreate(templates,sub);
-  v.querySelector('#createBtn')?.addEventListener('click',create);v.querySelector('#createBtn2')?.addEventListener('click',create);
+  // Service creation happens only through checkout + verified payment.
 }
 
 async function openCreate(envData,sub){
@@ -345,6 +413,19 @@ async function renderServer(id){
 }
 let currentServerTab='overview',currentFilePath='/',currentServerId=null;
 
+/* ---------- dashboard personalisation (persists across sessions) ---------- */
+const WIDGETS=[
+  {id:'stats',label:'Key metrics'},
+  {id:'services',label:'Your services'},
+  {id:'orders',label:'Recent orders'},
+  {id:'deployments',label:'Deployments'},
+  {id:'domains',label:'Domains'},
+  {id:'activity',label:'Activity'},
+];
+const DEFAULT_PREFS={widgets:WIDGETS.map(w=>w.id),density:'comfortable',hidden:[]};
+function loadPrefs(){try{const p=JSON.parse(localStorage.getItem('lt_dash_prefs')||'{}');return {...DEFAULT_PREFS,...p};}catch{return {...DEFAULT_PREFS};}}
+function savePrefs(p){localStorage.setItem('lt_dash_prefs',JSON.stringify(p));document.documentElement.setAttribute('data-density',p.density);}
+
 async function renderDeployments(){const v=app.querySelector('#view'),d=await api.deployments();
   const rows=d.deployments.map(x=>`<tr><td class="lt-td-strong">${esc(x.instanceName||x.instanceId)}</td><td>${badge(x.status)}</td><td class="lt-td-mono">${esc(x.source)}</td><td class="lt-td-mono">${esc(x.version)}</td><td>${fmtTime(x.createdAt)}</td></tr>`).join('');
   v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Deployments</h1></div>${section('History',`${d.deployments.length} records`,rows?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Server</th><th>Status</th><th>Source</th><th>Version</th><th>Time</th></tr></thead><tbody>${rows}</tbody></table></div>`:empty('No deployments','Deploy a server to see history.'))}`;
@@ -376,13 +457,14 @@ async function renderUsage(){const v=app.querySelector('#view'),[us,me]=await Pr
 async function renderSettings(){const v=app.querySelector('#view'),[me,sessions]=await Promise.all([api.me(),api.sessions()]);
   v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Settings</h1></div><div class="lt-grid lt-grid-2">
     ${section('Profile','',`<form id="pf">${field('Name','name','text',me.user.name||'')}${field('Username','username','text',me.user.username||'')}<button class="lt-btn lt-btn-primary" type="submit">Save</button></form>`)}
-    ${section('Appearance','',`<div style="display:flex;gap:8px"><button class="lt-btn ${document.documentElement.getAttribute('data-theme')!=='light'?'lt-btn-primary':'lt-btn-secondary'}" data-theme="dark">Dark</button><button class="lt-btn ${document.documentElement.getAttribute('data-theme')==='light'?'lt-btn-primary':'lt-btn-secondary'}" data-theme="light">Light</button></div>`)}
+    ${section('Appearance','',`<p class="lt-meta">System preference is used by default. Your choice is saved across sessions.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${['system','light','dark','high-contrast'].map(t=>`<button class="lt-btn ${(window.__LT_THEME__?.get()||'system')===t?'lt-btn-primary':'lt-btn-secondary'}" data-theme-mode="${t}">${t.replace('-',' ')}</button>`).join('')}</div>`)}
     ${section('Password','',`<form id="pwf">${field('Current password','currentPassword','password')}${field('New password','newPassword','password','','minlength="10"')}<button class="lt-btn lt-btn-primary" type="submit">Change password</button></form>`)}
     ${section('Sessions','',`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Device</th><th>IP</th><th></th></tr></thead><tbody>${(sessions.sessions||[]).map(s=>`<tr><td class="lt-td-mono">${esc((s.user_agent||'Unknown').slice(0,40))}</td><td>${esc(s.ip||'—')}</td><td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-s="${s.id}">Revoke</button></td></tr>`).join('')}</tbody></table></div>`)}
     ${section('Danger zone','',`<button class="lt-btn lt-btn-danger" id="delAcc">Delete account</button>`)}</div>`;
   v.querySelector('#pf').addEventListener('submit',async(e)=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());await api.updateProfile(d);toast('Saved','success');});
   v.querySelector('#pwf').addEventListener('submit',async(e)=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());try{const r=await api.changePassword(d);api.setToken(r.token);toast('Password changed','success');e.target.reset();}catch(err){toast(err.message,'error');}});
-  v.querySelectorAll('[data-theme]').forEach(b=>b.addEventListener('click',async()=>{document.documentElement.setAttribute('data-theme',b.dataset.theme);localStorage.setItem('lt_theme',b.dataset.theme);await api.updateProfile({theme:b.dataset.theme}).catch(()=>{});renderSettings();}));
+  v.querySelectorAll('[data-theme-mode]').forEach(b=>b.addEventListener('click',()=>{window.__LT_THEME__?.set(b.dataset.themeMode);renderSettings();}));
   v.querySelectorAll('[data-s]').forEach(b=>b.addEventListener('click',async()=>{await api.deleteSession(b.dataset.s);toast('Revoked','success');renderSettings();}));
   v.querySelector('#delAcc').addEventListener('click',async()=>{const d=await modal('Delete account',field('Type DELETE to confirm','confirm','text',''),{danger:true,confirm:'Delete account'});if(d?.confirm==='DELETE'){await api.deleteAccount();api.setToken('');session=null;renderAuth('login');}});
 }
@@ -393,17 +475,32 @@ async function renderAdmin(){const v=app.querySelector('#view'),[users,teams,aud
     ${section('Audit log','',`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Time</th><th>Action</th><th>Target</th></tr></thead><tbody>${audit.events.slice(0,30).map(e=>`<tr><td class="lt-td-mono">${fmtTime(e.ts)}</td><td>${esc(e.action)}</td><td>${esc(e.target_id||'—')}</td></tr>`).join('')}</tbody></table></div>`)}</div>`;
 }
 
-/* ---------- plan checkout: activate plan then provision its first service ---------- */
-async function checkoutPlan(planId, name){
+/* ---------- orders & provisioning ---------- */
+async function renderOrders(){
+  const v=app.querySelector('#view');let orders=[];
+  try{orders=(await api.orders()).orders||[];}catch(e){v.innerHTML=errState(e);return;}
+  const rows=orders.map(o=>`<tr><td class="lt-td-mono">${esc(o.id)}</td><td>${esc(o.planSnapshot?.name||o.planId||'Custom')}</td>
+    <td>${esc(o.serviceName)}</td><td>${badge(o.status)}</td><td>${o.instanceId?`<a href="#/server/${esc(o.instanceId)}">${esc(o.instanceId)}</a>`:'—'}</td>
+    <td>${fmtMoney(o.total,o.currency)}</td><td>${fmtTime(o.createdAt)}</td>
+    <td>${o.status==='failed'?`<button class="lt-btn lt-btn-secondary lt-btn-sm" data-retry="${esc(o.id)}">Retry</button>`:''}
+    ${o.instanceId?`<a class="lt-btn lt-btn-ghost lt-btn-sm" href="#/server/${esc(o.instanceId)}">Manage</a>`:''}</td></tr>`).join('');
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Orders & provisioning</h1><p class="lt-page-subtitle">Purchases and the services created from them</p></div>
+    <div class="lt-page-actions"><a class="lt-btn lt-btn-primary" href="/hosting">Get hosting</a></div></div>
+    ${section('Orders','',rows?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Order</th><th>Plan</th><th>Service</th><th>Status</th><th>Workload</th><th>Total</th><th>Date</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      :empty('No orders yet','Choose a hosting plan to get started.','<a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting</a>'))}`;
+  v.querySelectorAll('[data-retry]').forEach(b=>b.addEventListener('click',async()=>{
+    try{await api.retryOrder(b.dataset.retry);toast('Provisioning retried','success');renderOrders();}catch(e){toast(e.message,'error');}
+  }));
+  if(orders.some(o=>['payment_processing','queued','provisioning'].includes(o.status)))poll(async()=>{if(currentView==='orders')await renderOrders();},6000);
+}
+
+/* ---------- plan checkout ---------- */
+async function checkoutPlan(planId){
   if(!session||!planId)return false;
-  try{
-    try{await api.activatePlan({planId});}catch(e){if(e.status!==409)throw e;}
-    const created=await api.createInstance({name:String(name||'My service').slice(0,60),environmentId:'node',version:'22',category:'web'});
-    toast('Plan activated and service provisioning started','success');
-    const url=new URL(location.href);url.searchParams.delete('plan');history.replaceState(null,'',url.pathname+url.search+url.hash);
-    location.hash=`#/server/${created.instance.id}`;
-    return true;
-  }catch(e){toast(e.message,'error');return false;}
+  // Purchasing always goes through the real checkout. .light and Shade create
+  // the service after payment is confirmed — never from a browser form.
+  location.href=`/checkout?plan=${encodeURIComponent(planId)}`;
+  return true;
 }
 
 /* ---------- commercial dashboard views ---------- */

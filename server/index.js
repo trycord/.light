@@ -33,6 +33,9 @@ import { featuresRoutes } from './api/features.js';
 import { notificationsRoutes } from './api/notifications.js';
 import { ticketsRoutes, adminTicketRoutes } from './api/tickets.js';
 import { analyticsRoutes } from './api/analytics.js';
+import { checkoutRoutes } from './api/checkout.js';
+import { connectRoutes } from './api/connect.js';
+import { handleProvisionResult } from './provisioning.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(__dirname, '..');
@@ -78,6 +81,8 @@ api.use('/github', githubRoutes());
 api.use('/features', featuresRoutes());
 api.use('/notifications', notificationsRoutes());
 api.use('/tickets', ticketsRoutes());
+api.use('/checkout', checkoutRoutes());
+api.use('/connect', connectRoutes());
 api.use('/admin', adminRoutes());
 api.use('/admin/tickets', adminTicketRoutes());
 api.use('/admin/analytics', analyticsRoutes());
@@ -90,7 +95,9 @@ api.get('/me', requireAuth, asyncRoute(async (req, res) => {
 }));
 app.use('/api', api);
 
-app.use(express.static(path.join(appDir, 'public')));
+// `index: false` stops static middleware from hijacking `/` with index.html —
+// the explicit route below must serve the public marketing homepage.
+app.use(express.static(path.join(appDir, 'public'), { index: false }));
 app.use('/assets', express.static(path.join(appDir, 'assets')));
 // Clean, human-friendly routes (no .html exposed to visitors).
 const send = (file) => (req, res) => res.sendFile(path.join(appDir, 'public', file));
@@ -110,10 +117,14 @@ app.get('/faq', send('faq.html'));
 app.get('/login', send('index.html'));
 app.get('/register', send('index.html'));
 app.get('/files', send('files.html'));
+app.get('/checkout', send('checkout.html'));
+// Stripe Connect sample pages.
+app.get('/connect', send('connect.html'));
+app.get('/store/:accountId', send('store.html'));
 // Administration — independent application; serves admin.html for /admin and all sub-routes.
 app.get(['/admin', /^\/admin\/.*/], send('admin.html'));
 // Legacy .html URLs still work (backward compatibility).
-const PUBLIC_PAGES = ['site','pricing','docs','about','contact','legal','product','hosting','configure','features','faq','admin','files'];
+const PUBLIC_PAGES = ['site','pricing','docs','about','contact','legal','product','hosting','configure','features','faq','admin','files','checkout','connect','store'];
 app.get('/:page.html', (req, res, next) => {
   if (PUBLIC_PAGES.includes(req.params.page)) return send(`${req.params.page}.html`)(req, res);
   next();

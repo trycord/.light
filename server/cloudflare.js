@@ -6,15 +6,16 @@ import { encrypt, decrypt } from './crypto.js';
 import { id, now, str } from './util.js';
 import { audit } from './audit.js';
 import { queueCommand } from './commands.js';
+import { get } from './settings.js';
 
 const API = 'https://api.cloudflare.com/client/v4';
 
 export function cloudflareConfig() {
   return {
-    token: process.env.CLOUDFLARE_API_TOKEN || '',
-    accountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
-    zoneId: process.env.CLOUDFLARE_ZONE_ID || '',
-    domain: process.env.CLOUDFLARE_DOMAIN || process.env.PLATFORM_DOMAIN || 'trycord.dev',
+    token: String(get('CLOUDFLARE_API_TOKEN', '') || ''),
+    accountId: String(get('CLOUDFLARE_ACCOUNT_ID', '') || ''),
+    zoneId: String(get('CLOUDFLARE_ZONE_ID', '') || ''),
+    domain: String(get('CLOUDFLARE_DOMAIN', '') || get('PLATFORM_DOMAIN', 'trycord.dev') || 'trycord.dev'),
   };
 }
 

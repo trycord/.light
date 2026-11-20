@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Store — .light</title>
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/utilities.css"><link rel="stylesheet" href="/styles/site.css">
+<script type="module" src="/js/theme.js"></script>
+<script src="/js/brand-sync.js"></script>
+<style>
+  .wrap{max-width:1040px;margin:0 auto;padding:28px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+  .card{background:var(--lt-surface-2);border:1px solid var(--lt-border);border-radius:12px;padding:18px}
+  .price{font-size:22px;font-weight:800;color:var(--lt-ember-500);margin:10px 0}
+  .muted{color:var(--lt-text-muted);font-size:13px}
+</style>
+</head><body><div class="wrap">
+  <div id="store"><div class="muted">Loading storefront…</div></div>
+</div>
+<script type="module">
+const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// TODO(dev): the connected account id is taken from the URL for this demo.
+// In production use a human-friendly seller slug that maps to the account id.
+const parts=location.pathname.split('/').filter(Boolean);
+const accountId=parts[1] ? decodeURIComponent(parts[1]) : new URLSearchParams(location.search).get('accountId')||'';
+const host=document.getElementById('store');
+if(!accountId){host.innerHTML='<div class="card">Missing connected account id in URL.</div>';}
+else{
+  try{
+    const r=await fetch('/api/connect/store/'+encodeURIComponent(accountId));
+    const data=await r.json();
+    if(!r.ok)throw new Error(data.error||'Unable to load store');
+    host.innerHTML=`<a href="/connect" class="muted">← Seller dashboard</a>
+      <h1 style="font-size:26px;margin:18px 0 4px">Storefront</h1>
+      <p class="muted">Seller account: <span class="lt-td-mono">${esc(accountId)}</span></p>
+      <div class="grid" style="margin-top:22px">${(data.products||[]).map(p=>`<div class="card">
+        <h2 style="font-size:17px;margin:0">${esc(p.name)}</h2>
+        <p class="muted">${esc(p.description||'')}</p>
+        <div class="price">${p.amount!=null?(p.amount/100).toFixed(2):'—'} <small>${esc((p.currency||'usd').toUpperCase())}</small></div>
+        <button class="lt-btn lt-btn-primary" data-price="${esc(p.priceId||'')}">Buy now</button>
+      </div>`).join('')||'<div class="card muted">No products are available yet.</div>'}</div>`;
+    host.querySelectorAll('[data-price]').forEach(b=>b.addEventListener('click',async()=>{
+      b.disabled=true;
+      try{
+        const res=await fetch('/api/connect/store/'+encodeURIComponent(accountId)+'/checkout',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({priceId:b.dataset.price}),
+        }).then(r=>r.json());
+        if(!res.url)throw new Error('No checkout URL returned');
+        location.href=res.url;
+      }catch(e){alert(e.message);b.disabled=false;}
+    }));
+  }catch(e){host.innerHTML='<div class="card">'+esc(e.message)+'</div>';}
+}
+</script>
+</body></html>

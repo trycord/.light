@@ -6,6 +6,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+<script type="module" src="/js/theme.js"></script>
 <script src="/js/brand-sync.js"></script>
 </head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading catalogue…</div></div>
 <script type="module">
@@ -33,7 +34,7 @@ async function boot(){
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px"><span style="font-weight:700;font-size:15px">From $${(p.startingPriceMonthly/100).toFixed(0)}<span style="font-size:11px;color:var(--lt-text-muted)">/mo</span></span><span style="color:var(--lt-ember-500);font-weight:700;font-size:13px">View Plans →</span></div>
         </div></a>`).join('') || '<div class="site-muted">No products available in this category yet.</div>'}
     </div>
-    <div style="text-align:center;margin-top:36px"><a href="/pricing" class="lt-btn lt-btn-secondary">View plans</a> <a href="/login?plan=free#register" class="lt-btn lt-btn-primary">Get Started</a></div>
+    <div style="text-align:center;margin-top:36px"><a href="/pricing" class="lt-btn lt-btn-secondary">View plans</a> <a href="/checkout?plan=free" class="lt-btn lt-btn-primary">Get Started</a></div>
   </div></section>`;
   document.getElementById('site').innerHTML = layout(b, content, 'products');
   document.querySelectorAll('[data-cat]').forEach(el=>el.addEventListener('click',()=>{location.href='/hosting'+(el.dataset.cat==='all'?'':'?category='+el.dataset.cat);}));

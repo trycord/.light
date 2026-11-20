@@ -4,6 +4,7 @@ import { requireNode } from '../auth.js';
 import { pendingCommands, completeCommand, claimCommand, recoverStaleCommands, renewCommand } from '../commands.js';
 import { asyncRoute, str, num, int, now } from '../util.js';
 import { setAgentHealth } from '../health.js';
+import { handleProvisionResult } from '../provisioning.js';
 
 export function agentRoutes() {
   const router = Router();
@@ -52,6 +53,9 @@ export function agentRoutes() {
     const b = req.body || {};
     const ok = b.ok !== false;
     completeCommand(command.id, ok ? 'done' : 'failed', b.result ?? b.error ?? {});
+    if (command.type === 'instance.create' || command.type === 'instance.reprovision') {
+      try { handleProvisionResult(command, ok, b.result || {}); } catch (error) { console.error('[provision] result handling failed:', error); }
+    }
     if (!command.instance_id) return res.json({ ok: true });
     const result = b.result || {};
     let status = b.status;

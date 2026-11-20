@@ -5,11 +5,14 @@ import config from './config.js';
 import { getDb } from './db.js';
 import { encrypt, decrypt } from './crypto.js';
 import { id, now, json } from './util.js';
+import { get } from './settings.js';
 
 function stripeKey() {
-  return process.env.STRIPE_SECRET_KEY || '';
+  return String(get('STRIPE_SECRET_KEY', '') || '');
 }
-function stripeEnabled() { return Boolean(process.env.STRIPE_SECRET_KEY); }
+function stripeEnabled() {
+  return Boolean(stripeKey() && get('STRIPE_WEBHOOK_SECRET', ''));
+}
 
 async function stripeRequest(path, method = 'GET', body) {
   const key = stripeKey();
@@ -32,7 +35,7 @@ export function isEnabled(provider) {
   return provider === 'stripe' && stripeEnabled();
 }
 
-export async function createCheckout({ teamId, amount, currency, description, metadata }) {
+export async function createCheckout({ teamId, amount, currency, description, metadata, successUrl, cancelUrl }) {
   if (!stripeEnabled()) throw new Error('no_payment_provider_configured');
   const session = await stripeRequest('/checkout/sessions', 'POST', {
     'mode': 'payment',
@@ -40,8 +43,8 @@ export async function createCheckout({ teamId, amount, currency, description, me
     'line_items[0][price_data][unit_amount]': String(amount),
     'line_items[0][price_data][product_data][name]': description || '.light hosting',
     'line_items[0][quantity]': '1',
-    'success_url': `${config.controlBaseUrl}/billing?checkout=success&session={CHECKOUT_SESSION_ID}`,
-    'cancel_url': `${config.controlBaseUrl}/billing?checkout=cancelled`,
+    'success_url': successUrl || `${config.controlBaseUrl}/login?checkout=success&session={CHECKOUT_SESSION_ID}`,
+    'cancel_url': cancelUrl || `${config.controlBaseUrl}/hosting?checkout=cancelled`,
     'client_reference_id': teamId,
     ...Object.fromEntries(Object.entries(metadata || {}).map(([k, v]) => [`metadata[${k}]`, String(v)])),
   });
@@ -57,7 +60,7 @@ export async function createRefund(providerRef, amount) {
 
 export function verifyWebhookSignature(provider, rawBody, signatureHeader) {
   if (provider !== 'stripe') return false;
-  const secret = process.env.STRIPE_WEBHOOK_SECRET || '';
+  const secret = String(get('STRIPE_WEBHOOK_SECRET', '') || '');
   if (!secret || !signatureHeader) return false;
   const parts = Object.fromEntries(signatureHeader.split(',').map((p) => p.split('=')));
   const t = parts.t; const v1 = parts.v1;

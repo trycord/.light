@@ -127,6 +127,48 @@
 }
 
 [data-theme='dark'] { color-scheme: dark; }
+
+/* --------------------------------------------------------------------------
+   Light theme — deliberately designed, not an inverted dark theme.
+   Warm paper neutrals keep the volcanic ember identity intact.
+   -------------------------------------------------------------------------- */
+[data-theme='light'] {
+  color-scheme: light;
+  --lt-obsidian: #F7F4EE;
+  --lt-basalt: #EFEAE1;
+  --lt-bg: #F7F4EE;
+  --lt-bg-elev: #FFFDF9;
+  --lt-surface: #FFFFFF;
+  --lt-surface-2: #F1ECE3;
+  --lt-surface-3: #E6DFD3;
+  --lt-surface-4: #D8D0C2;
+  --lt-border: rgba(40, 34, 28, 0.10);
+  --lt-border-strong: rgba(40, 34, 28, 0.20);
+  --lt-border-stronger: rgba(40, 34, 28, 0.32);
+  --lt-border-ember: rgba(255, 77, 36, 0.5);
+  --lt-text: #211C17;
+  --lt-text-secondary: #5A5148;
+  --lt-text-muted: #857A6E;
+  --lt-text-faint: #A99E91;
+  --lt-text-inverse: #FFFFFF;
+  --lt-success: #2F7A69;
+  --lt-success-dim: rgba(47, 122, 105, 0.10);
+  --lt-warning: #9A7412;
+  --lt-warning-dim: rgba(154, 116, 18, 0.10);
+  --lt-danger: #C23A24;
+  --lt-danger-dim: rgba(194, 58, 36, 0.10);
+  --lt-info: #2F7A69;
+  --lt-info-dim: rgba(47, 122, 105, 0.10);
+  --lt-glass-bg: rgba(255, 253, 249, 0.8);
+  --lt-glass-bg-strong: rgba(247, 244, 238, 0.94);
+  --lt-glass-border: rgba(40, 34, 28, 0.10);
+  --lt-shadow-xs: 0 1px 2px rgba(40, 34, 28, 0.06);
+  --lt-shadow-sm: 0 2px 8px rgba(40, 34, 28, 0.08);
+  --lt-shadow-md: 0 8px 24px rgba(40, 34, 28, 0.10);
+  --lt-shadow-lg: 0 16px 48px rgba(40, 34, 28, 0.14);
+  --lt-on-ember: #FFFFFF;
+}
+
 [data-theme='high-contrast'] {
   --lt-bg: #060807;
   --lt-bg-elev: #0C0E0D;

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect — .light</title>
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/utilities.css"><link rel="stylesheet" href="/styles/layout.css">
+<link rel="stylesheet" href="/styles/app.css"><link rel="stylesheet" href="/styles/dashboard.css">
+<script type="module" src="/js/theme.js"></script>
+<script src="/js/brand-sync.js"></script>
+<style>
+  .wrap{max-width:1080px;margin:0 auto;padding:24px}
+  .card{background:var(--lt-surface-2);border:1px solid var(--lt-border);border-radius:12px;padding:20px;margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+  .muted{color:var(--lt-text-muted);font-size:13px}
+  h1{font-size:24px;margin:0 0 4px}h2{font-size:17px;margin:0 0 12px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+</style>
+</head><body><div class="wrap">
+  <div class="row" style="justify-content:space-between"><a href="/login#/overview" class="muted">← Dashboard</a><span id="cfg" class="lt-badge lt-badge-neutral">checking config…</span></div>
+  <h1 style="margin-top:18px">Sell with Stripe Connect</h1>
+  <p class="muted">Onboard a connected account, create products, and share your storefront. All Stripe requests use one Stripe Client.</p>
+
+  <div id="app"><div class="card muted">Loading…</div></div>
+</div>
+<script type="module">
+import api from '/js/api.js';
+const app = document.getElementById('app');
+const esc = (v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const cfg = await fetch('/api/connect/config').then(r=>r.json()).catch(()=>({}));
+document.getElementById('cfg').textContent = cfg.configured ? 'Stripe configured' : 'Stripe not configured';
+document.getElementById('cfg').className = 'lt-badge '+(cfg.configured?'lt-badge-success':'lt-badge-warning');
+
+if (!api.token()) {
+  app.innerHTML = `<div class="card"><h2>Sign in required</h2><p class="muted">Sign in to manage your connected account.</p><a class="lt-btn lt-btn-primary" href="/login">Sign in</a></div>`;
+} else boot();
+
+async function boot(){
+  let status={connected:false};
+  try{status=await fetch('/api/connect/account',{headers:{Authorization:'Bearer '+api.token()}}).then(r=>r.json());}catch(e){}
+  let products=[];
+  try{products=await fetch('/api/connect/products',{headers:{Authorization:'Bearer '+api.token()}}).then(r=>r.json()).then(r=>r.products||[]);}catch(e){}
+  app.innerHTML = `
+    <div class="card">
+      <h2>1. Connected account</h2>
+      ${status.connected?`
+        <p class="muted">Account: <span class="lt-td-mono">${esc(status.accountId)}</span></p>
+        <div class="row">
+          <span class="lt-badge ${status.readyToProcessPayments?'lt-badge-success':'lt-badge-warning'}">Card payments ${status.readyToProcessPayments?'active':'pending'}</span>
+          <span class="lt-badge ${status.onboardingComplete?'lt-badge-success':'lt-badge-warning'}">Onboarding ${status.onboardingComplete?'complete':'incomplete'}</span>
+          <span class="lt-badge lt-badge-neutral">Requirements: ${esc(status.requirementsStatus)}</span>
+        </div>
+        <p class="muted" style="margin-top:10px">Status is fetched directly from Stripe on every page load — never from our database.</p>
+        <div class="row"><button class="lt-btn lt-btn-secondary" id="link">Continue onboarding</button>
+          <a class="lt-btn lt-btn-primary" href="/store/${encodeURIComponent(status.accountId)}">View storefront</a></div>
+      `:`<p class="muted">You don't have a connected account yet.</p><div class="row"><button class="lt-btn lt-btn-primary" id="create">Create connected account</button></div>`}
+    </div>
+
+    <div class="card">
+      <h2>2. Products (created on your connected account)</h2>
+      <form id="productForm" class="row">
+        <input class="lt-input" name="name" placeholder="Product name" required style="max-width:220px">
+        <input class="lt-input" name="description" placeholder="Description" style="max-width:260px">
+        <input class="lt-input" name="priceInCents" type="number" min="1" placeholder="Price (cents)" required style="max-width:150px">
+        <button class="lt-btn lt-btn-primary" type="submit">Create product</button>
+      </form>
+      <div style="margin-top:14px">${products.length?products.map(p=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--lt-border);padding:8px 0">
+        <span><b>${esc(p.name)}</b> <span class="muted">${esc(p.description||'')}</span></span>
+        <span class="lt-td-mono">${p.amount!=null?(p.amount/100).toFixed(2)+' '+esc(p.currency):'—'}</span></div>`).join(''):'<p class="muted">No products yet.</p>'}</div>
+    </div>
+
+    <div class="grid">
+      <div class="card"><h2>3. Platform subscription</h2><p class="muted">Charge a recurring subscription to your connected account.</p>
+        <div class="row"><button class="lt-btn lt-btn-primary" id="subscribe">Subscribe</button><button class="lt-btn lt-btn-secondary" id="portal">Manage billing</button></div></div>
+      <div class="card"><h2>Webhooks</h2><p class="muted">Thin V2 events: <code>/api/connect/webhooks/thin</code>. Subscription events: <code>/api/connect/webhooks/subscription</code>.</p>
+        <p class="muted">Local: <code>stripe listen --thin-events 'v2.core.account[requirements].updated' --forward-thin-to http://localhost:5858/api/connect/webhooks/thin</code></p></div>
+    </div>`;
+
+  const auth = { headers: { 'Content-Type':'application/json', Authorization:'Bearer '+api.token() } };
+  app.querySelector('#create')?.addEventListener('click',async()=>{
+    try{await fetch('/api/connect/account',{method:'POST',...auth,body:'{}'});boot();}catch(e){alert(e.message);}
+  });
+  app.querySelector('#link')?.addEventListener('click',async()=>{
+    try{const r=await fetch('/api/connect/account-link',{method:'POST',...auth,body:'{}'}).then(r=>r.json());location.href=r.url;}catch(e){alert(e.message);}
+  });
+  app.querySelector('#productForm')?.addEventListener('submit',async(e)=>{
+    e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());d.priceInCents=Number(d.priceInCents);
+    try{await fetch('/api/connect/products',{method:'POST',...auth,body:JSON.stringify(d)});boot();}catch(err){alert(err.message);}
+  });
+  app.querySelector('#subscribe')?.addEventListener('click',async()=>{
+    try{const r=await fetch('/api/connect/checkout-subscription',{method:'POST',...auth,body:'{}'}).then(r=>r.json());location.href=r.url;}catch(e){alert(e.message);}
+  });
+  app.querySelector('#portal')?.addEventListener('click',async()=>{
+    try{const r=await fetch('/api/connect/billing-portal',{method:'POST',...auth,body:'{}'}).then(r=>r.json());location.href=r.url;}catch(e){alert(e.message);}
+  });
+}
+</script>
+</body></html>

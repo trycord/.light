@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Checkout — .light</title><meta name="description" content="Complete your .light hosting purchase.">
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/utilities.css"><link rel="stylesheet" href="/styles/site.css">
+<script type="module" src="/js/theme.js"></script>
+<script src="/js/brand-sync.js"></script>
+</head><body><div id="checkout"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading checkout…</div></div>
+<script type="module">
+import api from '/js/api.js';
+const root = document.getElementById('checkout');
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = (cents, cur='USD') => new Intl.NumberFormat(undefined, { style: 'currency', currency: cur || 'USD' }).format((Number(cents)||0)/100);
+const params = new URLSearchParams(location.search);
+const productSlug = params.get('product') || '';
+const planId = params.get('plan') || '';
+const interval = params.get('interval') === 'yearly' ? 'yearly' : 'monthly';
+const state = { product: null, plans: [], environments: [], plan: null, key: sessionStorage.getItem('lt_checkout_key') || crypto.randomUUID() };
+sessionStorage.setItem('lt_checkout_key', state.key);
+
+if (!api.token()) {
+  const next = encodeURIComponent(location.pathname + location.search);
+  root.innerHTML = `<section class="site-section"><div class="site-wrap"><div class="site-prose">
+    <h1>Sign in to complete your order</h1><p class="site-muted">Your hosting plan is saved. Sign in or create an account to continue.</p>
+    <p><a class="lt-btn lt-btn-primary" href="/login?${params.toString()}#register">Create account</a>
+    <a class="lt-btn lt-btn-secondary" href="/login?${params.toString()}">Sign in</a></p></div></div></section>`;
+} else if (params.get('order')) {
+  (async () => { try { const r = await api.order(params.get('order')); showOrder(r.order, r.providerConfigured); } catch (e) { root.innerHTML = `<section class="site-section"><div class="site-wrap"><div class="lt-error">${esc(e.message)}</div></div></section>`; } })();
+} else boot();
+
+async function boot() {
+  try {
+    const tasks = [api.environments(), api.plans(interval, productSlug || undefined)];
+    if (productSlug) tasks.unshift(api.product(productSlug, interval));
+    const results = await Promise.all(tasks);
+    if (productSlug) state.product = results.shift()?.product || null;
+    state.environments = (results.shift()||{}).environments || [];
+    state.plans = (results.shift()||{}).plans || [];
+    state.plan = state.plans.find((p) => p.id === planId) || state.plans[0] || null;
+    if (!state.plan) throw new Error('No plans are available for this product.');
+    render();
+  } catch (e) { root.innerHTML = `<section class="site-section"><div class="site-wrap"><div class="lt-error">${esc(e.message)}</div></div></section>`; }
+}
+
+function render() {
+  const p = state.plan;
+  const supported = Array.isArray(p.supportedRuntimes) && p.supportedRuntimes.length ? p.supportedRuntimes : null;
+  const envs = supported ? state.environments.filter((e) => supported.includes(e.id)) : state.environments;
+  const runtimeOpts = envs.map((e) => ({ id: e.id, name: e.name, versions: e.versions || [] }));
+  root.innerHTML = `<section class="site-section"><div class="site-wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <a href="/hosting" style="color:var(--lt-text-muted);text-decoration:none">← Back to hosting</a><span class="lt-badge lt-badge-ember">Secure checkout</span></div>
+    <h1 style="font-size:26px;margin-bottom:6px">Checkout</h1>
+    <p class="site-muted" style="margin-bottom:24px">Review your hosting plan and choose how your service should start.</p>
+    <div class="lt-grid lt-grid-2" style="align-items:start">
+      <div class="site-plan" style="padding:22px">
+        <h3>Configure your service</h3>
+        <div class="lt-field" style="margin-top:14px"><label>Service name</label>
+          <input class="lt-input" id="serviceName" value="My ${esc(state.product?.name || p.name || 'service')}" maxlength="60"></div>
+        <div class="lt-field" style="margin-top:12px"><label>Runtime</label>
+          <select class="lt-select" id="runtime">${runtimeOpts.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('')}</select></div>
+        <div class="lt-field" style="margin-top:12px"><label>Version</label>
+          <select class="lt-select" id="version"></select></div>
+        ${(state.product?.locations || []).length ? `<div class="lt-field" style="margin-top:12px"><label>Region</label>
+          <select class="lt-select" id="region">${(state.product.locations||[]).filter(l=>l.available).map(l=>`<option value="${esc(l.id)}">${esc(l.city||l.region||l.country||'Default')}</option>`).join('')}</select></div>` : ''}
+        <p class="lt-meta" style="margin-top:14px">CPU, memory, storage, networking and the Debian runtime image are assigned automatically from your plan. You never configure infrastructure.</p>
+      </div>
+      <div class="site-plan featured" style="padding:22px;position:sticky;top:90px">
+        <h3>Order summary</h3>
+        <div style="margin:16px 0;display:grid;gap:8px;font-size:13px">
+          <div style="display:flex;justify-content:space-between"><span class="site-muted">Product</span><b>${esc(state.product?.name || 'Hosting')}</b></div>
+          <div style="display:flex;justify-content:space-between"><span class="site-muted">Plan</span><b>${esc(p.name)}</b></div>
+          <div style="display:flex;justify-content:space-between"><span class="site-muted">Resources</span><span>${esc(p.memoryMb)}MB · ${esc(p.cpuCores)} vCPU · ${esc(p.diskGb)}GB</span></div>
+          <div style="display:flex;justify-content:space-between"><span class="site-muted">Billing</span><span>${interval === 'yearly' ? 'Yearly' : 'Monthly'}</span></div>
+          <div style="display:flex;justify-content:space-between;border-top:1px solid var(--lt-border);padding-top:12px;font-size:18px"><span>Total</span><b>${money(p.price ?? p.priceYearly ?? p.priceMonthly, p.currency)}</b></div>
+        </div>
+        <button class="lt-btn lt-btn-primary" id="placeOrder" style="width:100%">Place order</button>
+        <p class="lt-meta" style="margin-top:10px;text-align:center">Payments are processed by the configured provider. No service is created until payment is confirmed.</p>
+      </div>
+    </div>
+    <div id="orderStatus" style="margin-top:24px"></div>
+  </div></section>`;
+  const runtime = root.querySelector('#runtime');
+  const version = root.querySelector('#version');
+  const syncVersions = () => { const e = envs.find((x) => x.id === runtime.value); version.innerHTML = (e?.versions || []).map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join(''); };
+  syncVersions(); runtime.addEventListener('change', syncVersions);
+  root.querySelector('#placeOrder').addEventListener('click', placeOrder);
+}
+
+async function placeOrder() {
+  const btn = root.querySelector('#placeOrder'); btn.disabled = true; btn.textContent = 'Creating order…';
+  try {
+    const r = await api.createOrder({
+      productId: state.product?.id || undefined,
+      planId: state.plan.id, interval,
+      environmentId: root.querySelector('#runtime').value,
+      version: root.querySelector('#version').value,
+      serviceName: root.querySelector('#serviceName').value,
+      idempotencyKey: state.key,
+    });
+    sessionStorage.removeItem('lt_checkout_key');
+    if (r.checkoutUrl) { location.href = r.checkoutUrl; return; }
+    showOrder(r.order, r.providerConfigured);
+  } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = 'Place order'; }
+}
+
+function showOrder(order, providerConfigured) {
+  const steps = [['awaiting_payment','Awaiting payment'],['payment_processing','Payment processing'],['paid','Paid'],['queued','Queued'],['provisioning','Provisioning'],['active','Active']];
+  const idx = steps.findIndex((s) => s[0] === order.status);
+  const box = root.querySelector('#orderStatus');
+  box.innerHTML = `<div class="site-plan" style="padding:22px">
+    <h3>Order ${esc(order.id)}</h3>
+    <p class="site-muted">Status: <b>${esc(order.status)}</b></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0">${steps.map((s,i)=>`<span class="lt-badge ${i<=idx?'lt-badge-success':'lt-badge-neutral'}">${s[1]}</span>`).join('')}</div>
+    ${order.failureReason?`<p class="lt-badge lt-badge-danger">${esc(order.failureReason)}</p>`:''}
+    <div id="orderActions"></div>
+  </div>`;
+  const actions = box.querySelector('#orderActions');
+  if (order.status === 'awaiting_payment' && order.total === 0) {
+    actions.innerHTML = `<button class="lt-btn lt-btn-primary" id="confirmFree">Confirm free order</button>`;
+    actions.querySelector('#confirmFree').addEventListener('click', async () => {
+      try { const r = await api.confirmManual(order.id); location.href = '/login#/server/' + r.instanceId; }
+      catch (e) { alert(e.message); }
+    });
+  } else if (order.status === 'failed') {
+    actions.innerHTML = `<button class="lt-btn lt-btn-secondary" id="retry">Retry provisioning</button>`;
+    actions.querySelector('#retry').addEventListener('click', async () => {
+      try { const r = await api.retryOrder(order.id); location.href = '/login#/server/' + r.instanceId; }
+      catch (e) { alert(e.message); }
+    });
+  } else if (order.status === 'active' && order.instanceId) {
+    actions.innerHTML = `<a class="lt-btn lt-btn-primary" href="/login#/server/${encodeURIComponent(order.instanceId)}">Open your service</a>`;
+  }
+  if (!['active','failed'].includes(order.status)) {
+    const timer = setInterval(async () => {
+      try { const r = await api.order(order.id); showOrder(r.order, providerConfigured); if (['active','failed','cancelled'].includes(r.order.status)) clearInterval(timer); } catch {}
+    }, 4000);
+  }
+}
+</script>
+</body></html>

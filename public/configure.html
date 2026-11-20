@@ -5,6 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+<script type="module" src="/js/theme.js"></script>
 <script src="/js/brand-sync.js"></script>
 </head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading configurator…</div></div>
 <script type="module">
@@ -65,10 +66,15 @@ async function boot(){
   document.querySelectorAll('[data-iv]').forEach(el=>el.addEventListener('click',()=>{document.querySelectorAll('[data-iv]').forEach(x=>x.classList.remove('active'));el.classList.add('active');state.interval=el.dataset.iv;refresh();}));
   document.getElementById('activate').addEventListener('click',async()=>{
     try{
-      await api.activatePlan({custom:{cpuCores:state.cpuCores,memoryMb:state.memoryMb,diskGb:state.diskGb,networkGb:state.networkGb,instances:state.instances},interval:state.interval});
-      // Checkout provisions the first service immediately, like preset plans.
-      const created=await api.createInstance({name:'My service',environmentId:'node',version:'22',category:'web'});
-      location.href='/login#/server/'+created.instance.id;
+      const key=sessionStorage.getItem('lt_byop_key')||crypto.randomUUID();sessionStorage.setItem('lt_byop_key',key);
+      const r=await api.createOrder({
+        idempotencyKey:key, interval:state.interval,
+        custom:{cpuCores:state.cpuCores,memoryMb:state.memoryMb,diskGb:state.diskGb,networkGb:state.networkGb,instances:state.instances},
+        environmentId:'node', serviceName:'My custom service',
+      });
+      sessionStorage.removeItem('lt_byop_key');
+      if(r.checkoutUrl){location.href=r.checkoutUrl;return;}
+      location.href='/checkout?order='+r.order.id;
     }catch(e){alert(e.message);}
   });
   refresh();

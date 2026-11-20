@@ -69,7 +69,9 @@ test('payment providers are honest when unconfigured', async () => {
   assert.equal(methods.status, 200);
   assert.ok(Array.isArray(methods.body.providers));
   // No STRIPE_SECRET_KEY in test env => no providers advertised.
-  assert.equal(methods.body.providers.includes('stripe'), Boolean(process.env.STRIPE_SECRET_KEY));
+  // A provider is only advertised when BOTH the API key and webhook secret are
+  // configured — otherwise checkout could succeed while provisioning never fires.
+  assert.equal(methods.body.providers.includes('stripe'), Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET));
 });
 
 test('failing webhook signature verification never processes events', async () => {

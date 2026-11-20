@@ -2,6 +2,28 @@
 // EmailService → provider (DeoMail / SMTP) → provider API.
 // No email requests are made when EMAIL_ENABLED=false.
 import config from '../config.js';
+import { get, bool } from '../settings.js';
+
+function mailConfig() {
+  return {
+    enabled: bool('EMAIL_ENABLED', false),
+    provider: String(get('EMAIL_PROVIDER', 'deomail') || 'deomail'),
+    deomail: {
+      apiKey: String(get('DEOMAIL_API_KEY', '') || ''),
+      fromEmail: String(get('DEOMAIL_FROM_EMAIL', '') || ''),
+      apiUrl: String(get('DEOMAIL_API_URL', 'https://api.deomail.com') || 'https://api.deomail.com'),
+      timeoutMs: 10000, retries: 2,
+    },
+    smtp: {
+      host: String(get('SMTP_HOST', '') || ''),
+      port: Number(get('SMTP_PORT', '587') || 587),
+      user: String(get('SMTP_USER', '') || ''),
+      password: String(get('SMTP_PASSWORD', '') || ''),
+      from: String(get('SMTP_FROM', '') || ''),
+      secure: bool('SMTP_SECURE', true),
+    },
+  };
+}
 
 class DeomailProvider {
   constructor(cfg) { this.cfg = cfg; }
@@ -55,18 +77,22 @@ class SmtpProvider {
 }
 
 let provider;
+let providerKey = '';
 function getProvider() {
-  if (!config.email.enabled) return null;
-  if (!provider) {
-    provider = config.email.provider === 'smtp' ? new SmtpProvider(config.email.smtp) : new DeomailProvider(config.email.deomail);
+  const cfg = mailConfig();
+  if (!cfg.enabled) return null;
+  const key = `${cfg.provider}:${cfg.deomail.apiKey}:${cfg.smtp.host}:${cfg.smtp.user}`;
+  if (!provider || providerKey !== key) {
+    provider = cfg.provider === 'smtp' ? new SmtpProvider(cfg.smtp) : new DeomailProvider(cfg.deomail);
+    providerKey = key;
   }
   return provider;
 }
 
-export function emailEnabled() { return config.email.enabled; }
+export function emailEnabled() { return mailConfig().enabled; }
 
 export async function sendEmail(message) {
-  if (!config.email.enabled) return { delivered: false, skipped: true, reason: 'email_disabled' };
+  if (!mailConfig().enabled) return { delivered: false, skipped: true, reason: 'email_disabled' };
   const p = getProvider();
   try {
     const result = await p.send(message);

@@ -5,6 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+<script type="module" src="/js/theme.js"></script>
 <script src="/js/brand-sync.js"></script>
 </head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
 <script type="module">
@@ -13,10 +14,10 @@ import api from '/js/api.js';
 async function boot(){
   const b = await loadBranding();
   const slug = new URLSearchParams(location.search).get('id') || 'minecraft';
-  let data = {product:{name:'Product',description:'',icon:'◈',features:[],shortDescription:''},plans:[],locations:[]};
-  try { data = await api.product(slug); } catch {}
-  const p = data.product||{}, plans=data.plans||[], locs=data.locations||[];
   const interval = new URLSearchParams(location.search).get('interval')==='yearly'?'yearly':'monthly';
+  let data = {product:{name:'Product',description:'',icon:'◈',features:[],shortDescription:''},plans:[],locations:[]};
+  try { data = await api.product(slug, interval); } catch {}
+  const p = data.product||{}, plans=data.plans||[], locs=data.locations||[];
   const content = `<section class="site-section"><div class="site-wrap">
     <a href="/hosting" class="site-muted" style="text-decoration:none">← Hosting marketplace</a>
     <div style="display:flex;gap:22px;align-items:center;margin:26px 0">
@@ -33,10 +34,10 @@ async function boot(){
       <div class="site-grid" style="margin-top:18px">
         ${plans.map(pl=>`<div class="site-plan ${pl.featured?'featured':''}"><h3>${esc(pl.name)}</h3><div class="price">$${(pl.price/100).toFixed(0)}<span style="font-size:13px;color:var(--lt-text-muted)">/${interval==='yearly'?'yr':'mo'}</span></div>
           <p class="site-muted">${esc(pl.description||'')}</p><ul><li>${pl.memoryMb} MB RAM</li><li>${pl.cpuCores} vCPU</li><li>${pl.diskGb} GB storage</li><li>${pl.instances} instances</li>${(pl.features||[]).map(f=>`<li>✓ ${esc(f)}</li>`).join('')}</ul>
-          <a href="/login?plan=${pl.id}#register" class="lt-btn ${pl.featured?'lt-btn-primary':'lt-btn-secondary'}">Get ${esc(pl.name)}</a></div>`).join('') || '<div class="site-muted">No plans available for this product.</div>'}
+          <a href="/checkout?product=${encodeURIComponent(slug)}&plan=${encodeURIComponent(pl.id)}&interval=${interval}" class="lt-btn ${pl.featured?'lt-btn-primary':'lt-btn-secondary'}">Get ${esc(pl.name)}</a></div>`).join('') || '<div class="site-muted">No plans available for this product.</div>'}
       </div>
     </div>
-    <div style="text-align:center;margin-top:34px"><a href="/configure" class="lt-btn lt-btn-secondary">Build your own plan</a></div>
+    <div style="text-align:center;margin-top:34px"><a href="/configure?product=${encodeURIComponent(slug)}" class="lt-btn lt-btn-secondary">Build your own plan</a></div>
   </div></section>`;
   document.getElementById('site').innerHTML = layout(b, content, 'products');
   document.querySelectorAll('[data-i]').forEach(el=>el.addEventListener('click',()=>{location.href='/product?id='+encodeURIComponent(slug)+'&interval='+el.dataset.i;}));

@@ -1,86 +1,122 @@
 <!DOCTYPE html>
-<html lang="en"><head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>.light — Universal Hosting Platform</title>
-  <meta name="description" content=".light is a universal hosting platform for game servers, applications, websites, bots and databases. Infrastructure made simple.">
-  <link rel="icon" href="/assets/logos/favicon.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+<html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>.light — Universal Hosting Platform</title>
+<meta name="description" content=".light is a universal hosting platform for game servers, applications, websites, bots and databases. Real infrastructure, effortless control.">
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/utilities.css"><link rel="stylesheet" href="/styles/site.css">
+<link rel="stylesheet" href="/styles/marketing.css">
+<script type="module" src="/js/theme.js"></script>
 <script src="/js/brand-sync.js"></script>
 </head><body>
-  <div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
-  <script type="module">
-    import { layout, esc, loadBranding, PRODUCTS, FEATURES, FAQS } from '/js/site.js';
-    async function boot() {
-      const b = await loadBranding();
-      const content = `
-      <section class="site-hero"><div class="site-wrap">
-        <h1>Host anything.<br><span class="hl">Without the infrastructure headache.</span></h1>
-        <p>Game servers, web applications, websites, bots and databases — deployed in moments and managed from one beautifully simple dashboard.</p>
-        <div class="site-cta">
-          <a href="/login?plan=free#register" class="lt-btn lt-btn-primary">Get Started — It's Free</a>
-          <a href="/#products" class="lt-btn lt-btn-secondary">Explore Products</a>
-        </div>
-      </div></section>
+<div id="site"><div style="padding:100px 22px;text-align:center;color:var(--lt-text-muted)">Loading .light…</div></div>
+<script type="module">
+import { layout, esc, loadBranding, FEATURES, FAQS } from '/js/site.js';
+import api from '/js/api.js';
 
-      <section class="site-section alt" id="products"><div class="site-wrap">
-        <div class="site-heading"><h2>One platform. Every workload.</h2><p>From game servers to production applications, ${esc(b.product || '.light')} gives you the same simple experience everywhere.</p></div>
-        <div class="site-grid">
-          ${PRODUCTS.map(p => `<a href="/product?id=${p.id}" class="site-card" style="text-decoration:none">
-            <div class="site-card-icon" style="background:${p.color}1a;color:${p.color}">${p.icon}</div>
-            <h3>${p.title}</h3><p>${p.desc}</p></a>`).join('')}
-        </div>
-      </div></section>
+const b = await loadBranding();
+const product = esc(b.product || '.light');
 
-      <section class="site-section"><div class="site-wrap">
-        <div class="site-heading"><h2>Everything you need, built in</h2><p>Powerful hosting capabilities without the complexity.</p></div>
-        <div class="site-grid">
-          ${FEATURES.map(f => `<div class="site-card"><h3>${f[0]}</h3><p>${f[1]}</p></div>`).join('')}
-        </div>
-      </div></section>
+// All catalogue content comes from the backend — never duplicated here.
+let products = [], plans = [];
+try { products = (await api.products()).products || []; } catch {}
+try { plans = (await api.plans()).plans || []; } catch {}
 
-      <section class="site-section alt"><div class="site-wrap">
-        <div class="site-heading"><h2>How it works</h2><p>From zero to hosting in four simple steps.</p></div>
-        <div class="site-wrap" style="max-width:640px">
-          <div class="site-steps">
-            <div class="site-step"><h3>Create your account</h3><p>Register in seconds. No infrastructure knowledge required.</p></div>
-            <div class="site-step"><h3>Choose what to host</h3><p>Pick a game, application template or bring your own Docker image.</p></div>
-            <div class="site-step"><h3>Configure & deploy</h3><p>Set resources, ports and environment variables, then deploy with one click.</p></div>
-            <div class="site-step"><h3>Manage with ease</h3><p>Use the live console, file manager, backups and monitoring from your dashboard.</p></div>
-          </div>
-        </div>
-      </div></section>
+const nav = `<nav class="mkt-nav"><div class="mkt-nav-in">
+  <a href="/" class="mkt-logo"><span style="color:var(--lt-ember-500)">◆</span>${product}</a>
+  <div class="mkt-links" id="mktLinks">
+    <a href="/hosting">Hosting</a><a href="/pricing">Plans</a><a href="/configure">Build your own</a>
+    <a href="/features">Features</a><a href="/docs">Docs</a><a href="/about">About</a>
+  </div>
+  <div class="mkt-cta"><a class="lt-btn lt-btn-ghost lt-btn-sm" href="/login">Sign in</a>
+    <a class="lt-btn lt-btn-primary lt-btn-sm" href="/hosting">Get started</a></div>
+  <button class="mkt-burger" id="burger" aria-label="Menu">☰</button>
+</div></nav>`;
 
-      <section class="site-section"><div class="site-wrap">
-        <div class="site-heading"><h2>Simple, transparent pricing</h2><p>Start free. Upgrade when you need more power.</p></div>
-        <div id="homePlans" class="site-grid" style="max-width:960px;margin:0 auto"></div>
-      </div></section>
+const hero = `<section class="mkt-hero"><div class="mkt-hero-grid">
+  <div>
+    <span class="mkt-eyebrow">◆ Universal hosting · Powered by Shade</span>
+    <h1>Infrastructure,<br><span>without the weight.</span></h1>
+    <p class="mkt-lede">Deploy game servers, applications, websites, bots and databases in one place. You choose what to host — ${product} and Shade handle the Debian runtime, resources, networking and health checks underneath.</p>
+    <div class="mkt-actions"><a class="lt-btn lt-btn-primary" href="/hosting">Explore hosting</a>
+      <a class="lt-btn lt-btn-secondary" href="/pricing">Compare plans</a></div>
+    <div class="mkt-trust"><span><b>Debian</b> based runtimes</span><span><b>Isolated</b> containers</span><span><b>Real</b> resource limits</span><span><b>Your</b> domain, SSL included</span></div>
+  </div>
+  <div class="mkt-visual" aria-hidden="true">
+    <div class="mkt-visual-head"><span>Shade · node-01</span><span>● all systems nominal</span></div>
+    <div class="mkt-node"><span class="dot"></span><div><b>iface-web-01</b><div class="meta">node:22-bookworm · 2 vCPU · running</div></div><div class="bars"><i></i><i></i><i></i><i></i></div></div>
+    <div class="mkt-node"><span class="dot"></span><div><b>minecraft-survival</b><div class="meta">minecraft-java 1.21.4 · 4 GB · running</div></div><div class="bars"><i></i><i></i><i></i><i></i></div></div>
+    <div class="mkt-node"><span class="dot"></span><div><b>bot-gateway</b><div class="meta">python 3.12 · 512 MB · running</div></div><div class="bars"><i></i><i></i><i></i><i></i></div></div>
+    <div class="mkt-ring">99.9%<br>uptime<br>target</div>
+  </div>
+</div></section>`;
 
-      <section class="site-section alt"><div class="site-wrap">
-        <div class="site-heading"><h2>Frequently asked questions</h2><p>Everything you might be wondering.</p></div>
-        <div class="site-faq">
-          ${FAQS.map(f => `<div class="site-faq-item"><h4>${f[0]}</h4><p>${f[1]}</p></div>`).join('')}
-        </div>
-      </div></section>
+const catalogue = `<section class="mkt-section" id="products"><div class="mkt-head">
+  <span class="mkt-tag">Hosting marketplace</span>
+  <h2>Find the right place for your workload.</h2>
+  <p>Every product is a real hosted service with predefined plans. Pick one and ${product} provisions it automatically.</p>
+</div><div class="mkt-grid">${(products.length ? products : [
+  { name:'Web applications', slug:'webapp', shortDescription:'Node, Python, Go and more', icon:'◈' },
+  { name:'Game servers', slug:'minecraft', shortDescription:'Minecraft and community favourites', icon:'◆' },
+  { name:'Databases', slug:'database', shortDescription:'Managed PostgreSQL, MySQL and Redis', icon:'▤' },
+]).map(p=>`<a class="mkt-card" href="/product?id=${esc(p.slug||p.id)}" style="text-decoration:none;color:inherit">
+  <div class="ico">${esc(p.icon||'◈')}</div><h3>${esc(p.name)}</h3><p>${esc(p.shortDescription||'')}</p>
+  <span>Explore plans →</span></a>`).join('')}</div></section>`;
 
-      <section class="site-cta-band"><div class="site-wrap">
-        <h2>Ready to host something?</h2>
-        <p>Create your free account and deploy your first server in minutes.</p>
-        <a href="/login#register" class="lt-btn lt-btn-primary">Create Your First Server</a>
-      </div></section>`;
-      document.getElementById('site').innerHTML = layout(b, content);
+const features = `<section class="mkt-band"><div class="mkt-band-in">
+  ${[['Real containers','Every service runs in its own isolated Debian container.','◆'],
+     ['Your runtime, your version','Explicit versions — never silently substituted.','◈'],
+     ['Built-in operations','Console, logs, files, domains, backups and monitoring.','▤']].map(f=>
+     `<div class="mkt-stat" style="max-width:300px"><div class="ico" style="color:var(--lt-ember-500);font-size:22px;margin-bottom:8px">${f[2]}</div><b style="font-size:17px">${f[0]}</b><span>${f[1]}</span></div>`).join('')}
+</div></section>`;
 
-      try {
-        const mod = await import('/js/api.js');
-        const plans = await mod.default.plans();
-        const el = document.getElementById('homePlans');
-        if (el) el.innerHTML = (plans.plans || []).slice(0,3).map(p => `<div class="site-plan ${p.id === 'shared' ? 'featured' : ''}">
-          <h3>${esc(p.name)}</h3><div class="price">${p.priceMonthly ? '$' + (p.priceMonthly/100).toFixed(0) + '/mo' : 'Free'}</div>
-          <ul><li>${p.memoryMb} MB RAM</li><li>${p.diskGb} GB storage</li><li>${p.cpuCores} CPU cores</li><li>${p.instances} instances</li></ul>
-          <a href="/login?plan=${encodeURIComponent(p.id)}#register" class="lt-btn ${p.id === 'free' ? 'lt-btn-primary' : 'lt-btn-secondary'}">Get ${esc(p.name)}</a></div>`).join('');
-      } catch { /* pricing loads on pricing page */ }
-    }
-    boot();
-  </script>
+const capability = `<section class="mkt-section"><div class="mkt-split">
+  <div><span class="mkt-tag">How it works</span><h2 style="font-size:clamp(1.8rem,3.4vw,2.6rem);letter-spacing:-.035em;line-height:1.12;margin:10px 0 22px">From purchase to running service, automatically.</h2>
+    <div class="mkt-steps">
+      <div class="mkt-step"><div><b>Choose a plan</b><span>Products and prices come from the live catalogue. No infrastructure decisions.</span></div></div>
+      <div class="mkt-step"><div><b>Checkout securely</b><span>Server-side pricing, verified payment webhooks, idempotent orders.</span></div></div>
+      <div class="mkt-step"><div><b>Shade provisions</b><span>Approved Debian image, exact runtime version, limits, storage and network.</span></div></div>
+      <div class="mkt-step"><div><b>Manage in the dashboard</b><span>Console, files, domains, backups and real-time metrics on the actual container.</span></div></div>
+    </div></div>
+  <div class="mkt-visual" style="min-height:320px">
+    <div class="mkt-visual-head"><span>Provisioning pipeline</span><span>purchase → workload</span></div>
+    ${['Order confirmed','Plan snapshot frozen','Node selected','Container created','Health check passed'].map((s,i)=>`<div class="mkt-node" style="margin-left:${i*8}px"><span class="dot" style="background:${i===4?'var(--lt-success)':'var(--lt-ember-500)'}"></span><div><b>${s}</b><div class="meta">step ${String(i+1).padStart(2,'0')}</div></div></div>`).join('')}
+  </div>
+</div></section>`;
+
+const pricing = `<section class="mkt-section" id="pricing"><div class="mkt-head">
+  <span class="mkt-tag">Plans</span><h2>Simple plans. Real allocations.</h2>
+  <p>Resources are granted by your plan — not configured in a browser.</p></div>
+  <div class="mkt-grid">${(plans.length?plans:[{name:'Free',memoryMb:512,cpuCores:1,diskGb:4,priceMonthly:0,id:'free'}]).slice(0,4).map(p=>`<div class="mkt-card" style="${p.featured?'border-color:var(--lt-border-ember)':''}">
+    <h3>${esc(p.name)}</h3><div class="price" style="font-size:26px;font-weight:800;color:var(--lt-ember-500);margin:10px 0">${p.priceMonthly?'$'+(p.priceMonthly/100).toFixed(0)+'/mo':'Free'}</div>
+    <p>${esc(p.memoryMb)} MB RAM · ${esc(p.cpuCores)} vCPU · ${esc(p.diskGb)} GB storage</p>
+    <a href="/checkout?plan=${encodeURIComponent(p.id)}">Choose ${esc(p.name)} →</a></div>`).join('')}</div>
+  <p style="margin-top:18px"><a class="lt-btn lt-btn-secondary" href="/configure">Build your own plan</a></p>
+</section>`;
+
+const faq = `<section class="mkt-section mkt-faq"><div class="mkt-head"><span class="mkt-tag">Questions</span><h2>Good to know.</h2></div>
+  ${FAQS.map(f=>`<details><summary>${esc(f[0])}</summary><p>${esc(f[1])}</p></details>`).join('')}
+</section>`;
+
+const foot = `<section class="mkt-final"><h2>Ready when you are.</h2><p>Choose a plan and let ${product} handle the infrastructure.</p>
+  <div class="mkt-actions" style="justify-content:center"><a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting</a><a class="lt-btn lt-btn-secondary" href="/docs">Read the docs</a></div></section>
+<footer class="mkt-foot"><div class="mkt-foot-in">
+  <div><a href="/" class="mkt-logo" style="margin-bottom:12px"><span style="color:var(--lt-ember-500)">◆</span>${product}</a>
+    <p class="muted" style="max-width:280px">${esc(b.tagline||'Universal hosting platform')}. Built by Trycord, powered by Shade.</p>
+    <div class="mkt-trust"><span>Theme: <a href="#" data-theme-set="system">System</a> · <a href="#" data-theme-set="light">Light</a> · <a href="#" data-theme-set="dark">Dark</a></span></div></div>
+  <div><h4>Platform</h4><a href="/hosting">Hosting</a><a href="/pricing">Plans</a><a href="/features">Features</a><a href="/docs">Documentation</a></div>
+  <div><h4>Company</h4><a href="/about">About</a><a href="/contact">Contact</a><a href="/legal">Legal</a></div>
+  <div><h4>Account</h4><a href="/login">Dashboard</a><a href="/login#register">Create account</a><a href="/connect">Sell with Connect</a></div>
+</div><div class="mkt-foot-in mkt-wm">
+  <span>${esc(b.attribution||'.light is a Trycord product')} · © 2026 Trycord</span>
+  <span><a href="https://trycord.dev" target="_blank">POWERED BY TRYCORD</a> · <span class="lt-wm-mark">ΔΓΟ</span></span>
+</div></footer>`;
+
+document.getElementById('site').innerHTML = nav + hero + catalogue + features + capability + pricing + faq + foot;
+document.getElementById('burger')?.addEventListener('click', () => document.getElementById('mktLinks')?.classList.toggle('open'));
+document.querySelectorAll('[data-theme-set]').forEach(el => el.addEventListener('click', (e) => { e.preventDefault(); window.__LT_THEME__?.set(el.dataset.themeSet); }));
+</script>
 </body></html>

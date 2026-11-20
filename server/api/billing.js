@@ -4,6 +4,8 @@ import { requireAuth, requireAdmin } from '../auth.js';
 import { audit } from '../audit.js';
 import { asyncRoute, badRequest, notFound, conflict, id, now, str, int, json } from '../util.js';
 import * as payments from '../payments.js';
+import { markOrderPaid, markOrderFailed, addOrderEvent } from '../orders.js';
+import { provisionOrder } from '../provisioning.js';
 
 export function billingRoutes() {
   const router = Router();
@@ -56,6 +58,24 @@ export function billingRoutes() {
     const db = getDb();
     if (event.type === 'checkout.session.completed') {
       const s = event.data?.object || {};
+      // Orders are the authoritative purchase record. Verify the provider's
+      // paid status and amount before doing anything irreversible.
+      const orderId = s.metadata?.orderId;
+      if (orderId) {
+        const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+        if (order && !['active', 'refunded', 'terminated', 'cancelled'].includes(order.status)) {
+          if (s.payment_status !== 'paid') {
+            addOrderEvent(order.id, 'payment_processing', 'Provider has not confirmed payment');
+          } else if (Number(s.amount_total || 0) !== Number(order.total) || String(s.currency || '').toLowerCase() !== String(order.currency || '').toLowerCase()) {
+            markOrderFailed(order.id, 'payment_amount_mismatch');
+          } else {
+            try {
+              const paid = markOrderPaid(order.id, { provider, reference: s.payment_intent || s.id });
+              if (!paid.alreadyPaid) provisionOrder(paid.order.id);
+            } catch (error) { console.error('[checkout] provisioning failed:', error); }
+          }
+        }
+      }
       const cid = s.metadata?.checkoutId;
       const planId = s.metadata?.planId;
       const teamId = s.metadata?.teamId;

@@ -352,7 +352,7 @@ function owned(req, instanceId) {
   return row;
 }
 
-function pickNode(nodeId) {
+export function pickNode(nodeId) {
   const db = getDb();
   if (nodeId) {
     return db.prepare("SELECT * FROM nodes WHERE id = ? AND availability != 'draining'").get(nodeId) || null;

@@ -204,6 +204,27 @@ const TABLES = {
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
     ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '')`,
+  // Stripe Connect sample: maps a .light user to their connected account and
+  // stores the platform-level subscription they purchase for access.
+  connect_accounts: `CREATE TABLE IF NOT EXISTS connect_accounts (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE, account_id TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'not_started', subscription_id TEXT NOT NULL DEFAULT '',
+    subscription_status TEXT NOT NULL DEFAULT 'none', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  orders: `CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, user_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'awaiting_payment',
+    product_id TEXT, plan_id TEXT, plan_snapshot TEXT NOT NULL DEFAULT '{}',
+    environment_id TEXT, runtime_version TEXT, service_name TEXT NOT NULL DEFAULT '',
+    interval TEXT NOT NULL DEFAULT 'monthly', currency TEXT NOT NULL DEFAULT 'USD',
+    subtotal INTEGER NOT NULL DEFAULT 0, tax INTEGER NOT NULL DEFAULT 0,
+    discount INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
+    provider TEXT NOT NULL DEFAULT '', provider_session_id TEXT NOT NULL DEFAULT '',
+    checkout_session_id TEXT, instance_id TEXT, failure_reason TEXT NOT NULL DEFAULT '',
+    provision_attempts INTEGER NOT NULL DEFAULT 0, idempotency_key TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, paid_at INTEGER, completed_at INTEGER)`,
+  order_events: `CREATE TABLE IF NOT EXISTS order_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT NOT NULL,
+    status TEXT NOT NULL, message TEXT NOT NULL DEFAULT '', ts INTEGER NOT NULL)`,
   migrations: `CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`,
   audit_logs: `CREATE TABLE IF NOT EXISTS audit_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, team_id TEXT, user_id TEXT, action TEXT NOT NULL,
@@ -241,7 +262,7 @@ const LEGACY_COLUMNS = {
   nodes: { availability: "TEXT NOT NULL DEFAULT 'active'", cpu_used: 'REAL NOT NULL DEFAULT 0', mem_used: 'REAL NOT NULL DEFAULT 0', disk_used: 'REAL NOT NULL DEFAULT 0', net_in: 'REAL NOT NULL DEFAULT 0', net_out: 'REAL NOT NULL DEFAULT 0', temp: 'REAL NOT NULL DEFAULT 0' },
   deployments: { instance_id: "TEXT NOT NULL DEFAULT ''", team_id: "TEXT NOT NULL DEFAULT ''", source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", ref: "TEXT NOT NULL DEFAULT 'main'", commit_sha: "TEXT NOT NULL DEFAULT ''", command: "TEXT NOT NULL DEFAULT ''", created_at: 'INTEGER NOT NULL DEFAULT 0' },
   metric_samples: { instance_id: 'TEXT', temp: 'REAL NOT NULL DEFAULT 0' },
-  instances: { volumes_json: "TEXT NOT NULL DEFAULT '[]'", category: "TEXT NOT NULL DEFAULT 'web'", type: "TEXT NOT NULL DEFAULT 'custom'", container_id: 'TEXT', environment_id: 'TEXT', environment_version: 'TEXT', source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", build_command: "TEXT NOT NULL DEFAULT ''", install_command: "TEXT NOT NULL DEFAULT ''", health_status: "TEXT NOT NULL DEFAULT 'unknown'", provision_attempts: 'INTEGER NOT NULL DEFAULT 0', generation: 'INTEGER NOT NULL DEFAULT 1' },
+  instances: { volumes_json: "TEXT NOT NULL DEFAULT '[]'", category: "TEXT NOT NULL DEFAULT 'web'", type: "TEXT NOT NULL DEFAULT 'custom'", container_id: 'TEXT', environment_id: 'TEXT', environment_version: 'TEXT', source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", build_command: "TEXT NOT NULL DEFAULT ''", install_command: "TEXT NOT NULL DEFAULT ''", health_status: "TEXT NOT NULL DEFAULT 'unknown'", provision_attempts: 'INTEGER NOT NULL DEFAULT 0', generation: 'INTEGER NOT NULL DEFAULT 1', order_id: 'TEXT' },
   environments: { version_images: "TEXT NOT NULL DEFAULT '{}'" },
   domains: { tunnel_id: 'TEXT', tunnel_token: "TEXT NOT NULL DEFAULT ''", tunnel_status: "TEXT NOT NULL DEFAULT 'pending'", updated_at: 'INTEGER' },
 };
@@ -278,6 +299,10 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_tickets_team ON support_tickets(team_id, status, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_tickets_status ON support_tickets(status, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_ticket_messages ON support_ticket_messages(ticket_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_orders_team ON orders(team_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(provider_session_id)',
+  'CREATE INDEX IF NOT EXISTS idx_order_events ON order_events(order_id, ts)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_instances_order ON instances(order_id) WHERE order_id IS NOT NULL',
 ];
 
 function migrate() {

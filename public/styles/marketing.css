@@ -1,0 +1,91 @@
+/* ==========================================================================
+   .light — Marketing site design layer (Step 2 redesign)
+   Builds on tokens.css. Expressive where appropriate, always on-brand.
+   ========================================================================== */
+
+.mkt-nav{position:sticky;top:0;z-index:50;backdrop-filter:var(--lt-blur);background:var(--lt-glass-bg);border-bottom:1px solid var(--lt-glass-border)}
+.mkt-nav-in{max-width:1240px;margin:0 auto;padding:0 22px;height:66px;display:flex;align-items:center;gap:24px}
+.mkt-logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:18px;letter-spacing:-.02em;color:var(--lt-text);text-decoration:none}
+.mkt-links{display:flex;gap:20px;align-items:center;margin-left:auto}
+.mkt-links a{color:var(--lt-text-secondary);text-decoration:none;font-size:13px;font-weight:600;transition:color var(--lt-dur)}
+.mkt-links a:hover{color:var(--lt-text)}
+.mkt-cta{display:flex;gap:8px;align-items:center}
+.mkt-burger{display:none;background:none;border:0;color:var(--lt-text);font-size:22px;cursor:pointer}
+
+.mkt-hero{position:relative;overflow:hidden;padding:88px 22px 72px;border-bottom:1px solid var(--lt-border)}
+.mkt-hero:before{content:"";position:absolute;inset:-40% 20% 40% -10%;background:radial-gradient(closest-side,var(--lt-ember-alpha-20),transparent 70%);filter:blur(20px);pointer-events:none}
+.mkt-hero-grid{max-width:1240px;margin:0 auto;display:grid;grid-template-columns:1.05fr .95fr;gap:52px;align-items:center;position:relative}
+.mkt-eyebrow{display:inline-flex;gap:8px;align-items:center;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--lt-ember-500);border:1px solid var(--lt-border-ember);border-radius:var(--lt-radius-full);padding:7px 13px;background:var(--lt-ember-alpha-08)}
+.mkt-hero h1{font-size:clamp(2.6rem,5.5vw,4.4rem);line-height:1.03;letter-spacing:-.045em;margin:22px 0 18px;font-weight:800}
+.mkt-hero h1 span{color:var(--lt-ember-500)}
+.mkt-lede{font-size:clamp(1rem,1.6vw,1.18rem);line-height:1.7;color:var(--lt-text-secondary);max-width:560px;margin:0 0 28px}
+.mkt-actions{display:flex;gap:10px;flex-wrap:wrap}
+.mkt-trust{display:flex;gap:22px;flex-wrap:wrap;margin-top:30px;font-size:12px;color:var(--lt-text-muted)}
+.mkt-trust b{color:var(--lt-text)}
+
+/* Infrastructure visual: a composed, technical diagram — not a terminal. */
+.mkt-visual{position:relative;min-height:380px;border:1px solid var(--lt-border);border-radius:var(--lt-radius-xl);background:linear-gradient(160deg,var(--lt-surface),var(--lt-bg-elev));padding:26px;box-shadow:var(--lt-shadow-lg)}
+.mkt-visual-head{display:flex;justify-content:space-between;font-size:11px;color:var(--lt-text-muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:18px}
+.mkt-node{display:flex;align-items:center;gap:12px;background:var(--lt-surface-2);border:1px solid var(--lt-border);border-radius:var(--lt-radius-md);padding:13px 15px;margin-bottom:10px;position:relative}
+.mkt-node:nth-child(2){margin-left:26px}.mkt-node:nth-child(3){margin-left:52px}
+.mkt-node .dot{width:9px;height:9px;border-radius:50%;background:var(--lt-success);box-shadow:0 0 0 4px var(--lt-success-dim)}
+.mkt-node .meta{font-size:11px;color:var(--lt-text-muted);margin-top:2px}
+.mkt-node .bars{margin-left:auto;display:flex;gap:3px;align-items:flex-end;height:22px}
+.mkt-node .bars i{display:block;width:4px;background:var(--lt-ember-500);border-radius:2px;opacity:.75}
+.mkt-node .bars i:nth-child(1){height:40%}.mkt-node .bars i:nth-child(2){height:70%}.mkt-node .bars i:nth-child(3){height:55%}.mkt-node .bars i:nth-child(4){height:90%}
+.mkt-ring{position:absolute;right:18px;bottom:16px;width:96px;height:96px;border-radius:50%;border:1px dashed var(--lt-border-strong);display:grid;place-items:center;font-size:11px;color:var(--lt-text-muted);text-align:center;line-height:1.4}
+
+.mkt-section{max-width:1240px;margin:0 auto;padding:82px 22px}
+.mkt-head{max-width:680px;margin-bottom:38px}
+.mkt-head h2{font-size:clamp(1.8rem,3.4vw,2.6rem);letter-spacing:-.035em;line-height:1.12;margin:10px 0 12px}
+.mkt-head p{color:var(--lt-text-secondary);line-height:1.7;margin:0}
+.mkt-tag{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--lt-ember-500)}
+.mkt-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.mkt-card{background:var(--lt-surface);border:1px solid var(--lt-border);border-radius:var(--lt-radius-lg);padding:24px;transition:transform var(--lt-dur),border-color var(--lt-dur),box-shadow var(--lt-dur)}
+.mkt-card:hover{transform:translateY(-3px);border-color:var(--lt-border-ember);box-shadow:var(--lt-shadow-md)}
+.mkt-card .ico{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--lt-ember-alpha-12);color:var(--lt-ember-500);font-size:20px;margin-bottom:16px}
+.mkt-card h3{margin:0 0 8px;font-size:17px}
+.mkt-card p{margin:0;color:var(--lt-text-secondary);font-size:13px;line-height:1.65}
+.mkt-card a{color:var(--lt-ember-500);text-decoration:none;font-size:13px;font-weight:700;display:inline-block;margin-top:14px}
+
+.mkt-split{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center}
+.mkt-steps{counter-reset:s;display:grid;gap:14px}
+.mkt-step{counter-increment:s;display:flex;gap:14px;align-items:flex-start;background:var(--lt-surface);border:1px solid var(--lt-border);border-radius:var(--lt-radius-md);padding:16px}
+.mkt-step:before{content:counter(s,decimal-leading-zero);font-family:var(--lt-font-mono);font-size:12px;color:var(--lt-ember-500);padding-top:2px}
+.mkt-step b{display:block;font-size:14px;margin-bottom:4px}.mkt-step span{font-size:12px;color:var(--lt-text-secondary);line-height:1.6}
+
+.mkt-band{border-top:1px solid var(--lt-border);border-bottom:1px solid var(--lt-border);background:var(--lt-surface)}
+.mkt-band-in{max-width:1240px;margin:0 auto;padding:56px 22px;display:flex;gap:40px;justify-content:space-between;flex-wrap:wrap}
+.mkt-stat b{display:block;font-size:30px;letter-spacing:-.03em}.mkt-stat span{font-size:12px;color:var(--lt-text-muted)}
+
+.mkt-faq details{background:var(--lt-surface);border:1px solid var(--lt-border);border-radius:var(--lt-radius-md);padding:16px 18px;margin-bottom:10px}
+.mkt-faq summary{cursor:pointer;font-weight:700;font-size:14px;list-style:none}
+.mkt-faq summary::-webkit-details-marker{display:none}
+.mkt-faq summary:after{content:'+';float:right;color:var(--lt-ember-500)}
+.mkt-faq details[open] summary:after{content:'−'}
+.mkt-faq p{margin:12px 0 0;color:var(--lt-text-secondary);font-size:13px;line-height:1.7}
+
+.mkt-final{text-align:center;padding:96px 22px;background:radial-gradient(closest-side at 50% 100%,var(--lt-ember-alpha-12),transparent)}
+.mkt-final h2{font-size:clamp(2rem,4vw,3rem);letter-spacing:-.04em;margin:0 0 14px}
+.mkt-final p{color:var(--lt-text-secondary);margin:0 auto 26px;max-width:560px;line-height:1.7}
+.mkt-foot{border-top:1px solid var(--lt-border);background:var(--lt-bg-elev);padding:52px 22px 30px}
+.mkt-foot-in{max-width:1240px;margin:0 auto;display:grid;grid-template-columns:2fr repeat(3,1fr);gap:36px}
+.mkt-foot h4{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--lt-text-muted);margin:0 0 14px}
+.mkt-foot a{display:block;color:var(--lt-text-secondary);text-decoration:none;font-size:13px;padding:5px 0}
+.mkt-foot a:hover{color:var(--lt-text)}
+.mkt-wm{border-top:1px solid var(--lt-border);margin-top:36px;padding-top:20px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--lt-text-muted)}
+.mkt-wm a{color:var(--lt-ember-500);text-decoration:none;font-weight:700}
+
+@media(max-width:900px){
+  .mkt-hero-grid,.mkt-split{grid-template-columns:1fr}
+  .mkt-hero{padding-top:56px}
+  .mkt-visual{min-height:300px}
+  .mkt-links{display:none;position:absolute;top:66px;left:0;right:0;background:var(--lt-bg-elev);flex-direction:column;padding:18px;align-items:flex-start;border-bottom:1px solid var(--lt-border)}
+  .mkt-links.open{display:flex}
+  .mkt-burger{display:block;margin-left:auto}
+  .mkt-cta{display:none}
+  .mkt-foot-in{grid-template-columns:1fr 1fr}
+}
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}

@@ -19,6 +19,7 @@ export const PERMISSIONS = Object.freeze([
   'tickets.read', 'tickets.write',
   'notifications.read', 'notifications.write',
   'analytics.read',
+  'orders.read', 'orders.write',
   'roles.read', 'roles.write',
   'settings.read', 'settings.write',
 ]);
