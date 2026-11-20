@@ -1,12 +1,17 @@
 // .light — notifications, support tickets, analytics and RBAC integration tests.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const rootDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const base = process.env.LIGHT_TEST_URL || 'http://127.0.0.1:5858';
 async function req(route, options = {}) {
   const r = await fetch(base + route, {
     method: options.method || 'GET',
-    headers: { 'Content-Type': 'application/json', ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}), ...(options.headers || {}) },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   return { status: r.status, body: await r.json().catch(() => ({})) };
@@ -50,6 +55,24 @@ test('BYOP is opt-in and Cloudflare reports honest unconfigured state', async ()
   const cfg = await req('/api/features/cloudflare', { token });
   assert.equal(cfg.status, 200);
   assert.equal(cfg.body.configured, Boolean(process.env.CLOUDFLARE_API_TOKEN && process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_ZONE_ID));
+});
+
+test('Shade health reports are persisted on services', async () => {
+  const email = `health-${Date.now().toString(36)}@test.dev`;
+  const reg = await req('/api/auth/register', { method: 'POST', body: { email, password: 'health-password-123', name: 'Health Test' } });
+  assert.equal(reg.status, 201);
+  const created = await req('/api/instances', { method: 'POST', token: reg.body.token,
+    body: { name: 'health-test', environmentId: 'static-site' } });
+  assert.equal(created.status, 201);
+  const iid = created.body.instance.id;
+  const secrets = JSON.parse(fs.readFileSync(path.join(rootDir, 'data', '.secrets.json'), 'utf8'));
+  const reported = await req('/api/agent/instances/health', { method: 'POST',
+    headers: { 'x-node-token': secrets.NODE_TOKEN },
+    body: { instances: [{ instanceId: iid, status: 'running', health: 'healthy' }] } });
+  assert.equal(reported.status, 200);
+  assert.equal(reported.body.updated, 1);
+  const row = await req(`/api/instances/${iid}`, { token: reg.body.token });
+  assert.equal(row.body.instance.healthStatus, 'healthy');
 });
 
 test('setup: admin and customer credentials', async () => {

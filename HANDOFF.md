@@ -153,6 +153,11 @@ start.js            - process supervisor
 - Right-side server info panel shows runtime, randomized port mappings, project domain, SSL and plan resources.
 - Cloudflare Tunnel provisioning (`server/cloudflare.js`) with honest `configuration_required` state.
 
+**Operations added this session:**
+- Shade reports real container state (running/health/exit code) every 20s; control plane persists it on services and recovers orphaned commands after restarts.
+- Cloudflare connector command (`tunnel.start`/`tunnel.stop`) runs cloudflared inside our approved image on the team network; binary is installed by `runtime/Dockerfile`.
+- `npm run pin:digests -- --apply` resolves approved Docker Hub images to digests.
+
 **Still outstanding:**
 - ACME certificate issuance delegated to Caddy (not native).
 - Payment methods beyond Stripe not added (PayPal etc listed as possibilities only).

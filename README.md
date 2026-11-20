@@ -98,6 +98,8 @@ state and never pretends an operation succeeded.
 - `runtime/` defines our universal image `trycord/light-runtime:1.0.0`: a pinned `debian:bookworm-slim` base with Node, Bun, Deno, Python, Java, PHP, Ruby, Go, Rust, C/C++, Zig, Lua, Perl, Elixir, Erlang, .NET and (optionally) Swift. The launcher rejects any runtime/version not listed in `runtime/manifest.json`.
 - Build it with `npm run build:runtime` (set `PUSH=true` to publish). The script pins and records the image digest in `runtime/.image-digest`. Set `LIGHT_RUNTIME_IMAGE_MODE=custom` to make Shade use it; the default mode uses approved per-runtime Debian images.
 - Shade enforces no privileged containers, no host namespaces, no Docker socket mounts, dropped capabilities and per-team networks. Host ports are auto-assigned and reported back to the panel.
+- Shade reports real container state every 20s (`/api/agent/instances/health`); the panel shows it as service health, and in-progress commands are recovered after an agent restart.
+- Run `npm run pin:digests -- --apply` to resolve Docker Hub image references to digests for the approved-image mode.
 - Runtime/version changes require an explicit migration (`POST /api/instances/:id/runtime` with `confirm: MIGRATE`) and preserve data volumes.
 
 ## Plans & resources

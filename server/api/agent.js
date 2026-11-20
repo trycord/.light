@@ -76,6 +76,27 @@ export function agentRoutes() {
     res.json({ ok: true });
   }));
 
+  // Shade reports real container state periodically and after restarts.
+  router.post('/instances/health', asyncRoute(async (req, res) => {
+    const reports = Array.isArray(req.body?.instances) ? req.body.instances.slice(0, 500) : [];
+    const db = getDb();
+    let updated = 0;
+    for (const r of reports) {
+      const iid = str(r?.instanceId, 100);
+      if (!iid) continue;
+      const instance = db.prepare('SELECT id, node_id, status FROM instances WHERE id = ?').get(iid);
+      if (!instance || instance.node_id !== req.node.id) continue;
+      // Suspension is an operator intent, not a container state — never undo it.
+      if (instance.status === 'suspended') continue;
+      const status = str(r.status, 40) || 'stopped';
+      const health = str(r.health, 40) || 'unknown';
+      db.prepare('UPDATE instances SET status = ?, health_status = ?, updated_at = ? WHERE id = ?')
+        .run(status, health, now(), iid);
+      updated++;
+    }
+    res.json({ ok: true, updated });
+  }));
+
   router.post('/logs', asyncRoute(async (req, res) => {
     const b = req.body || {};
     const instanceId = str(b.instanceId, 100);

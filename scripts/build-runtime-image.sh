@@ -38,6 +38,7 @@ BUILD_ARGS=(
   --build-arg "RUST_VERSION=${RUST_VERSION}"
   --build-arg "ZIG_VERSION=${ZIG_VERSION}"
   --build-arg "SWIFT_VERSION=${SWIFT_VERSION}"
+  --build-arg "CLOUDFLARED_VERSION=${CLOUDFLARED_VERSION}"
   --build-arg "INSTALL_SWIFT=${INSTALL_SWIFT:-false}"
 )
 

@@ -16,6 +16,7 @@ ARG GO_VERSION=1.23.6
 ARG RUST_VERSION=1.84.1
 ARG ZIG_VERSION=0.13.0
 ARG SWIFT_VERSION=5.10.1
+ARG CLOUDFLARED_VERSION=2024.12.2
 ARG INSTALL_SWIFT=false
 ARG TARGETARCH=amd64
 
@@ -97,6 +98,11 @@ RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
     && chmod +x /tmp/dotnet-install.sh \
     && /tmp/dotnet-install.sh --version "${DOTNET_VERSION}" --install-dir "/opt/runtimes/dotnet/${DOTNET_VERSION}" --no-path \
     && rm /tmp/dotnet-install.sh
+
+# ---- Cloudflared connector (used for per-subdomain tunnels) ----
+RUN cfarch=$(case "${TARGETARCH}" in arm64) echo arm64;; *) echo amd64;; esac) \
+    && curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${cfarch}" -o /usr/local/bin/cloudflared \
+    && chmod 0755 /usr/local/bin/cloudflared
 
 # ---- Swift (optional: large, limited Debian support) ----
 RUN if [ "${INSTALL_SWIFT}" = "true" ]; then \

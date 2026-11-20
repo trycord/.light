@@ -1,7 +1,7 @@
 // .light — provisioning logic: Docker port binding + assigned-port reporting.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPortBindings, buildContainerConfig } from '../agent/docker.js';
+import { buildPortBindings, buildContainerConfig, buildTunnelConfig, tunnelContainerName } from '../agent/docker.js';
 import { mergeAssignedPorts } from '../server/api/agent.js';
 import { customImageRef, isDebianImage, imageRef } from '../server/runtime-catalog.js';
 
@@ -75,6 +75,17 @@ test('container config rejects unsafe images and host mounts', () => {
   // Customer-supplied host paths are ignored: binds always come from Shade's own data root.
   const safe = buildContainerConfig({ ...base, image: 'nginx:bookworm', volumes: [{ path: '/data', host: '/var/run/docker.sock' }] });
   assert.ok(safe.HostConfig.Binds[0].startsWith('/tmp/opencode/light-node/') || safe.HostConfig.Binds[0].includes('/instances/'));
+});
+
+test('Cloudflare connector uses our approved image with no privileged access', () => {
+  const cfg = buildTunnelConfig({ teamId: 'team_abc', token: 'secret-token', hostname: 'app.trycord.dev' });
+  assert.equal(cfg.name, tunnelContainerName('team_abc'));
+  assert.ok(cfg.Cmd.includes('--token'));
+  assert.ok(cfg.Cmd.includes('secret-token'));
+  assert.notEqual(cfg.HostConfig.NetworkMode, 'host');
+  assert.deepEqual(cfg.HostConfig.CapDrop, ['ALL']);
+  assert.equal(cfg.HostConfig.Privileged, undefined);
+  assert.throws(() => buildTunnelConfig({ teamId: 't' }), /tunnel_token_required/);
 });
 
 test('assigned host ports are merged back into the configured list', () => {

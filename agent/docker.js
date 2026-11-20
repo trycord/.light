@@ -187,6 +187,67 @@ export async function createInstance(payload) {
   return { containerId: container.id, name: containerName(instanceId), ports: assigned };
 }
 
+export function tunnelContainerName(teamId) {
+  return `lt-tunnel-${String(teamId || 'default').replace(/[^A-Za-z0-9_-]/g, '').slice(-16)}`;
+}
+
+/** Run the Cloudflare connector inside our approved image on the team network. */
+export function buildTunnelConfig({ teamId, token, hostname, image }) {
+  if (!token) throw Object.assign(new Error('tunnel_token_required'), { status: 400 });
+  return {
+    Image: image || process.env.LIGHT_RUNTIME_IMAGE || 'trycord/light-runtime:1.0.0',
+    name: tunnelContainerName(teamId),
+    Cmd: ['/usr/local/bin/cloudflared', 'tunnel', '--no-autoupdate', 'run', '--token', String(token)],
+    Env: [`LT_HOSTNAME=${String(hostname || '').slice(0, 200)}`],
+    Labels: { 'lt.tunnel': 'cloudflare', 'lt.team': teamId || 'default', 'lt.hostname': String(hostname || '').slice(0, 100) },
+    HostConfig: {
+      NetworkMode: networkName(teamId || 'default'),
+      RestartPolicy: { Name: 'unless-stopped', MaximumRetryCount: 0 },
+      Memory: 256 * 1024 * 1024, MemorySwap: -1, NanoCpus: 0.5e9,
+      PidsLimit: 256, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges:true'], Init: true,
+    },
+  };
+}
+
+export async function startTunnelConnector({ teamId, token, hostname, image }) {
+  const d = getDocker();
+  const config = buildTunnelConfig({ teamId, token, hostname, image });
+  const name = config.name;
+  await ensureNetwork(teamId || 'default');
+  const stale = d.getContainer(name);
+  try { await stale.inspect(); try { await stale.remove({ force: true }); } catch { /* ignore */ } } catch { /* none */ }
+  const container = await d.createContainer(config);
+  await container.start();
+  return { containerId: container.id, name };
+}
+
+export async function stopTunnelConnector({ teamId }) {
+  const d = getDocker();
+  const name = tunnelContainerName(teamId);
+  const containers = await d.listContainers({ all: true });
+  const found = containers.find((c) => c.Names?.includes(`/${name}`));
+  if (!found) return { ok: false, reason: 'not_found' };
+  await d.getContainer(found.Id).remove({ force: true });
+  return { ok: true };
+}
+
+/** Actual container state for an instance, reported to the control plane. */
+export async function containerHealth(instanceId) {
+  try {
+    const containers = await getDocker().listContainers({ all: true });
+    const name = containerName(instanceId);
+    const found = containers.find((c) => c.Names?.includes(`/${name}`));
+    if (!found) return { status: 'missing', health: 'unknown' };
+    const state = (await getDocker().getContainer(found.Id).inspect()).State || {};
+    let status = 'stopped';
+    if (state.Running) status = 'running';
+    else if (state.Paused) status = 'paused';
+    else if (state.Dead) status = 'dead';
+    return { status, health: state.Health?.Status || 'unknown', startedAt: state.StartedAt || null,
+      exitCode: Number.isFinite(state.ExitCode) ? state.ExitCode : null };
+  } catch (error) { return { status: 'error', health: 'unknown', error: error.message }; }
+}
+
 async function withContainer(instanceId, fn) {
   const d = getDocker();
   const containers = await d.listContainers({ all: true });

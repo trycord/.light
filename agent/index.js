@@ -2,7 +2,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import config from './config.js';
-import { hostMetrics, createInstance, startInstance, stopInstance, restartInstance, suspendInstance, resumeInstance, removeInstance, reinstallInstance, execCommand, deployImage, containerStatus, containerStats, followLogs, ensureDirs, containerName } from './docker.js';
+import { hostMetrics, createInstance, startInstance, stopInstance, restartInstance, suspendInstance, resumeInstance, removeInstance, reinstallInstance, execCommand, deployImage, containerStatus, containerStats, followLogs, ensureDirs, containerName, containerHealth, startTunnelConnector, stopTunnelConnector } from './docker.js';
 import { listFiles, readFile, writeFile, fileOperation, storageUsage, createBackup, restoreBackup } from './files.js';
 import { installSteamGame, isSteamGame, resolveGame } from './games.js';
 import { buildSource, cloneRepository, validateBuildSpec } from './build.js';
@@ -42,6 +42,16 @@ async function heartbeat() {
   }
 }
 
+async function reportHealth() {
+  try {
+    const response = await fetch(CONTROL + '/api/agent/instances', { headers: HEADERS });
+    if (!response.ok) return;
+    const list = (await response.json()).instances || [];
+    const reports = await Promise.all(list.map(async (i) => ({ instanceId: i.id, ...(await containerHealth(i.id)) })));
+    await post('/api/agent/instances/health', { instances: reports });
+  } catch (error) { console.error('[agent] health report failed:', error.message); }
+}
+
 async function reportResult(commandId, result, status) {
   try { await post(`/api/agent/commands/${commandId}/result`, { ok: !result?.error, result, status }); }
   catch (error) { console.error('[agent] result report failed:', error.message); }
@@ -52,6 +62,9 @@ const streaming = new Set();
 async function execute(command) {
   const payload = command.payload || {};
   switch (command.type) {
+    case 'tunnel.start': return startTunnelConnector(payload);
+    case 'tunnel.stop': return stopTunnelConnector(payload);
+
     case 'instance.reprovision': {
       // Remove the previous container (if any) then recreate with the same
       // persistent volume paths. This is idempotent and data-preserving.
@@ -193,8 +206,10 @@ function start() {
   timers.push(setInterval(heartbeat, 5000));
   timers.push(setInterval(pollCommands, 1000));
   timers.push(setInterval(startLogStreams, 10000));
+  timers.push(setInterval(reportHealth, 20000));
   heartbeat();
   pollCommands();
+  reportHealth();
   const shutdown = () => {
     timers.forEach(clearInterval);
     server.close(() => process.exit(0));

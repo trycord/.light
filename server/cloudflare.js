@@ -5,6 +5,7 @@ import { getDb } from './db.js';
 import { encrypt, decrypt } from './crypto.js';
 import { id, now, str } from './util.js';
 import { audit } from './audit.js';
+import { queueCommand } from './commands.js';
 
 const API = 'https://api.cloudflare.com/client/v4';
 
@@ -77,6 +78,13 @@ export async function provisionTunnel(domainRow, req) {
   }
   getDb().prepare('UPDATE domains SET tunnel_id = ?, tunnel_token = ?, tunnel_status = ?, ssl_status = ?, updated_at = ? WHERE id = ?')
     .run(tunnelId, encrypt(token), 'provisioned', 'active', now(), domainRow.id);
+  // Ask Shade to run the connector inside our approved image on the team network.
+  const instance = getDb().prepare('SELECT node_id FROM instances WHERE id = ?').get(domainRow.instance_id);
+  if (instance?.node_id && token) {
+    queueCommand(instance.node_id, 'tunnel.start', {
+      teamId: domainRow.team_id, hostname, token, image: `${process.env.LIGHT_RUNTIME_IMAGE || 'trycord/light-runtime'}:${process.env.LIGHT_RUNTIME_IMAGE_VERSION || '1.0.0'}`,
+    }, domainRow.instance_id);
+  }
   audit(req || {}, 'cloudflare.tunnel.provision', 'domain', domainRow.id, { hostname, tunnelId });
   return { status: 'provisioned', tunnelId, target };
 }
@@ -86,6 +94,8 @@ export async function deleteTunnel(domainRow) {
   const c = cloudflareConfig();
   try {
     await cf(`/accounts/${c.accountId}/cfd_tunnel/${domainRow.tunnel_id}`, { method: 'DELETE' });
+    const instance = getDb().prepare('SELECT node_id FROM instances WHERE id = ?').get(domainRow.instance_id);
+    if (instance?.node_id) queueCommand(instance.node_id, 'tunnel.stop', { teamId: domainRow.team_id }, domainRow.instance_id);
     getDb().prepare('UPDATE domains SET tunnel_status = ?, tunnel_token = NULL, tunnel_id = NULL WHERE id = ?').run('deleted', domainRow.id);
     return { ok: true };
   } catch (error) { return { ok: false, error: error.message }; }
