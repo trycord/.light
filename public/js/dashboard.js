@@ -91,20 +91,20 @@ function renderAuth(mode='login') {
 }
 
 const NAV=[
-  {group:'Overview',items:[{v:'overview',label:'Dashboard',i:'monitoring'}]},
-  {group:'Hosting',items:[{v:'market',label:'Marketplace',i:'applications'},{v:'servers',label:'All Servers',i:'instances'},{v:'game',label:'Game Servers',i:'game-servers'},{v:'web',label:'Applications',i:'applications'},{v:'websites',label:'Websites',i:'network'},{v:'database',label:'Databases',i:'storage'}]},
-  {group:'Management',items:[{v:'deployments',label:'Deployments',i:'schedules'},{v:'domains',label:'Domains',i:'network'},{v:'backups',label:'Backups',i:'backups'},{v:'schedules',label:'Schedules',i:'schedules'},{v:'files',label:'Files',i:'storage'}]},
-  // Full-screen drag-and-drop file manager lives at its own clean URL.
-  {group:'Account',items:[{v:'usage',label:'Usage & Resources',i:'monitoring'},{v:'orders',label:'Orders & provisioning',i:'schedules'},{v:'billing',label:'Billing & Plans',i:'settings'},{v:'notifications',label:'Notifications',i:'settings'},{v:'support',label:'Support',i:'security'},{v:'settings',label:'Settings',i:'settings'},{v:'admin',label:'Administration',i:'security',admin:true}]},
+  {group:'Overview',items:[{v:'overview',label:'Dashboard',i:'monitoring'},{v:'activity',label:'Activity',i:'schedules'},{v:'notifications',label:'Notifications',i:'settings'}]},
+  {group:'Hosting',items:[{v:'market',label:'Marketplace',i:'applications'},{v:'servers',label:'All services',i:'instances'},{v:'game',label:'Game servers',i:'game-servers'},{v:'web',label:'Applications',i:'applications'},{v:'websites',label:'Websites',i:'network'},{v:'database',label:'Databases',i:'storage'},{v:'domains',label:'Domains',i:'network'},{v:'backups',label:'Backups',i:'backups'},{v:'files',label:'Files',i:'storage'}]},
+  {group:'Account',items:[{v:'orders',label:'Orders',i:'schedules'},{v:'billing',label:'Billing & plans',i:'settings'},{v:'invoices',label:'Invoices',i:'storage'},{v:'payment-methods',label:'Payment methods',i:'security'},{v:'usage',label:'Usage & resources',i:'monitoring'}]},
+  {group:'Support',items:[{v:'support',label:'Support tickets',i:'security'},{v:'help',label:'Documentation',i:'settings',external:'/docs'}]},
+  {group:'Settings',items:[{v:'settings',label:'Profile & preferences',i:'settings'},{v:'admin',label:'Administration',i:'security',admin:true}]},
 ];
 // Views that leave the customer SPA and load a separate application.
-const EXTERNAL_VIEWS = { admin: '/admin', files: '/files' };
+const EXTERNAL_VIEWS = { admin: '/admin', files: '/files', help: '/docs' };
 
 function renderShell(){
   const nav=NAV.map(g=>{const items=g.items.filter(i=>!i.admin||session.user.role==='admin');if(!items.length)return '';
     return `<nav class="lt-nav-section"><div class="lt-nav-section-label">${esc(g.group)}</div>${items.map(i=>`<a class="lt-nav-item" href="${EXTERNAL_VIEWS[i.v]||`#/${i.v}`}" data-nav="${i.v}">${iconImg(i.i,17)}<span>${esc(i.label)}</span></a>`).join('')}</nav>`;}).join('');
-  app.innerHTML=`<div class="lt-shell">
-    <aside class="lt-sidebar" id="sidebar"><a class="lt-brand" href="#/overview">${brandMark(32)}<span class="lt-brand-word">${esc(brand.product||'.light')}<span class="lt-brand-sub">${esc((brand.tagline||'Universal hosting platform').split(' ')[0])}</span></span></a>${nav}
+  app.innerHTML=`<a class="lt-skip" href="#view">Skip to main content</a><div class="lt-shell">
+    <aside class="lt-sidebar" id="sidebar" aria-label="Primary navigation"><a class="lt-brand" href="#/overview">${brandMark(32)}<span class="lt-brand-word">${esc(brand.product||'.light')}<span class="lt-brand-sub">${esc((brand.tagline||'Universal hosting platform').split(' ')[0])}</span></span></a>${nav}
     <div class="lt-nav-footer"><div class="lt-watermark"><span class="lt-wm-mark">ΔΓΟ</span> <a href="https://trycord.dev" target="_blank">POWERED BY TRYCORD</a></div></div></aside>
     <div class="lt-scrim" id="scrim" style="display:none"></div>
     <div class="lt-main"><header class="lt-topbar">
@@ -150,7 +150,7 @@ async function openNotifPanel(anchor){
   await load();loadUnread();
   setTimeout(()=>{const h=(ev)=>{if(!p.contains(ev.target)&&!anchor.contains(ev.target)){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);
 }
-function setActive(v){app.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===v));const labels={overview:'Dashboard',market:'Marketplace',servers:'All Servers',game:'Game Servers',web:'Applications',websites:'Websites',database:'Databases',deployments:'Deployments',domains:'Domains',backups:'Backups',schedules:'Schedules',files:'Files',usage:'Usage & Resources',orders:'Orders & provisioning',billing:'Billing & Plans',notifications:'Notifications',support:'Support',settings:'Settings',admin:'Administration',server:'Server',verify:'Verify',reset:'Reset'};const c=app.querySelector('#crumb');if(c)c.textContent=labels[v]||v;}
+function setActive(v){app.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===v));const labels={overview:'Dashboard',activity:'Activity',market:'Marketplace',servers:'All services',game:'Game servers',web:'Applications',websites:'Websites',database:'Databases',deployments:'Deployments',domains:'Domains',backups:'Backups',schedules:'Schedules',files:'Files',usage:'Usage & resources',orders:'Orders',billing:'Billing & plans',invoices:'Invoices','payment-methods':'Payment methods',notifications:'Notifications',support:'Support tickets',help:'Documentation',settings:'Profile & preferences',admin:'Administration',server:'Server',verify:'Verify',reset:'Reset'};const c=app.querySelector('#crumb');if(c)c.textContent=labels[v]||v;}
 function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 function poll(fn,ms=8000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&session)fn().catch(()=>{});},ms);}
 function parseHash(){const raw=(location.hash||'#/overview').replace(/^#\/?/,'');const [p,q]=raw.split('?');const [v,param]=p.split('/');return{v:v||'overview',param,query:new URLSearchParams(q||'')};}
@@ -165,7 +165,7 @@ async function navigate(){
     else app.innerHTML='<main class="lt-content" id="view"></main>';
   }
   setActive(v);stopPoll();currentView=v;currentParam=param;const view=app.querySelector('#view');if(!view)return;
-  const R={overview:renderOverview,market:()=>renderMarketplace(),marketplace:()=>renderMarketplace(),servers:renderServers,game:()=>renderServers('game'),web:()=>renderServers('web'),websites:()=>renderServers('website'),database:()=>renderServers('database'),deployments:renderDeployments,domains:renderDomains,backups:renderBackups,schedules:renderSchedules,files:renderFiles,usage:renderUsage,orders:renderOrders,billing:renderBilling,notifications:renderNotifications,support:renderSupport,settings:renderSettings,admin:renderAdmin,server:()=>renderServer(param),verify:()=>renderVerify(query),reset:()=>renderReset(query)};
+  const R={overview:renderOverview,activity:renderActivity,market:()=>renderMarketplace(),marketplace:()=>renderMarketplace(),servers:renderServers,game:()=>renderServers('game'),web:()=>renderServers('web'),websites:()=>renderServers('website'),database:()=>renderServers('database'),deployments:renderDeployments,domains:renderDomains,backups:renderBackups,schedules:renderSchedules,files:renderFiles,usage:renderUsage,orders:renderOrders,billing:renderBilling,invoices:renderInvoices,'payment-methods':renderPaymentMethods,notifications:renderNotifications,support:renderSupport,settings:renderSettings,admin:renderAdmin,server:()=>renderServer(param),verify:()=>renderVerify(query),reset:()=>renderReset(query)};
   view.innerHTML=loading();try{await (R[v]||renderOverview)();}catch(e){view.innerHTML=errState(e);}
 }
 
@@ -329,7 +329,7 @@ async function renderServer(id){
   if(currentServerId!==id){currentServerId=id;currentServerTab='overview';currentFilePath='/';}
   const v=app.querySelector('#view');const [{instance:i},logs,metrics,domainData]=await Promise.all([api.instance(id),api.logs(id,200),api.metrics(id,60),api.domains().catch(()=>({domains:[]}))]);
   const domains=(domainData.domains||[]).filter(d=>d.instance_id===id);
-  const tab=currentServerTab||'overview';const tabs=['overview','console','files','configuration','startup','networking','domains','backups','schedules','monitoring','activity'];
+  const tab=currentServerTab||'overview';const tabs=['overview','console','logs','files','configuration','startup','networking','domains','backups','schedules','monitoring','activity'];
   v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">${esc(i.name)}</h1><p class="lt-page-subtitle">${esc(i.image)} · ${badge(i.status)}</p></div><div class="lt-page-actions">
     ${i.status==='running'?'<button class="lt-btn lt-btn-secondary" data-a="stop">Stop</button>':'<button class="lt-btn lt-btn-secondary" data-a="start">Start</button>'}
     <button class="lt-btn lt-btn-secondary" data-a="restart">Restart</button><button class="lt-btn lt-btn-secondary" data-a="deploy">Deploy</button><button class="lt-btn lt-btn-danger" data-a="delete">Delete</button></div></div>
@@ -374,6 +374,11 @@ async function renderServer(id){
     poll(async()=>{if(currentView==='server'&&currentServerTab==='console'&&document.body.contains(box)){
       try{const r=await api.logs(id,200);for(const l of r.logs)if(!seen.has(l.id))append(l);}catch{}
     }},2000);
+  }else if(tab==='logs'){
+    tv.innerHTML=section('Container logs',`Last ${logs.logs.length} lines`,`<div class="lt-console"><div class="lt-console-toolbar"><span class="lt-label">stdout / stderr</span><span style="flex:1"></span><button class="lt-btn lt-btn-ghost lt-btn-sm" id="logRefresh">Refresh</button></div>
+      <div class="lt-console-body" id="logBody" style="height:420px">${logs.logs.map(l=>`<div class="lt-console-line ${l.stream==='stderr'?'error':''}"><span class="ts">${fmtTime(l.ts)}</span><span>${esc(l.line)}</span></div>`).join('')||'<div class="lt-console-line">No output yet.</div>'}</div></div>`);
+    tv.querySelector('#logRefresh').addEventListener('click',async()=>{try{const r=await api.logs(id,300);const b=tv.querySelector('#logBody');b.innerHTML=r.logs.map(l=>`<div class="lt-console-line ${l.stream==='stderr'?'error':''}"><span class="ts">${fmtTime(l.ts)}</span><span>${esc(l.line)}</span></div>`).join('')||'<div class="lt-console-line">No output yet.</div>';}catch(e){toast(e.message,'error');}});
+    poll(async()=>{if(currentView==='server'&&currentServerTab==='logs')await renderServer(id);},10000);
   }else if(tab==='files'){
     const f=await api.files(id,currentFilePath||'/');currentFilePath=f.path;
     tv.innerHTML=`<p style="margin-bottom:12px"><a class="lt-btn lt-btn-secondary lt-btn-sm" href="/files?id=${esc(id)}">Open full drag-and-drop file manager ↗</a></p>`+
@@ -473,6 +478,35 @@ async function renderAdmin(){const v=app.querySelector('#view'),[users,teams,aud
     ${section('Users','',`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th></tr></thead><tbody>${users.users.map(u=>`<tr><td class="lt-td-strong">${esc(u.email)}</td><td>${esc(u.name||'—')}</td><td>${badge(u.role)}</td><td>${badge(u.status)}</td></tr>`).join('')}</tbody></table></div>`)}
     ${section('Workspaces','',`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Name</th><th>Members</th><th>Services</th><th>Plan</th></tr></thead><tbody>${teams.teams.map(t=>`<tr><td class="lt-td-strong">${esc(t.name)}</td><td>${t.members}</td><td>${t.instances}</td><td>${esc(t.plan_id)}</td></tr>`).join('')}</tbody></table></div>`)}
     ${section('Audit log','',`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Time</th><th>Action</th><th>Target</th></tr></thead><tbody>${audit.events.slice(0,30).map(e=>`<tr><td class="lt-td-mono">${fmtTime(e.ts)}</td><td>${esc(e.action)}</td><td>${esc(e.target_id||'—')}</td></tr>`).join('')}</tbody></table></div>`)}</div>`;
+}
+
+/* ---------- account: activity, invoices, payment methods ---------- */
+async function renderActivity(){
+  const v=app.querySelector('#view');
+  const [orders,notes,deps]=await Promise.all([api.orders().catch(()=>({orders:[]})),api.notifications(50).catch(()=>({notifications:[]})),api.deployments().catch(()=>({deployments:[]}))]);
+  const items=[
+    ...(orders.orders||[]).map(o=>({ts:o.createdAt,type:o.status,title:`Order ${o.id}`,text:`${o.planSnapshot?.name||o.planId||'Custom'} · ${o.serviceName}`})),
+    ...(deps.deployments||[]).map(d=>({ts:d.createdAt,type:d.status,title:`Deployment ${d.id}`,text:`${d.instanceName||d.instanceId} · ${d.source||''}`})),
+    ...(notes.notifications||[]).map(n=>({ts:n.createdAt,type:n.type,title:n.title,text:n.message})),
+  ].sort((a,b)=>(b.ts||0)-(a.ts||0)).slice(0,80);
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Activity</h1><p class="lt-page-subtitle">Orders, deployments and notifications in one timeline</p></div></div>
+    ${section('Recent activity','',items.length?items.map(i=>`<div style="display:flex;gap:14px;padding:10px 0;border-bottom:1px solid var(--lt-border)">
+      <span class="lt-td-mono" style="width:150px;flex-shrink:0">${fmtTime(i.ts)}</span>${badge(i.type)}
+      <div style="min-width:0"><b>${esc(i.title)}</b><div class="lt-meta">${esc(i.text)}</div></div></div>`).join(''):empty('No activity yet','Purchases and service events will appear here.'))}`;
+}
+async function renderInvoices(){
+  const v=app.querySelector('#view');let rows=[];
+  try{rows=(await api.invoices()).invoices||[];}catch(e){v.innerHTML=errState(e);return;}
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Invoices</h1><p class="lt-page-subtitle">Receipts for confirmed payments</p></div></div>
+    ${section('Invoices',`${rows.length} records`,rows.length?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Number</th><th>Amount</th><th>Tax</th><th>Status</th><th>Issued</th></tr></thead><tbody>
+      ${rows.map(i=>`<tr><td class="lt-td-mono">${esc(i.number)}</td><td>${fmtMoney(i.amount,i.currency)}</td><td>${fmtMoney(i.tax,i.currency)}</td><td>${badge(i.status)}</td><td>${fmtTime(i.issuedAt||i.issued_at)}</td></tr>`).join('')}
+      </tbody></table></div>`:empty('No invoices yet','Invoices appear after a confirmed payment.'))}`;
+}
+async function renderPaymentMethods(){
+  const v=app.querySelector('#view');let methods=[];
+  try{methods=(await api.billingMethods?.()).providers||[];}catch{}
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Payment methods</h1><p class="lt-page-subtitle">How payments are taken for this account</p></div></div>
+    ${section('Available providers','',methods.length?methods.map(m=>`<div class="mkt-card" style="margin-bottom:10px"><b>${esc(m.label||m.provider)}</b><div class="lt-meta">Cards are entered on the secure provider checkout page. This platform never stores card numbers.</div></div>`).join(''):empty('No payment provider configured','Use the manual confirmation path for free orders, or ask the operator to configure Stripe.'))}`;
 }
 
 /* ---------- orders & provisioning ---------- */

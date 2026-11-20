@@ -1,31 +1,20 @@
-<!DOCTYPE html><html lang="en"><head>
+<!DOCTYPE html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Contact & Support — .light</title>
+<title>Contact & support — .light</title><meta name="description" content="Contact and support for .light.">
 <link rel="icon" href="/assets/logos/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
-<script type="module" src="/js/theme.js"></script>
-<script src="/js/brand-sync.js"></script>
-</head><body><div id="site"></div>
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/site.css"><link rel="stylesheet" href="/styles/marketing.css">
+<script type="module" src="/js/theme.js"></script><script src="/js/brand-sync.js"></script>
+</head><body><div id="site"><div style="padding:90px 22px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
 <script type="module">
-import { layout, loadBranding, esc } from '/js/site.js';
-async function boot(){
-  const b = await loadBranding();
-  const content = `<div class="site-prose">
-    <h1>Contact & Support</h1>
-    <p>Need help? Check the <a href="/docs">documentation</a> first, then reach out to your operator.</p>
-    <h2>Support email</h2><p>${b.supportEmail ? `<a href="mailto:${esc(b.supportEmail)}">${esc(b.supportEmail)}</a>` : 'No support email configured by the operator.'}</p>
-    <h2>Contact form</h2>
-    <form id="contactForm" onsubmit="event.preventDefault();document.getElementById('contactMsg').textContent='Your operator has not configured a contact endpoint. Please use the support email above.'">
-      <div class="lt-field"><label>Email</label><input class="lt-input" type="email" required></div>
-      <div class="lt-field"><label>Message</label><textarea class="lt-textarea" required></textarea></div>
-      <button class="lt-btn lt-btn-primary" type="submit">Send message</button>
-      <p id="contactMsg" class="site-muted" style="margin-top:12px"></p>
-    </form>
-    <h2>Support tickets</h2><p>Authenticated customers can submit support requests from their dashboard under Support.</p>
-  </div>`;
-  document.getElementById('site').innerHTML = layout(b, content);
-}
-boot();
+import { page, esc } from '/js/marketing-shell.js';
+const b=await page({ title:'Contact & support', active:'docs', eyebrow:'Support', heading:'We are here to help.', lede:'' });
+const content=`<div class="mkt-grid">
+  <div class="mkt-card"><div class="ico">◇</div><h3>Support tickets</h3><p>Signed-in customers can open a support ticket from the dashboard. Our team replies directly there and you are notified when a reply arrives.</p><a class="lt-btn lt-btn-primary lt-btn-sm" href="/login#/support">Open support</a></div>
+  <div class="mkt-card"><div class="ico">▤</div><h3>Documentation</h3><p>Practical guides for provisioning, service management, domains, files, backups and billing.</p><a class="lt-btn lt-btn-secondary lt-btn-sm" href="/docs">Read the docs</a></div>
+  <div class="mkt-card"><div class="ico">◈</div><h3>Email</h3><p>${b.supportEmail?`<a href="mailto:${esc(b.supportEmail)}">${esc(b.supportEmail)}</a>`:'Contact support from your dashboard.'}</p></div>
+</div>`;
+document.querySelector('.mkt-section').innerHTML=content;
 </script></body></html>

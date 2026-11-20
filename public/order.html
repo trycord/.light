@@ -1,0 +1,49 @@
+<!DOCTYPE html><html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Order — .light</title><meta name="description" content="Order and provisioning status.">
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/site.css"><link rel="stylesheet" href="/styles/marketing.css">
+<script type="module" src="/js/theme.js"></script><script src="/js/brand-sync.js"></script>
+</head><body><div id="site"><div style="padding:90px 22px;text-align:center;color:var(--lt-text-muted)">Loading order…</div></div>
+<script type="module">
+import api from '/js/api.js';
+import { page, esc, errorBox } from '/js/marketing-shell.js';
+await page({ title:'Order', active:'hosting', eyebrow:'Order confirmation', heading:'Your order.', lede:'', content:'<div id="orderBody"></div>' });
+const root=document.getElementById('orderBody');
+const id=new URLSearchParams(location.search).get('id');
+const money=(c,cur='USD')=>new Intl.NumberFormat(undefined,{style:'currency',currency:cur||'USD'}).format(Number(c||0)/100);
+if(!api.token()){
+  root.innerHTML=`<div class="mkt-card"><h3>Sign in to view this order</h3><p class="muted">Orders are tied to your account.</p><a class="lt-btn lt-btn-primary" href="/login">Sign in</a></div>`;
+}else if(!id){
+  root.innerHTML=errorBox('No order id was provided.');
+}else{
+  try{
+    const {order:o}=await api.order(id);
+    const steps=[['awaiting_payment','Awaiting payment'],['payment_processing','Payment processing'],['paid','Paid'],['queued','Queued'],['provisioning','Provisioning'],['active','Active']];
+    const idx=steps.findIndex(s=>s[0]===o.status);
+    root.innerHTML=`<div class="mkt-card" style="max-width:760px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><h2 style="margin:0">${esc(o.id)}</h2>${badge(o.status)}</div>
+      <p class="muted" style="margin-top:8px">Placed ${new Date(o.createdAt).toLocaleString()}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:18px 0">${steps.map((s,i)=>`<span class="lt-badge ${i<=idx?'lt-badge-success':'lt-badge-neutral'}">${s[1]}</span>`).join('')}</div>
+      <div class="summary-row"><span>Plan</span><b>${esc(o.planSnapshot?.name||o.planId||'Custom')}</b></div>
+      <div class="summary-row"><span>Service</span><b>${esc(o.serviceName)}</b></div>
+      <div class="summary-row"><span>Runtime</span><b>${esc(o.environmentId||'—')} ${esc(o.runtimeVersion||'')}</b></div>
+      <div class="summary-row"><span>Total paid</span><b>${money(o.total,o.currency)}</b></div>
+      ${o.failureReason?`<div class="lt-error" style="margin-top:12px">${esc(o.failureReason)}</div>`:''}
+      <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
+        ${o.instanceId?`<a class="lt-btn lt-btn-primary" href="/login#/server/${encodeURIComponent(o.instanceId)}">Open service</a>`:''}
+        <a class="lt-btn lt-btn-secondary" href="/login#/orders">All orders</a>
+        ${['failed','paid'].includes(o.status)?`<button class="lt-btn lt-btn-secondary" id="retry">Retry provisioning</button>`:''}
+      </div>
+      <h3 style="margin-top:26px">Timeline</h3>
+      ${(o.events||[]).map(e=>`<div class="summary-row"><span>${new Date(e.ts).toLocaleString()}</span><span>${esc(e.message||e.status)}</span></div>`).join('')}
+    </div>`;
+    document.getElementById('retry')?.addEventListener('click',async()=>{try{const r=await api.retryOrder(o.id);location.href='/login#/server/'+r.instanceId;}catch(e){alert(e.message);}});
+    if(['payment_processing','queued','provisioning'].includes(o.status))setTimeout(()=>location.reload(),6000);
+  }catch(e){root.innerHTML=errorBox(e.message);}
+}
+function badge(s){const map={paid:'success',active:'success',provisioning:'warning',queued:'info',failed:'danger',awaiting_payment:'warning'};return `<span class="lt-badge lt-badge-${map[s]||'neutral'}">${esc(s)}</span>`;}
+</script></body></html>

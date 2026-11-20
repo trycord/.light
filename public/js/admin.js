@@ -152,11 +152,15 @@ async function products(){
 }
 
 async function plans(){
-  const view=root.querySelector('#aView');let pls=[];try{pls=(await api.adminPlans()).plans||[];}catch{}
+  const view=root.querySelector('#aView');let pls=[],prods=[],envs=[];
+  try{[pls,prods,envs]=await Promise.all([api.adminPlans(),api.adminProducts(),api.adminEnvironments()]);pls=pls.plans||[];prods=prods.products||[];envs=envs.environments||[];}catch{}
   view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Plan maker</h1><p class="lt-page-subtitle">Define the plans customers subscribe to. Resources are plan-granted, never customer-selected.</p></div><div class="lt-page-actions"><button class="lt-btn lt-btn-primary" id="addPlan">+ New plan</button></div></div>
-    ${panel('Plans',`${pls.length} defined`,table(['Name','Price','CPU','RAM','Storage','Instances','Status','Order',''],pls.map(p=>`<tr><td class="lt-td-strong">${esc(p.name)}</td><td>${fmtMoney(p.priceMonthly,p.currency)}</td><td>${p.cpuCores}</td><td>${p.memoryMb} MB</td><td>${p.diskGb} GB</td><td>${p.instances}</td><td>${badge(p.status)}</td><td>${p.sortOrder}</td><td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-pl="${p.id}">Edit</button>${p.id!=='free'?` <button class="lt-btn lt-btn-danger lt-btn-sm" data-pld="${p.id}">Archive</button>`:''}</td></tr>`)))}`;
+    ${panel('Plans',`${pls.length} defined`,table(['Name','Product','Price','CPU','RAM','Storage','Instances','Status','Order',''],pls.map(p=>`<tr><td class="lt-td-strong">${esc(p.name)}</td><td>${esc((prods.find(x=>x.id===p.productId)||{}).name||'Global')}</td><td>${fmtMoney(p.priceMonthly,p.currency)}</td><td>${p.cpuCores}</td><td>${p.memoryMb} MB</td><td>${p.diskGb} GB</td><td>${p.instances}</td><td>${badge(p.status)}</td><td>${p.sortOrder}</td><td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-pl="${p.id}">Edit</button>${p.id!=='free'?` <button class="lt-btn lt-btn-danger lt-btn-sm" data-pld="${p.id}">Archive</button>`:''}</td></tr>`)))}`;
   const form=(p={})=>`<form id="pf">
     ${fld('Name','name','text',p.name||'','required')}${fld('Description','description','text',p.description||'')}
+    ${sel('Product','productId',[{value:'',label:'Global (all products)'},...prods.map(x=>({value:x.id,label:x.name}))],p.productId||'')}
+    ${sel('Category','category',['shared','dedicated'],p.category||'shared')}
+    ${fld('Supported runtimes (comma separated IDs)','supportedRuntimes','text',(p.supportedRuntimes||[]).join(', '))}
     ${fld('Price monthly (cents)','priceMonthly','number',p.priceMonthly??0)}${fld('Price yearly (cents)','priceYearly','number',p.priceYearly??0)}
     ${fld('Currency','currency','text',p.currency||'USD')}${sel('Interval','interval',['monthly','yearly'],p.interval||'monthly')}
     ${fld('CPU cores','cpuCores','number',p.cpuCores??1,'min="1"')}${fld('Memory MB (total)','memoryMb','number',p.memoryMb??512,'min="128"')}
@@ -166,7 +170,7 @@ async function plans(){
     <label class="lt-auth-terms"><input type="checkbox" name="featured" ${p.featured?'checked':''}> Featured</label>
     <label class="lt-auth-terms"><input type="checkbox" name="available" ${p.available!==false?'checked':''}> Available to customers</label>
   </form>`;
-  const parse=(d)=>{d.features=String(d.features||'').split(',').map(x=>x.trim()).filter(Boolean);d.featured=!!d.featured;d.available=!!d.available;return d;};
+  const parse=(d)=>{d.features=String(d.features||'').split(',').map(x=>x.trim()).filter(Boolean);d.supportedRuntimes=String(d.supportedRuntimes||'').split(',').map(x=>x.trim()).filter(Boolean);d.productId=d.productId||null;d.featured=!!d.featured;d.available=!!d.available;return d;};
   view.querySelector('#addPlan').addEventListener('click',async()=>{const d=await modal('New plan',form(),{ok:'Create'});if(d){try{await api.adminCreatePlan(parse(d));toast('Plan created','success');plans();}catch(e){toast(e.message,'error');}}});
   view.querySelectorAll('[data-pl]').forEach(b=>b.addEventListener('click',async()=>{const p=pls.find(x=>x.id===b.dataset.pl);const d=await modal(`Edit plan: ${p.name}`,form(p),{ok:'Save'});if(d){try{await api.adminUpdatePlan(p.id,parse(d));toast('Saved','success');plans();}catch(e){toast(e.message,'error');}}}));
   view.querySelectorAll('[data-pld]').forEach(b=>b.addEventListener('click',async()=>{if(await confirmDialog('Archive plan','Existing subscriptions are preserved.')){try{await api.adminDeletePlan(b.dataset.pld);toast('Archived','success');plans();}catch(e){toast(e.message,'error');}}}));

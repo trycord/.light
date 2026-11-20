@@ -250,7 +250,7 @@ const TABLES = {
 };
 
 const LEGACY_COLUMNS = {
-  plans: { description: "TEXT NOT NULL DEFAULT ''", category: "TEXT NOT NULL DEFAULT 'shared'", product_id: 'TEXT',
+  plans: { description: "TEXT NOT NULL DEFAULT ''", category: "TEXT NOT NULL DEFAULT 'shared'", product_id: 'TEXT', supported_runtimes: "TEXT NOT NULL DEFAULT '[]'",
     price_yearly: 'INTEGER NOT NULL DEFAULT 0', interval: "TEXT NOT NULL DEFAULT 'monthly'", currency: "TEXT NOT NULL DEFAULT 'USD'",
     features: "TEXT NOT NULL DEFAULT '[]'", restrictions: "TEXT NOT NULL DEFAULT '[]'", status: "TEXT NOT NULL DEFAULT 'published'",
     featured: 'INTEGER NOT NULL DEFAULT 0', sort_order: 'INTEGER NOT NULL DEFAULT 0', available: 'INTEGER NOT NULL DEFAULT 1',

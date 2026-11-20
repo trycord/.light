@@ -6,14 +6,31 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
-<link rel="stylesheet" href="/styles/utilities.css"><link rel="stylesheet" href="/styles/site.css">
+<link rel="stylesheet" href="/styles/site.css"><link rel="stylesheet" href="/styles/marketing.css">
 <script type="module" src="/js/theme.js"></script>
 <script src="/js/brand-sync.js"></script>
-</head><body><div id="checkout"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading checkout…</div></div>
+</head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading checkout…</div></div>
 <script type="module">
 import api from '/js/api.js';
-const root = document.getElementById('checkout');
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { page, esc } from '/js/marketing-shell.js';
+// Tolerate a stale cached HTML document that still uses the old #checkout root.
+if (!document.getElementById('site')) {
+  const old = document.getElementById('checkout');
+  if (old) old.id = 'site';
+  else document.body.insertAdjacentHTML('afterbegin', '<div id="site"></div>');
+}
+// Never leave the static placeholder visible if a script fails.
+window.addEventListener('error', (e) => {
+  const b = document.getElementById('checkoutBody');
+  if (b && b.innerHTML.trim() === '') b.innerHTML = `<div class="lt-error" role="alert">Checkout could not load: ${esc(e.message || 'unknown error')}</div>`;
+});
+await page({ title:'Checkout', active:'hosting', eyebrow:'Secure checkout', heading:'Complete your purchase.', lede:'', content:'<div id="checkoutBody"></div>' });
+const root = document.getElementById('checkoutBody');
+setTimeout(() => {
+  if (document.body.innerText.includes('Loading checkout')) {
+    root.innerHTML = '<div class="lt-error" role="alert">Checkout is taking too long to load. Refresh the page or <a href="/hosting">return to hosting</a>.</div>';
+  }
+}, 8000);
 const money = (cents, cur='USD') => new Intl.NumberFormat(undefined, { style: 'currency', currency: cur || 'USD' }).format((Number(cents)||0)/100);
 const params = new URLSearchParams(location.search);
 const productSlug = params.get('product') || '';
@@ -50,6 +67,7 @@ function render() {
   const p = state.plan;
   const supported = Array.isArray(p.supportedRuntimes) && p.supportedRuntimes.length ? p.supportedRuntimes : null;
   const envs = supported ? state.environments.filter((e) => supported.includes(e.id)) : state.environments;
+  if (!envs.length) throw new Error('This plan has no supported runtimes configured. Ask the operator to update the plan.');
   const runtimeOpts = envs.map((e) => ({ id: e.id, name: e.name, versions: e.versions || [] }));
   root.innerHTML = `<section class="site-section"><div class="site-wrap">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">

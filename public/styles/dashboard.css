@@ -44,6 +44,8 @@ html, body { min-height:100svh; margin:0; }
 .lt-global-search input { background:none; border:none; outline:none; color:var(--lt-text); font:inherit; font-size:12px; width:100%; }
 .lt-icon-btn { width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--lt-border); border-radius:var(--lt-radius-md); background:var(--lt-surface); color:var(--lt-text-muted); cursor:pointer; font-size:15px; }
 .lt-icon-btn:hover { color:var(--lt-text); border-color:var(--lt-border-strong); }
+.lt-skip{position:absolute;left:-9999px;top:0;background:var(--lt-ember-500);color:#fff;padding:10px 16px;z-index:200}
+.lt-skip:focus{left:12px;top:12px}
 .lt-badge-count { position:absolute; top:-2px; right:-2px; min-width:15px; height:15px; padding:0 3px; border-radius:8px; background:var(--lt-ember-500); color:#fff; font-size:9px; display:flex; align-items:center; justify-content:center; }
 
 /* KPI */

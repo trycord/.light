@@ -1,84 +1,74 @@
-<!DOCTYPE html><html lang="en"><head>
+<!DOCTYPE html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Build Your Own Plan — .light</title>
+<title>Build your own plan — .light</title><meta name="description" content="Configure a custom hosting plan.">
 <link rel="icon" href="/assets/logos/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
-<script type="module" src="/js/theme.js"></script>
-<script src="/js/brand-sync.js"></script>
-</head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading configurator…</div></div>
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/site.css"><link rel="stylesheet" href="/styles/marketing.css">
+<script type="module" src="/js/theme.js"></script><script src="/js/brand-sync.js"></script>
+</head><body><div id="site"><div style="padding:90px 22px;text-align:center;color:var(--lt-text-muted)">Loading configurator…</div></div>
 <script type="module">
-import { layout, esc, loadBranding } from '/js/site.js';
 import api from '/js/api.js';
-async function boot(){
-  const b = await loadBranding();
-  let cfg={}; try { cfg=(await api.pricing()).config||{}; } catch {}
-  if (cfg.customPlansEnabled === false) {
-    document.getElementById('site').innerHTML = layout(b, `<section class="site-section"><div class="site-wrap">
-      <div class="site-heading"><h2>Build your own plan</h2><p>Custom plans are not enabled on this platform. Resources are granted by the available plans.</p></div>
-      <p><a class="lt-btn lt-btn-primary" href="/pricing">View plans</a></p>
-    </div></section>`, 'pricing');
-    return;
-  }
-  const state={cpuCores:2,memoryMb:1024,diskGb:20,networkGb:10,instances:2,interval:'monthly'};
-  const content = `<section class="site-section"><div class="site-wrap">
-    <div class="site-heading"><h2>Build your own plan</h2><p>Choose exactly the resources you need. Pricing is calculated by the platform and validated before activation.</p></div>
-    <div class="lt-grid lt-grid-2" style="max-width:1040px;margin:0 auto;align-items:start">
-      <div class="site-plan" style="gap:18px">
-        <h3>Resources</h3>
-        ${slider('cpuCores','CPU cores',state.cpuCores,cfg.minCpu||1,cfg.maxCpu||32,cfg.stepCpu||1)}
-        ${slider('memoryMb','Memory (MB)',state.memoryMb,cfg.minMemoryMb||256,cfg.maxMemoryMb||65536,cfg.stepMemoryMb||256)}
-        ${slider('diskGb','Storage (GB)',state.diskGb,cfg.minDiskGb||4,cfg.maxDiskGb||2000,cfg.stepDiskGb||4)}
-        ${slider('networkGb','Network (GB)',state.networkGb,0,2000,10)}
-        ${slider('instances','Instances',state.instances,1,100,1)}
-        <div class="lt-field"><label>Billing interval</label><div class="lt-auth-tabs" style="margin:0"><button class="lt-auth-tab active" data-iv="monthly">Monthly</button><button class="lt-auth-tab" data-iv="yearly">Yearly</button></div></div>
+import { page, esc } from '/js/marketing-shell.js';
+let cfg={};try{cfg=(await api.pricing()).config||{};}catch{}
+if(cfg.customPlansEnabled===false){
+  await page({title:'Build your own plan',active:'configure',eyebrow:'Plans',heading:'Custom plans are not enabled.',
+    lede:'Resources are granted by the published plans on this platform.',
+    content:'<div style="text-align:center"><a class="lt-btn lt-btn-primary" href="/pricing">View plans</a></div>'});
+}else{
+  await page({title:'Build your own plan',active:'configure',eyebrow:'Plans',
+    heading:'Build your own plan.',
+    lede:'Choose supported resources within operator-defined limits. Pricing is calculated server-side and validated before checkout.',
+    content:`<div class="lt-grid lt-grid-2" style="align-items:start">
+      <div class="mkt-card"><h3>Resources</h3>
+        ${slider('cpuCores','CPU cores',2,cfg.minCpu||1,cfg.maxCpu||32,cfg.stepCpu||1)}
+        ${slider('memoryMb','Memory (MB)',1024,cfg.minMemoryMb||256,cfg.maxMemoryMb||65536,cfg.stepMemoryMb||256)}
+        ${slider('diskGb','Storage (GB)',20,cfg.minDiskGb||4,cfg.maxDiskGb||2000,cfg.stepDiskGb||4)}
+        ${slider('networkGb','Network (GB)',10,0,2000,10)}
+        ${slider('instances','Services',2,1,100,1)}
+        <div class="lt-field" style="margin-top:16px"><label>Billing interval</label>
+          <div class="lt-auth-tabs" role="group" aria-label="Billing interval"><button class="lt-auth-tab active" data-iv="monthly">Monthly</button><button class="lt-auth-tab" data-iv="yearly">Yearly</button></div></div>
       </div>
-      <div class="site-plan featured" style="position:sticky;top:90px">
-        <h3>Your configuration</h3>
+      <div class="mkt-card" style="position:sticky;top:90px"><h3>Your configuration</h3>
         <div id="summary" style="margin:16px 0"></div>
-        <div style="border-top:1px solid var(--lt-border);padding-top:14px;margin-top:auto">
-          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--lt-text-muted)"><span>Subtotal</span><span id="subtotal">—</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--lt-text-muted)"><span>Discount</span><span id="discount">—</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--lt-text-muted)"><span>Tax</span><span id="tax">—</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:20px;font-weight:800;margin-top:10px"><span>Total</span><span id="total" style="color:var(--lt-ember-500)">—</span></div>
+        <div style="border-top:1px solid var(--lt-border);padding-top:14px">
+          <div class="summary-row"><span>Subtotal</span><span id="subtotal">—</span></div>
+          <div class="summary-row"><span>Discount</span><span id="discount">—</span></div>
+          <div class="summary-row"><span>Tax</span><span id="tax">—</span></div>
+          <div class="summary-row total"><span>Total</span><span id="total">—</span></div>
           <div class="lt-meta" id="periodNote" style="margin-top:4px">per month</div>
-          <button class="lt-btn lt-btn-primary" id="activate" style="width:100%;margin-top:18px">Activate plan</button>
-          <p class="lt-meta" style="margin-top:10px;text-align:center">Payment is not configured. Activation uses administrator-approved manual approval — no payment is taken.</p>
-        </div>
-      </div>
-    </div>
-  </div></section>`;
-  document.getElementById('site').innerHTML=layout(b,content,'pricing');
+          <button class="lt-btn lt-btn-primary" id="activate" style="width:100%;margin-top:18px">Continue to checkout</button>
+        </div></div></div>`});
 
-  const fmt=(cents)=>`$${(cents/100).toFixed(2)} ${state.currency||'USD'}`;
+  const state={cpuCores:2,memoryMb:1024,diskGb:20,networkGb:10,instances:2,interval:'monthly',currency:'USD'};
+  const fmt=(c)=>new Intl.NumberFormat(undefined,{style:'currency',currency:state.currency}).format(Number(c||0)/100);
   async function refresh(){
-    document.getElementById('summary').innerHTML=`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--lt-border)"><span class="lt-meta">CPU</span><b>${state.cpuCores} cores</b></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--lt-border)"><span class="lt-meta">Memory</span><b>${state.memoryMb} MB</b></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--lt-border)"><span class="lt-meta">Storage</span><b>${state.diskGb} GB</b></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--lt-border)"><span class="lt-meta">Network</span><b>${state.networkGb} GB</b></div>
-      <div style="display:flex;justify-content:space-between;padding:6px 0"><span class="lt-meta">Instances</span><b>${state.instances}</b></div>`;
-    try{const r=await api.estimate({cpuCores:state.cpuCores,memoryMb:state.memoryMb,diskGb:state.diskGb,networkGb:state.networkGb,instances:state.instances},state.interval);const e=r.estimate;state.currency=e.currency;
-      document.getElementById('subtotal').textContent=fmt(e.subtotal);document.getElementById('discount').textContent=e.discountAmount?'-'+fmt(e.discountAmount):'—';document.getElementById('tax').textContent=fmt(e.taxAmount);document.getElementById('total').textContent=fmt(e.total);document.getElementById('periodNote').textContent='per '+(state.interval==='yearly'?'year':'month');
+    document.getElementById('summary').innerHTML=[['CPU',state.cpuCores+' cores'],['Memory',state.memoryMb+' MB'],['Storage',state.diskGb+' GB'],['Network',state.networkGb+' GB'],['Services',state.instances]]
+      .map(([l,x])=>`<div class="summary-row"><span class="lt-meta">${l}</span><b>${x}</b></div>`).join('');
+    try{const r=await api.estimate({cpuCores:state.cpuCores,memoryMb:state.memoryMb,diskGb:state.diskGb,networkGb:state.networkGb,instances:state.instances},state.interval);
+      const e=r.estimate;state.currency=e.currency;
+      document.getElementById('subtotal').textContent=fmt(e.subtotal);document.getElementById('discount').textContent=e.discountAmount?'-'+fmt(e.discountAmount):'—';
+      document.getElementById('tax').textContent=fmt(e.taxAmount);document.getElementById('total').textContent=fmt(e.total);
+      document.getElementById('periodNote').textContent='per '+(state.interval==='yearly'?'year':'month');
     }catch(e){document.getElementById('total').textContent='Unavailable';}
   }
-  document.querySelectorAll('[data-res]').forEach(el=>el.addEventListener('input',()=>{state[el.dataset.res]=Number(el.value);document.getElementById('label-'+el.dataset.res).textContent=el.value;refresh();}));
-  document.querySelectorAll('[data-iv]').forEach(el=>el.addEventListener('click',()=>{document.querySelectorAll('[data-iv]').forEach(x=>x.classList.remove('active'));el.classList.add('active');state.interval=el.dataset.iv;refresh();}));
+  document.querySelectorAll('[data-res]').forEach(el=>el.addEventListener('input',()=>{
+    state[el.dataset.res]=Number(el.value);document.getElementById('label-'+el.dataset.res).textContent=el.value;refresh();}));
+  document.querySelectorAll('[data-iv]').forEach(el=>el.addEventListener('click',()=>{
+    document.querySelectorAll('[data-iv]').forEach(x=>x.classList.remove('active'));el.classList.add('active');state.interval=el.dataset.iv;refresh();}));
   document.getElementById('activate').addEventListener('click',async()=>{
     try{
       const key=sessionStorage.getItem('lt_byop_key')||crypto.randomUUID();sessionStorage.setItem('lt_byop_key',key);
-      const r=await api.createOrder({
-        idempotencyKey:key, interval:state.interval,
+      const r=await api.createOrder({idempotencyKey:key,interval:state.interval,
         custom:{cpuCores:state.cpuCores,memoryMb:state.memoryMb,diskGb:state.diskGb,networkGb:state.networkGb,instances:state.instances},
-        environmentId:'node', serviceName:'My custom service',
-      });
+        environmentId:'node',serviceName:'My custom service'});
       sessionStorage.removeItem('lt_byop_key');
-      if(r.checkoutUrl){location.href=r.checkoutUrl;return;}
-      location.href='/checkout?order='+r.order.id;
+      location.href=r.checkoutUrl||('/checkout?order='+r.order.id);
     }catch(e){alert(e.message);}
   });
   refresh();
 }
-function slider(key,label,value,min,max,step){return `<div class="lt-field"><label>${label}: <b id="label-${key}">${value}</b></label><input type="range" data-res="${key}" min="${min}" max="${max}" step="${step}" value="${value}" style="width:100%;accent-color:var(--lt-ember-500)"></div>`;}
-boot();
+function slider(key,label,value,min,max,step){return `<div class="lt-field"><label for="r-${key}">${label}: <b id="label-${key}">${value}</b></label>
+  <input id="r-${key}" type="range" data-res="${key}" min="${min}" max="${max}" step="${step}" value="${value}" style="width:100%;accent-color:var(--lt-ember-500)"></div>`;}
 </script></body></html>

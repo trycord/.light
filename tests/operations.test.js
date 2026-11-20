@@ -39,11 +39,15 @@ test('platform offers only the Free plan', async () => {
   const token = await adminLogin();
   const admin = await req('/api/admin/plans', { token });
   assert.equal(admin.status, 200);
-  assert.deepEqual(admin.body.plans.map((p) => p.id), ['free']);
+  const ids = admin.body.plans.map((p) => p.id);
+  assert.ok(ids.includes('free'), 'the free plan must always exist');
+  // Legacy seeded plans were removed; administrators may define new ones.
+  for (const legacy of ['starter','basic','pro','advanced','enterprise']) assert.ok(!ids.includes(legacy));
   const catalog = await req('/api/catalog/plans', { token });
   assert.equal(catalog.status, 200);
   assert.ok(catalog.body.plans.length >= 1);
-  assert.deepEqual([...new Set(catalog.body.plans.map((p) => p.id))], ['free']);
+  const catalogIds = [...new Set(catalog.body.plans.map((p) => p.id))];
+  assert.ok(catalogIds.includes('free'));
 });
 
 test('BYOP is opt-in and Cloudflare reports honest unconfigured state', async () => {

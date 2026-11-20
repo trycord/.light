@@ -1,26 +1,22 @@
-<!DOCTYPE html><html lang="en"><head>
+<!DOCTYPE html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>About — .light</title>
+<title>About — .light</title><meta name="description" content="About the .light hosting platform.">
 <link rel="icon" href="/assets/logos/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
-<script type="module" src="/js/theme.js"></script>
-<script src="/js/brand-sync.js"></script>
-</head><body><div id="site"></div>
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/site.css"><link rel="stylesheet" href="/styles/marketing.css">
+<script type="module" src="/js/theme.js"></script><script src="/js/brand-sync.js"></script>
+</head><body><div id="site"><div style="padding:90px 22px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
 <script type="module">
-import { layout, loadBranding } from '/js/site.js';
-async function boot(){
-  const b = await loadBranding();
-  const content = `<div class="site-prose">
-    <h1>About ${b.product || '.light'}</h1>
-    <p>${b.product || '.light'} is a universal hosting platform that makes deploying and managing servers, applications, websites, bots and databases simple. Customers interact with a clean dashboard while the platform handles containers, networking, monitoring and infrastructure behind the scenes.</p>
-    <h2>Ownership</h2>
-    <p><strong>${b.attribution || '.light is a Trycord product'}.</strong> ${b.product || '.light'} is independently branded and operated as its own product, owned, developed and maintained by Trycord.</p>
-    <h2>Open and self-hostable</h2>
-    <p>The same core software powers both hosted and self-hosted installations. You can run ${b.product || '.light'} on your own infrastructure with a single Docker container — no dependency on Trycord's systems.</p>
-  </div>`;
-  document.getElementById('site').innerHTML = layout(b, content, 'about');
-}
-boot();
+import { page } from '/js/marketing-shell.js';
+const b=await page({ title:'About', active:'platform', eyebrow:'Platform', heading:'Built around real infrastructure.', lede:'' });
+const p=b.product||'.light';
+const content=`<div class="mkt-grid">
+  <div class="mkt-card"><div class="ico">◆</div><h3>What ${p} is</h3><p>A universal hosting platform for game servers, applications, websites, bots and databases. You choose what to host; the platform handles containers, networking, monitoring and provisioning underneath.</p></div>
+  <div class="mkt-card"><div class="ico">◈</div><h3>Ownership</h3><p><strong>${b.attribution||'.light is a Trycord product'}</strong> — ${p} is owned, developed and maintained by Trycord. White-label settings may change appearance but never ownership attribution.</p></div>
+  <div class="mkt-card"><div class="ico">▤</div><h3>Self-hostable</h3><p>The same software powers hosted and self-hosted installations. Run ${p} on your own infrastructure with a single Docker container via Docker Compose.</p></div>
+</div>
+<div style="margin-top:30px;text-align:center"><a class="lt-btn lt-btn-primary" href="/hosting">Explore hosting</a></div>`;
+document.querySelector('.mkt-section').innerHTML=content;
 </script></body></html>

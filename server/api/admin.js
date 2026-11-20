@@ -124,10 +124,10 @@ export function adminRoutes() {
   router.post('/plans', asyncRoute(async (req, res) => {
     const b = req.body || {}; const name = str(b.name).trim(); if (!name) throw badRequest('name_required');
     const pid = id('plan'); const ts = now();
-    getDb().prepare(`INSERT INTO plans (id, name, description, category, product_id, cpu_cores, memory_mb, disk_gb, network_gb, instances, price_monthly, price_yearly, interval, currency, features, restrictions, status, featured, sort_order, available, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(pid, name, str(b.description, 1000), str(b.category || 'shared', 40), b.productId || null,
+    getDb().prepare(`INSERT INTO plans (id, name, description, category, product_id, cpu_cores, memory_mb, disk_gb, network_gb, instances, price_monthly, price_yearly, interval, currency, features, restrictions, supported_runtimes, status, featured, sort_order, available, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(pid, name, str(b.description, 1000), str(b.category || 'shared', 40), b.productId || null,
       int(b.cpuCores, 1), int(b.memoryMb, 512), int(b.diskGb, 4), int(b.networkGb, 0), int(b.instances, 3), int(b.priceMonthly, 0), int(b.priceYearly, 0), str(b.interval || 'monthly', 20), str(b.currency || 'USD', 10),
-      JSON.stringify(b.features || []), JSON.stringify(b.restrictions || []), str(b.status || 'published', 20), b.featured ? 1 : 0, int(b.sortOrder, 0), b.available === false ? 0 : 1, ts, ts);
+      JSON.stringify(b.features || []), JSON.stringify(b.restrictions || []), JSON.stringify(b.supportedRuntimes || []), str(b.status || 'published', 20), b.featured ? 1 : 0, int(b.sortOrder, 0), b.available === false ? 0 : 1, ts, ts);
     audit(req, 'admin.plan.create', 'plan', pid, { name });
     res.status(201).json({ plan: viewPlan(getDb().prepare('SELECT * FROM plans WHERE id = ?').get(pid)) });
   }));
@@ -139,7 +139,7 @@ export function adminRoutes() {
     const sets = []; const values = [];
     for (const [k, col] of Object.entries(map)) if (b[k] !== undefined) { sets.push(`${col} = ?`); values.push(str(b[k], 1000)); }
     for (const [k, col] of Object.entries({ cpuCores: 'cpu_cores', memoryMb: 'memory_mb', diskGb: 'disk_gb', networkGb: 'network_gb', instances: 'instances', priceMonthly: 'price_monthly', priceYearly: 'price_yearly', sortOrder: 'sort_order' })) if (b[k] !== undefined) { sets.push(`${col} = ?`); values.push(int(b[k], 0)); }
-    for (const [k, col] of Object.entries({ features: 'features', restrictions: 'restrictions' })) if (b[k] !== undefined) { sets.push(`${col} = ?`); values.push(JSON.stringify(b[k])); }
+    for (const [k, col] of Object.entries({ features: 'features', restrictions: 'restrictions', supportedRuntimes: 'supported_runtimes' })) if (b[k] !== undefined) { sets.push(`${col} = ?`); values.push(JSON.stringify(b[k])); }
     if (b.featured !== undefined) { sets.push('featured = ?'); values.push(b.featured ? 1 : 0); }
     if (b.available !== undefined) { sets.push('available = ?'); values.push(b.available ? 1 : 0); }
     if (b.productId !== undefined) { sets.push('product_id = ?'); values.push(b.productId || null); }
@@ -321,6 +321,6 @@ function viewPlan(p) { return {
   id: p.id, name: p.name, description: p.description, category: p.category, productId: p.product_id,
   cpuCores: p.cpu_cores, memoryMb: p.memory_mb, diskGb: p.disk_gb, networkGb: p.network_gb, instances: p.instances,
   priceMonthly: p.price_monthly, priceYearly: p.price_yearly, interval: p.interval, currency: p.currency,
-  features: json(p.features, []), restrictions: json(p.restrictions, []), status: p.status, featured: !!p.featured,
+  features: json(p.features, []), restrictions: json(p.restrictions, []), supportedRuntimes: json(p.supported_runtimes, []), status: p.status, featured: !!p.featured,
   available: !!p.available, sortOrder: p.sort_order,
 }; }

@@ -3,7 +3,13 @@
    Builds on tokens.css. Expressive where appropriate, always on-brand.
    ========================================================================== */
 
+.mkt-skip{position:absolute;left:-9999px;top:0;background:var(--lt-ember-500);color:#fff;padding:10px 16px;z-index:200}
+.mkt-skip:focus{left:12px;top:12px}
+.mkt-links a.active{color:var(--lt-ember-500)}
+:focus-visible{outline:2px solid var(--lt-ember-500);outline-offset:3px;border-radius:4px}
 .mkt-nav{position:sticky;top:0;z-index:50;backdrop-filter:var(--lt-blur);background:var(--lt-glass-bg);border-bottom:1px solid var(--lt-glass-border)}
+.mkt-page-hero{padding:62px 22px 10px;border-bottom:1px solid var(--lt-border);background:linear-gradient(180deg,var(--lt-ember-alpha-04),transparent)}
+.mkt-section.wide{max-width:none;padding-left:32px;padding-right:32px}
 .mkt-nav-in{max-width:1240px;margin:0 auto;padding:0 22px;height:66px;display:flex;align-items:center;gap:24px}
 .mkt-logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:18px;letter-spacing:-.02em;color:var(--lt-text);text-decoration:none}
 .mkt-links{display:flex;gap:20px;align-items:center;margin-left:auto}
@@ -58,6 +64,8 @@
 .mkt-band-in{max-width:1240px;margin:0 auto;padding:56px 22px;display:flex;gap:40px;justify-content:space-between;flex-wrap:wrap}
 .mkt-stat b{display:block;font-size:30px;letter-spacing:-.03em}.mkt-stat span{font-size:12px;color:var(--lt-text-muted)}
 
+.summary-row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--lt-border);font-size:13px}
+.summary-row.total{font-size:20px;font-weight:800;border-bottom:0;margin-top:8px;color:var(--lt-ember-500)}
 .mkt-faq details{background:var(--lt-surface);border:1px solid var(--lt-border);border-radius:var(--lt-radius-md);padding:16px 18px;margin-bottom:10px}
 .mkt-faq summary{cursor:pointer;font-weight:700;font-size:14px;list-style:none}
 .mkt-faq summary::-webkit-details-marker{display:none}

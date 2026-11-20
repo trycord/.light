@@ -56,6 +56,7 @@ export function publicPlan(p, interval = 'monthly') {
     cpuCores: p.cpu_cores, memoryMb: p.memory_mb, diskGb: p.disk_gb, networkGb: p.network_gb,
     instances: p.instances, price: planPrice(p, interval), priceMonthly: p.price_monthly, priceYearly: p.price_yearly,
     currency: p.currency, interval, features: parse(p.features, []), restrictions: parse(p.restrictions, []),
+    supportedRuntimes: parse(p.supported_runtimes, []),
     status: p.status, featured: !!p.featured, available: !!p.available, sortOrder: p.sort_order,
   };
 }

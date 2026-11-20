@@ -118,6 +118,7 @@ app.get('/login', send('index.html'));
 app.get('/register', send('index.html'));
 app.get('/files', send('files.html'));
 app.get('/checkout', send('checkout.html'));
+app.get('/order/:id', send('order.html'));
 // Stripe Connect sample pages.
 app.get('/connect', send('connect.html'));
 app.get('/store/:accountId', send('store.html'));

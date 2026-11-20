@@ -1,27 +1,22 @@
-<!DOCTYPE html><html lang="en"><head>
+<!DOCTYPE html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Legal — .light</title>
+<title>Legal — .light</title><meta name="description" content="Legal information for .light.">
 <link rel="icon" href="/assets/logos/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
-<script type="module" src="/js/theme.js"></script>
-<script src="/js/brand-sync.js"></script>
-</head><body><div id="site"></div>
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/site.css"><link rel="stylesheet" href="/styles/marketing.css">
+<script type="module" src="/js/theme.js"></script><script src="/js/brand-sync.js"></script>
+</head><body><div id="site"><div style="padding:90px 22px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
 <script type="module">
-import { layout, loadBranding } from '/js/site.js';
-async function boot(){
-  const b = await loadBranding();
-  const content = `<div class="site-prose">
-    <h1>Legal</h1>
-    <div class="site-draft"><strong>Draft for review.</strong> These documents are provided as templates and have not been reviewed by legal counsel. The operator must review, customize and approve them before production use.</div>
-    <h2>Terms of Service</h2><p>Users are responsible for the content and workloads they deploy and must comply with applicable laws and the Acceptable Use Policy. The service is provided by the operator on an as-is basis. Accounts may be suspended for violations.</p>
-    <h2>Privacy Policy</h2><p>Account information (email, username, password hash) is stored to provide the service. Hosting data and logs are stored on the operator's infrastructure. Operators should describe their own data retention, processing and third-party practices here.</p>
-    <h2>Acceptable Use Policy</h2><p>Users must not use the service for illegal activity, abuse, unauthorized access, malware distribution, or resource abuse. Violations may result in suspension or termination.</p>
-    <h2>Cookie Policy</h2><p>This application uses local storage to maintain authentication sessions. Operators using additional analytics or tracking must disclose them here.</p>
-    <p class="site-muted">${b.attribution || '.light is a Trycord product'} · © 2026 Trycord</p>
-  </div>`;
-  document.getElementById('site').innerHTML = layout(b, content);
-}
-boot();
+import { page, esc } from '/js/marketing-shell.js';
+const b=await page({ title:'Legal', active:'platform', eyebrow:'Legal', heading:'Terms, privacy and attribution.', lede:'' });
+const content=`<div class="mkt-faq">
+  <details open><summary>Terms of service</summary><p>Accounts are personal. Do not use the platform to host unlawful content or to interfere with other tenants. Resources are granted by your purchased plan; the platform may suspend a service that violates these terms or threatens infrastructure stability.</p></details>
+  <details><summary>Privacy</summary><p>We store only the data required to operate your account and services: account details, orders, service configuration and operational logs. Payment card details are handled by the payment provider, never by this platform.</p></details>
+  <details><summary>Ownership & attribution</summary><p>${esc(b.attribution||'.light is a Trycord product')}. The ownership watermark is embedded in the software and cannot be removed by white-label configuration.</p></details>
+  <details><summary>Billing</summary><p>Prices, taxes and billing intervals are calculated server-side from the published catalogue. Services are created only after payment is confirmed by the provider.</p></details>
+</div>
+<p class="muted" style="margin-top:20px">Operator: please replace these draft clauses with your jurisdiction-specific legal text before production use.</p>`;
+document.querySelector('.mkt-section').innerHTML=content;
 </script></body></html>

@@ -1,46 +1,45 @@
-<!DOCTYPE html><html lang="en"><head>
+<!DOCTYPE html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hosting Product — .light</title>
+<title>Hosting product — .light</title><meta name="description" content="Product plans and pricing.">
 <link rel="icon" href="/assets/logos/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
-<script type="module" src="/js/theme.js"></script>
-<script src="/js/brand-sync.js"></script>
-</head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/site.css"><link rel="stylesheet" href="/styles/marketing.css">
+<script type="module" src="/js/theme.js"></script><script src="/js/brand-sync.js"></script>
+</head><body><div id="site"><div style="padding:90px 22px;text-align:center;color:var(--lt-text-muted)">Loading product…</div></div>
 <script type="module">
-import { layout, esc, loadBranding } from '/js/site.js';
 import api from '/js/api.js';
-async function boot(){
-  const b = await loadBranding();
-  const slug = new URLSearchParams(location.search).get('id') || 'minecraft';
-  const interval = new URLSearchParams(location.search).get('interval')==='yearly'?'yearly':'monthly';
-  let data = {product:{name:'Product',description:'',icon:'◈',features:[],shortDescription:''},plans:[],locations:[]};
-  try { data = await api.product(slug, interval); } catch {}
-  const p = data.product||{}, plans=data.plans||[], locs=data.locations||[];
-  const content = `<section class="site-section"><div class="site-wrap">
-    <a href="/hosting" class="site-muted" style="text-decoration:none">← Hosting marketplace</a>
-    <div style="display:flex;gap:22px;align-items:center;margin:26px 0">
-      <div style="width:70px;height:70px;border-radius:16px;background:rgba(255,77,36,.12);border:1px solid var(--lt-border-ember);display:flex;align-items:center;justify-content:center;font-size:34px;color:var(--lt-ember-500)">${esc(p.icon)}</div>
-      <div><h1 style="font-size:2.2rem;font-weight:800;letter-spacing:-.03em;margin:0">${esc(p.name)}</h1><p class="site-muted" style="margin:6px 0 0">${esc(p.shortDescription||'')}</p></div>
-    </div>
-    <p style="color:var(--lt-text-secondary);font-size:15px;line-height:1.7;max-width:760px">${esc(p.description||'')}</p>
-    <div class="site-grid" style="margin:30px 0">
-      ${(p.features||[]).map(f=>`<div class="site-card"><h3>✓ ${esc(f)}</h3></div>`).join('')}
-    </div>
-    ${locs.length?`<div style="margin:30px 0"><h3 class="lt-h3">Available locations</h3><div class="lt-grid lt-grid-3" style="margin-top:12px">${locs.filter(l=>l.available).map(l=>`<div class="site-card" style="padding:14px"><div style="font-weight:700">${esc(l.city||l.region||l.country||'Location')}</div><div class="lt-meta">${esc(l.country||'')} ${l.latency_ms?`· ${l.latency_ms}ms measured`:''}</div></div>`).join('')}</div></div>`:''}
-    <div style="margin-top:34px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px"><h2 style="font-size:1.6rem;font-weight:800;letter-spacing:-.02em;margin:0">Choose a plan</h2>
-      <div class="lt-auth-tabs" style="margin:0;width:auto"><button class="lt-auth-tab ${interval==='monthly'?'active':''}" data-i="monthly">Monthly</button><button class="lt-auth-tab ${interval==='yearly'?'active':''}" data-i="yearly">Yearly (save)</button></div></div>
-      <div class="site-grid" style="margin-top:18px">
-        ${plans.map(pl=>`<div class="site-plan ${pl.featured?'featured':''}"><h3>${esc(pl.name)}</h3><div class="price">$${(pl.price/100).toFixed(0)}<span style="font-size:13px;color:var(--lt-text-muted)">/${interval==='yearly'?'yr':'mo'}</span></div>
-          <p class="site-muted">${esc(pl.description||'')}</p><ul><li>${pl.memoryMb} MB RAM</li><li>${pl.cpuCores} vCPU</li><li>${pl.diskGb} GB storage</li><li>${pl.instances} instances</li>${(pl.features||[]).map(f=>`<li>✓ ${esc(f)}</li>`).join('')}</ul>
-          <a href="/checkout?product=${encodeURIComponent(slug)}&plan=${encodeURIComponent(pl.id)}&interval=${interval}" class="lt-btn ${pl.featured?'lt-btn-primary':'lt-btn-secondary'}">Get ${esc(pl.name)}</a></div>`).join('') || '<div class="site-muted">No plans available for this product.</div>'}
-      </div>
-    </div>
-    <div style="text-align:center;margin-top:34px"><a href="/configure?product=${encodeURIComponent(slug)}" class="lt-btn lt-btn-secondary">Build your own plan</a></div>
-  </div></section>`;
-  document.getElementById('site').innerHTML = layout(b, content, 'products');
-  document.querySelectorAll('[data-i]').forEach(el=>el.addEventListener('click',()=>{location.href='/product?id='+encodeURIComponent(slug)+'&interval='+el.dataset.i;}));
-}
-boot();
+import { page, esc, errorBox } from '/js/marketing-shell.js';
+const q=new URLSearchParams(location.search);
+const slug=q.get('id')||'';
+const interval=q.get('interval')==='yearly'?'yearly':'monthly';
+let data={product:{name:'Product',shortDescription:'',description:'',icon:'◈',features:[]},plans:[],locations:[]};
+try{data=await api.product(slug,interval);}catch{}
+const p=data.product||{},plans=data.plans||[],locs=(data.locations||[]).filter(l=>l.available);
+const content=`<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:24px">
+  <a href="/hosting" class="muted" style="text-decoration:none">← All products</a>
+  <div class="lt-auth-tabs" style="margin:0;width:auto" role="group" aria-label="Billing interval">
+    <a class="lt-auth-tab ${interval==='monthly'?'active':''}" href="/product?id=${encodeURIComponent(slug)}&interval=monthly">Monthly</a>
+    <a class="lt-auth-tab ${interval==='yearly'?'active':''}" href="/product?id=${encodeURIComponent(slug)}&interval=yearly">Yearly</a></div></div>
+<div class="mkt-split" style="margin-bottom:36px">
+  <div><div class="ico" style="width:56px;height:56px;border-radius:16px;background:var(--lt-ember-alpha-12);color:var(--lt-ember-500);display:grid;place-items:center;font-size:28px">${esc(p.icon||'◈')}</div>
+    <p style="color:var(--lt-text-secondary);line-height:1.7;margin:18px 0 0">${esc(p.description||p.shortDescription||'')}</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:16px">${(p.features||[]).map(f=>`<span class="lt-badge lt-badge-neutral">✓ ${esc(f)}</span>`).join('')}</div></div>
+  <div class="mkt-visual" style="min-height:220px"><div class="mkt-visual-head"><span>Included with every plan</span><span>◆</span></div>
+    ${['Dedicated Debian container','Exact runtime version','Isolated network + storage','Console, files & logs'].map((s,i)=>`<div class="mkt-node" style="margin-left:${i*8}px"><span class="dot"></span><div><b>${s}</b></div></div>`).join('')}</div>
+</div>
+${locs.length?`<div style="margin-bottom:34px"><h2 class="lt-h3">Available locations</h2><div class="mkt-grid" style="margin-top:12px">${locs.map(l=>`<div class="mkt-card"><h3>${esc(l.city||l.region||l.country||'Location')}</h3><p>${esc(l.country||'')}${l.latency_ms?' · '+l.latency_ms+'ms':''}</p></div>`).join('')}</div></div>`:''}
+<h2 class="lt-h3" style="margin-bottom:14px">Choose a plan</h2>
+<div class="mkt-grid">${plans.length?plans.map(pl=>`<div class="mkt-card" style="${pl.featured?'border-color:var(--lt-border-ember)':''}">
+  ${pl.featured?'<span class="lt-badge lt-badge-ember">Featured</span>':''}
+  <h3 style="margin-top:10px">${esc(pl.name)}</h3>
+  <div class="price" style="font-size:26px;font-weight:800;color:var(--lt-ember-500);margin:8px 0">${pl.price?'$'+(pl.price/100).toFixed(2):'Free'}<small style="font-size:12px;color:var(--lt-text-muted)">/${interval==='yearly'?'yr':'mo'}</small></div>
+  <p>${esc(pl.description||'')}</p>
+  <ul style="font-size:13px;color:var(--lt-text-secondary);line-height:1.9;padding-left:18px"><li>${pl.memoryMb} MB RAM</li><li>${pl.cpuCores} vCPU</li><li>${pl.diskGb} GB storage</li><li>${pl.instances} services</li>${(pl.features||[]).map(f=>`<li>✓ ${esc(f)}</li>`).join('')}</ul>
+  <a class="lt-btn ${pl.featured?'lt-btn-primary':'lt-btn-secondary'}" href="/checkout?product=${encodeURIComponent(slug)}&plan=${encodeURIComponent(pl.id)}&interval=${interval}">Get ${esc(pl.name)}</a>
+</div>`).join(''):errorBox('No plans are available for this product yet.')}</div>
+<p style="margin-top:20px"><a class="lt-btn lt-btn-secondary" href="/configure?product=${encodeURIComponent(slug)}">Build your own plan</a></p>`;
+await page({ title:p.name||'Hosting', active:'hosting', eyebrow:'Product',
+  heading:esc(p.name||'Hosting'), lede:esc(p.shortDescription||''), content });
 </script></body></html>

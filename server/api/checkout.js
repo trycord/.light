@@ -33,7 +33,7 @@ export function checkoutRoutes() {
           teamId: req.teamId, amount: order.total, currency: order.currency,
           description: quote.snapshot.name || '.light hosting',
           metadata: { orderId: order.id, teamId: req.teamId, planId: order.plan_id || '' },
-          successUrl: `${process.env.CONTROL_BASE_URL || 'http://localhost:5858'}/login?checkout=success&order=${order.id}`,
+          successUrl: `${process.env.CONTROL_BASE_URL || 'http://localhost:5858'}/order/${order.id}`,
           cancelUrl: `${process.env.CONTROL_BASE_URL || 'http://localhost:5858'}/hosting?checkout=cancelled&order=${order.id}`,
         });
         attachCheckout(order.id, session.sessionId, session.provider);

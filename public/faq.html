@@ -1,23 +1,17 @@
-<!DOCTYPE html><html lang="en"><head>
+<!DOCTYPE html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FAQ — .light</title><meta name="description" content="Frequently asked questions about .light hosting.">
+<title>FAQ — .light</title><meta name="description" content="Frequently asked questions.">
 <link rel="icon" href="/assets/logos/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
-<script type="module" src="/js/theme.js"></script>
-<script src="/js/brand-sync.js"></script>
-</head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/site.css"><link rel="stylesheet" href="/styles/marketing.css">
+<script type="module" src="/js/theme.js"></script><script src="/js/brand-sync.js"></script>
+</head><body><div id="site"><div style="padding:90px 22px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
 <script type="module">
-import { layout, FAQS } from '/js/site.js';
-const boot = async () => {
-  const b = await (await fetch('/api/branding')).json();
-  const content = `<div class="site-prose">
-    <h1>Frequently asked questions</h1>
-    ${FAQS.map(f => `<h2>${f[0]}</h2><p>${f[1]}</p>`).join('')}
-    <p><a class="lt-btn lt-btn-primary" href="/contact">Contact us</a></p>
-  </div>`;
-  document.getElementById('site').innerHTML = layout(b, content);
-};
-boot();
+import { FAQS } from '/js/site.js';
+import { page, esc } from '/js/marketing-shell.js';
+const content=`<div class="mkt-faq">${FAQS.map(f=>`<details><summary>${esc(f[0])}</summary><p>${esc(f[1])}</p></details>`).join('')}</div>
+<div style="margin-top:30px;text-align:center"><a class="lt-btn lt-btn-secondary" href="/contact">Still have a question?</a></div>`;
+await page({ title:'FAQ', active:'docs', eyebrow:'Questions', heading:'Good to know.', content });
 </script></body></html>

@@ -1,23 +1,20 @@
-<!DOCTYPE html><html lang="en"><head>
+<!DOCTYPE html><html lang="en" data-theme="dark"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Features — .light</title><meta name="description" content="Features of the .light universal hosting platform.">
+<title>Features — .light</title><meta name="description" content="Platform capabilities.">
 <link rel="icon" href="/assets/logos/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
-<script type="module" src="/js/theme.js"></script>
-<script src="/js/brand-sync.js"></script>
-</head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/site.css"><link rel="stylesheet" href="/styles/marketing.css">
+<script type="module" src="/js/theme.js"></script><script src="/js/brand-sync.js"></script>
+</head><body><div id="site"><div style="padding:90px 22px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
 <script type="module">
-import { layout, FEATURES } from '/js/site.js';
-const boot = async () => {
-  const b = await (await fetch('/api/branding')).json();
-  const content = `<div class="site-prose">
-    <h1>Features</h1><p class="site-muted">Everything you need to run services on ${b.product || '.light'}.</p>
-    ${FEATURES.map(f => `<h2>${f[0]}</h2><p>${f[1]}</p>`).join('')}
-    <p><a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting</a></p>
-  </div>`;
-  document.getElementById('site').innerHTML = layout(b, content);
-};
-boot();
+import { FEATURES } from '/js/site.js';
+import { page, esc } from '/js/marketing-shell.js';
+const content=`<div class="mkt-grid">${FEATURES.map((f,i)=>`<div class="mkt-card"><div class="ico">${['◆','◈','▤','◧','◇','▣','◉','▥'][i%8]}</div><h3>${esc(f[0])}</h3><p>${esc(f[1])}</p></div>`).join('')}</div>
+<div style="margin-top:34px;text-align:center"><a class="lt-btn lt-btn-primary" href="/hosting">Explore hosting</a></div>`;
+await page({ title:'Features', active:'features', eyebrow:'Platform capabilities',
+  heading:'Everything the platform handles for you.',
+  lede:'Real infrastructure operations, presented simply. No raw container settings — just the controls that matter.',
+  content });
 </script></body></html>
