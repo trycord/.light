@@ -173,7 +173,12 @@ export function buildContainerConfig(payload) {
     },
   };
   if (security?.rootless) config.User = '10001:10001';
-  if (healthcheck && Object.keys(healthcheck).length) config.Healthcheck = healthcheck;
+  // A minimal default probe keeps Docker health status meaningful even for
+  // runtimes that do not ship a catalog-specific healthcheck.
+  config.Healthcheck = (healthcheck && Object.keys(healthcheck).length) ? healthcheck : {
+    Test: ['CMD-SHELL', 'test -d /proc/1'],
+    Interval: 30000000000, Timeout: 5000000000, Retries: 3, StartPeriod: 10000000000,
+  };
   assertContainerConfig(config);
   return config;
 }

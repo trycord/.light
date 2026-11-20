@@ -56,7 +56,7 @@ export function agentRoutes() {
     const result = b.result || {};
     let status = b.status;
     if (!status) {
-      if (command.type === 'instance.create') status = ok ? 'running' : 'error';
+      if (command.type === 'instance.create' || command.type === 'instance.reprovision') status = ok ? 'running' : 'error';
       else if (!ok) status = 'error';
     }
     const sets = [];
