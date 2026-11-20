@@ -39,7 +39,7 @@
 <script type="module">
 import api from '/js/api.js';
 const app = document.getElementById('fmApp');
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { esc } from '/js/shared.js';
 let instanceId = new URLSearchParams(location.search).get('id') || '';
 let path = '/';
 let entries = [];

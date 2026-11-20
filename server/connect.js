@@ -435,7 +435,7 @@ export function userForAccount(accountId) {
 
 export function connectStatus() {
   const key = String(get('STRIPE_SECRET_KEY', '') || '');
-  return { configured: Boolean(key && !key.includes('REPLACE_ME')),
+  return { configured: Boolean(key && !key.includes('REPLACE_ME') && get('STRIPE_WEBHOOK_SECRET', '')),
     thinWebhookConfigured: Boolean(get('STRIPE_WEBHOOK_SECRET', '')),
     subscriptionWebhookConfigured: Boolean(get('STRIPE_SUB_WEBHOOK_SECRET', '')),
     platformPriceConfigured: Boolean(platformPriceIdSafe()) };

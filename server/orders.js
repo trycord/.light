@@ -3,6 +3,7 @@
 import { getDb } from './db.js';
 import { id, now, str, json, conflict, badRequest, notFound } from './util.js';
 import { pricingConfig, calculatePrice, validateResources, planPrice, publicPlan } from './pricing.js';
+import { validateSelection } from './packages.js';
 import { audit } from './audit.js';
 
 export const ORDER_STATES = Object.freeze([
@@ -19,7 +20,9 @@ export function viewOrder(o) {
   return {
     id: o.id, teamId: o.team_id, userId: o.user_id, status: o.status,
     productId: o.product_id, planId: o.plan_id, planSnapshot: json(o.plan_snapshot, {}),
-    environmentId: o.environment_id, runtimeVersion: o.runtime_version, serviceName: o.service_name,
+    environmentId: o.environment_id, runtimeVersion: o.runtime_version,
+    packageId: o.package_id, packageVersion: o.package_version, packageConfig: json(o.package_config, {}),
+    serviceName: o.service_name,
     interval: o.interval, currency: o.currency, subtotal: o.subtotal, tax: o.tax,
     discount: o.discount, total: o.total, provider: o.provider,
     providerSessionId: o.provider_session_id, checkoutSessionId: o.checkout_session_id,
@@ -74,15 +77,26 @@ export function createOrder({ teamId, userId, input = {}, req }) {
   if (existing) return { order: existing, created: false };
 
   const quote = buildQuote(input);
-  const environmentId = str(input.environmentId || input.runtimeId, 100) ||
+  // Product-aware validation: the backend decides which software a product may use.
+  const selection = input.packageId
+    ? validateSelection({ productId: quote.product?.id, packageId: input.packageId,
+        version: input.packageVersion || input.version, config: input.config || {} })
+    : null;
+  const runtimeId = selection?.package?.runtimeId || str(input.environmentId || input.runtimeId, 100) ||
     (quote.snapshot.supportedRuntimes || [])[0] || 'node';
+  const runtimeVersion = selection?.runtimeVersion || str(input.version || input.runtimeVersion, 60);
   const oid = id('ord'); const ts = now();
+  if (selection) quote.snapshot.software = { packageId: selection.package.id, name: selection.package.name,
+    version: selection.version, runtimeId: selection.package.runtimeId, runtimeVersion: selection.runtimeVersion,
+    config: selection.config };
   getDb().prepare(`INSERT INTO orders (id, team_id, user_id, status, product_id, plan_id, plan_snapshot,
-    environment_id, runtime_version, service_name, interval, currency, subtotal, tax, discount, total,
-    provider, idempotency_key, created_at, updated_at)
-    VALUES (?, ?, ?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)`)
+    environment_id, runtime_version, package_id, package_version, package_config, service_name, interval,
+    currency, subtotal, tax, discount, total, provider, idempotency_key, created_at, updated_at)
+    VALUES (?, ?, ?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)`)
     .run(oid, teamId, userId, quote.product?.id || null, quote.plan?.id || null,
-      JSON.stringify(quote.snapshot), environmentId, str(input.version || input.runtimeVersion, 60),
+      JSON.stringify(quote.snapshot), runtimeId, runtimeVersion,
+      selection?.package?.id || null, selection?.version || null,
+      JSON.stringify(selection?.config || {}),
       str(input.serviceName || input.name || 'My service', 100), quote.interval, quote.currency,
       quote.subtotal, quote.tax, quote.discount, quote.total, key, ts, ts);
   addOrderEvent(oid, 'awaiting_payment', 'Order created; awaiting payment');

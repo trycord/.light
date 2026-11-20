@@ -7,7 +7,7 @@ const overlays = document.getElementById('overlay-root');
 let admin = null, pollTimer = null, currentView = '', adminPermissions = [], adminImpersonatedBy = null;
 const can = (p) => adminPermissions.includes('*') || adminPermissions.includes(p);
 
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { esc, trapFocus } from '/js/shared.js';
 const fmtTime = (t) => t ? new Date(t).toLocaleString() : '—';
 const fmtAgo = (t) => { if (!t) return 'never'; const s=(Date.now()-t)/1000; if(s<60)return Math.round(s)+'s'; if(s<3600)return Math.round(s/60)+'m'; if(s<86400)return Math.round(s/3600)+'h'; return Math.round(s/86400)+'d'; };
 const fmtMoney = (c, cur='USD') => '$'+((c||0)/100).toFixed(2)+' '+cur;
@@ -18,7 +18,19 @@ const sel = (l,n,o,sel='')=>`<div class="lt-field"><label>${esc(l)}</label><sele
 const ta = (l,n,v='')=>`<div class="lt-field"><label>${esc(l)}</label><textarea class="lt-textarea" name="${n}">${esc(v)}</textarea></div>`;
 function toast(m,t='info'){const e=document.createElement('div');e.className='lt-toast';e.innerHTML=`<span class="lt-dot lt-dot-${t==='error'?'danger':'success'}"></span><span>${esc(m)}</span>`;let s=overlays.querySelector('.lt-toast-stack');if(!s){s=document.createElement('div');s.className='lt-toast-stack';overlays.appendChild(s);}s.appendChild(e);setTimeout(()=>e.remove(),3500);}
 let modalSeq=0;
-function modal(title,body,opts={}){return new Promise(res=>{const o=document.createElement('div');o.className='lt-modal-overlay';const formBody=body.includes('<form')?body:`<form id="mf-${++modalSeq}">${body}</form>`;o.innerHTML=`<div class="lt-modal"><div class="lt-modal-header"><h3 class="lt-h3">${esc(title)}</h3><button class="lt-btn lt-btn-ghost lt-btn-icon" data-close aria-label="Close dialog">✕</button></div><div class="lt-modal-body">${formBody}</div><div class="lt-modal-footer"><button class="lt-btn lt-btn-ghost" data-close>Cancel</button><button class="lt-btn ${opts.danger?'lt-btn-danger':'lt-btn-primary'}" data-ok>${esc(opts.ok||'Save')}</button></div></div>`;overlays.appendChild(o);const close=v=>{o.remove();res(v);};o.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>close(null)));o.querySelector('[data-ok]').addEventListener('click',()=>{const f=o.querySelector('form');if(f){if(!f.reportValidity())return;close(Object.fromEntries(new FormData(f).entries()));}else close(true);});o.addEventListener('click',e=>{if(e.target===o)close(null);});});}
+function modal(title,body,opts={}){return new Promise(res=>{
+  const o=document.createElement('div');o.className='lt-modal-overlay';
+  const formBody=body.includes('<form')?body:`<form id="mf-${++modalSeq}">${body}</form>`;
+  o.innerHTML=`<div class="lt-modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="lt-modal-header"><h3 class="lt-h3">${esc(title)}</h3><button type="button" class="lt-btn lt-btn-ghost lt-btn-icon" data-close aria-label="Close dialog">✕</button></div><div class="lt-modal-body">${formBody}</div><div class="lt-modal-footer"><button type="button" class="lt-btn lt-btn-ghost" data-close>Cancel</button><button type="button" class="lt-btn ${opts.danger?'lt-btn-danger':'lt-btn-primary'}" data-ok>${esc(opts.ok||'Save')}</button></div></div>`;
+  overlays.appendChild(o);
+  const onKey=e=>{if(e.key==='Escape')close(null);trapFocus(o,e);};
+  const close=v=>{o.remove();document.removeEventListener('keydown',onKey);res(v);};
+  document.addEventListener('keydown',onKey);
+  o.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>close(null)));
+  o.querySelector('[data-ok]').addEventListener('click',()=>{const f=o.querySelector('form');if(f){if(!f.reportValidity())return;close(Object.fromEntries(new FormData(f).entries()));}else close(true);});
+  o.addEventListener('click',e=>{if(e.target===o)close(null);});
+  o.querySelector('[data-ok]')?.focus();
+});}
 const confirmDialog=(t,m)=>modal(t,`<p style="font-size:13px;color:var(--lt-text-secondary)">${esc(m)}</p>`,{danger:true,ok:'Confirm'});
 const panel=(t,s,c,a='')=>`<div class="lt-card"><div class="lt-card-header"><div><h3 class="lt-h3">${esc(t)}</h3>${s?`<div class="lt-meta">${esc(s)}</div>`:''}</div>${a}</div><div class="lt-card-body">${c}</div></div>`;
 const table=(cols,rows)=>{const body=Array.isArray(rows)?rows.join(''):(rows||`<tr><td colspan="${cols.length}" class="admin-empty-state">No records</td></tr>`);return `<div class="lt-table-wrap"><table class="admin-table"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;};
@@ -31,7 +43,7 @@ const NAV=[
   {g:'Infrastructure',items:[['nodes','Nodes','nodes','nodes.read'],['deployments','Deployments','schedules','services.read']]},
   {g:'Commercial',items:[['orders','Orders & provisioning','schedules','orders.read'],['subscriptions','Subscriptions','storage','billing.read'],['transactions','Transactions','security','billing.read'],['pricing','Pricing','settings','billing.read']]},
   {g:'Operations',items:[['domains','Domains','network','domains.read'],['backups','Backups','backups','backups.read'],['audit','Audit log','security','audit.read'],['notifications','Notifications','settings','notifications.read']]},
-  {g:'System',items:[['roles','Roles & access','security','roles.read'],['settings','Settings','settings','settings.read']]},
+  {g:'System',items:[['system','Platform status','monitoring','settings.read'],['roles','Roles & access','security','roles.read'],['settings','Settings','settings','settings.read']]},
 ];
 
 function shell(){
@@ -92,7 +104,7 @@ function setNav(v){root.querySelectorAll('[data-view]').forEach(a=>a.classList.t
 
 async function render(v){
   stopPoll();currentView=v;const view=root.querySelector('#aView');if(!view)return;
-  const R={dashboard:dashboard,analytics:analytics,customers:customers,orders:orders,support:support,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,notifications:notifications,roles:roles,settings:settings};
+  const R={dashboard:dashboard,analytics:analytics,customers:customers,orders:orders,system:system,support:support,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,notifications:notifications,roles:roles,settings:settings};
   view.innerHTML=loading();try{await (R[v]||dashboard)();}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;}}
 function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 function poll(fn,ms=15000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&admin)fn().catch(()=>{});},ms);}
@@ -161,7 +173,9 @@ async function plans(){
     ${fld('Name','name','text',p.name||'','required')}${fld('Description','description','text',p.description||'')}
     ${sel('Product','productId',[{value:'',label:'Global (all products)'},...prods.map(x=>({value:x.id,label:x.name}))],p.productId||'')}
     ${sel('Category','category',['shared','dedicated'],p.category||'shared')}
-    ${fld('Supported runtimes (comma separated IDs)','supportedRuntimes','text',(p.supportedRuntimes||[]).join(', '))}
+    ${sel('Default runtime','runtimeId',[{value:'',label:'Auto (from package)'},...envs.map(e=>({value:e.id,label:e.name}))],p.runtimeId||'')}
+    <div class="lt-field" style="grid-column:1/-1"><label>Supported runtimes</label>
+      <div class="lt-picker">${envs.map(e=>{const on=(p.supportedRuntimes||[]).includes(e.id);return `<label class="lt-pick ${on?'is-on':''}"><input type="checkbox" name="supportedRuntimes" value="${esc(e.id)}" ${on?'checked':''}><span class="lt-pick-ico">◈</span><span><b>${esc(e.name)}</b><small>${esc(e.category)} · ${(e.versions||[]).length} versions</small></span></label>`;}).join('')||'<span class="lt-meta">No runtimes registered</span>'}</div></div>
     ${fld('Price monthly (cents)','priceMonthly','number',p.priceMonthly??0)}${fld('Price yearly (cents)','priceYearly','number',p.priceYearly??0)}
     ${fld('Currency','currency','text',p.currency||'USD')}${sel('Interval','interval',['monthly','yearly'],p.interval||'monthly')}
     ${fld('CPU cores','cpuCores','number',p.cpuCores??1,'min="1"')}${fld('Memory MB (total)','memoryMb','number',p.memoryMb??512,'min="128"')}
@@ -171,9 +185,19 @@ async function plans(){
     <label class="lt-auth-terms"><input type="checkbox" name="featured" ${p.featured?'checked':''}> Featured</label>
     <label class="lt-auth-terms"><input type="checkbox" name="available" ${p.available!==false?'checked':''}> Available to customers</label>
   </form>`;
-  const parse=(d)=>{d.features=String(d.features||'').split(',').map(x=>x.trim()).filter(Boolean);d.supportedRuntimes=String(d.supportedRuntimes||'').split(',').map(x=>x.trim()).filter(Boolean);d.productId=d.productId||null;d.featured=!!d.featured;d.available=!!d.available;return d;};
-  view.querySelector('#addPlan').addEventListener('click',async()=>{const d=await modal('New plan',form(),{ok:'Create'});if(d){try{await api.adminCreatePlan(parse(d));toast('Plan created','success');plans();}catch(e){toast(e.message,'error');}}});
-  view.querySelectorAll('[data-pl]').forEach(b=>b.addEventListener('click',async()=>{const p=pls.find(x=>x.id===b.dataset.pl);const d=await modal(`Edit plan: ${p.name}`,form(p),{ok:'Save'});if(d){try{await api.adminUpdatePlan(p.id,parse(d));toast('Saved','success');plans();}catch(e){toast(e.message,'error');}}}));
+  const parse=(d,formEl)=>{
+    d.features=String(d.features||'').split(',').map(x=>x.trim()).filter(Boolean);
+    d.supportedRuntimes=formEl?[...formEl.querySelectorAll('input[name="supportedRuntimes"]:checked')].map(x=>x.value):[];
+    d.productId=d.productId||null;d.featured=!!d.featured;d.available=!!d.available;return d;};
+  const submitPlan=(title,body,ok,fn)=>{
+    const promise=modal(title,body,{ok});
+    const overlay=[...document.querySelectorAll('.lt-modal-overlay')].pop();
+    return promise.then(async d=>{if(!d)return;
+      const formEl=overlay?.querySelector('form')||null;
+      try{await fn(parse(d,formEl));toast(ok==='Create'?'Plan created':'Saved','success');plans();}catch(e){toast(e.message,'error');}});
+  };
+  view.querySelector('#addPlan').addEventListener('click',()=>submitPlan('New plan',form(),'Create',api.adminCreatePlan));
+  view.querySelectorAll('[data-pl]').forEach(b=>b.addEventListener('click',()=>{const p=pls.find(x=>x.id===b.dataset.pl);submitPlan(`Edit plan: ${p.name}`,form(p),'Save',(d)=>api.adminUpdatePlan(p.id,d));}));
   view.querySelectorAll('[data-pld]').forEach(b=>b.addEventListener('click',async()=>{if(await confirmDialog('Archive plan','Existing subscriptions are preserved.')){try{await api.adminDeletePlan(b.dataset.pld);toast('Archived','success');plans();}catch(e){toast(e.message,'error');}}}));
 }
 
@@ -258,6 +282,34 @@ async function domains(){const view=root.querySelector('#aView');let d=[];try{d=
 async function backups(){const view=root.querySelector('#aView');let b=[];try{b=(await api.backupsAll()).backups||[];}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Backups</h1></div>${panel('All backups','',table(['Name','Instance','Status','Size','Created','Location'],b.map(x=>`<tr><td class="lt-td-strong">${esc(x.name)}</td><td class="lt-td-mono">${esc(x.instance_id)}</td><td>${badge(x.status)}</td><td>${fmtBytes(x.size_bytes)}</td><td>${fmtTime(x.created_at)}</td><td class="lt-td-mono">${esc(x.location||'—')}</td></tr>`)))}`;}
 const fmtBytes=(b)=>{b=Number(b||0);return b>1073741824?(b/1073741824).toFixed(1)+' GB':b>1048576?(b/1048576).toFixed(1)+' MB':b+' B';};
 async function audit(){const view=root.querySelector('#aView');let e=[];try{e=(await api.audit()).events||[];}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Audit log</h1></div>${panel('Administrative & lifecycle events','',table(['Time','Action','Target type','Target ID','Details'],e.slice(0,100).map(x=>`<tr><td class="lt-td-mono">${fmtTime(x.ts)}</td><td>${esc(x.action)}</td><td>${esc(x.target_type||'—')}</td><td class="lt-td-mono">${esc(x.target_id||'—')}</td><td class="lt-td-mono">${esc((x.details||'').slice(0,80))}</td></tr>`)))}`;}
+async function system(){
+  const view=root.querySelector('#aView');let s={};
+  if(sessionStorage.getItem('lt_restarted')){sessionStorage.removeItem('lt_restarted');toast('Server restarted successfully','success');}
+  try{s=(await api.adminSystem()).system||{};}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;return;}
+  const uptime=s.uptime||0;const days=Math.floor(uptime/86400),hours=Math.floor((uptime%86400)/3600),mins=Math.floor((uptime%3600)/60);
+  view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Platform status</h1>
+    <p class="lt-page-subtitle">Control plane runtime and safe restart</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-danger" id="restartPlatform">Restart platform</button></div></div>
+    ${panel('Control plane','',`<div class="admin-grid admin-grid-4">
+      ${[['Status','online','success'],['Uptime',`${days}d ${hours}h ${mins}m`,'info'],['Node',s.node||'—','info'],['Environment',s.env||'—','info']]
+        .map(([l,v,c])=>`<div class="lt-card"><div class="lt-label">${l}</div><div class="admin-stat-value" style="margin-top:8px">${esc(v)}</div></div>`).join('')}
+    </div><p class="lt-meta" style="margin-top:14px">PID ${esc(s.pid||'—')} · ${esc(s.platform||'')} · version ${esc(s.version||'1.0.0')}</p>`)}
+    ${panel('Restart','',`<p class="lt-meta">Restarting reloads environment variables, settings and configuration changes. Active requests are dropped; Shade workloads keep running and reconnect automatically.</p>
+      <p class="lt-meta" style="margin-top:8px">The panel will go offline for a few seconds and return automatically.</p>`)}`;
+  view.querySelector('#restartPlatform').addEventListener('click',async()=>{
+    if(!await confirmDialog('Restart platform','The control plane will restart. Services continue running. Confirm?'))return;
+    try{
+      await api.restartSystem();
+      toast('Server restarting — the panel will reconnect shortly','success');
+      let tries=0;
+      const wait=setInterval(async()=>{
+        try{const r=await fetch('/health');if(r.ok){clearInterval(wait);sessionStorage.setItem('lt_restarted','1');location.reload();}}catch{}
+        if(++tries>40){clearInterval(wait);toast('Still restarting — refresh manually','warning');}
+      },1500);
+    }catch(e){toast(e.message,'error');}
+  });
+}
+
 async function settings(){
   const view=root.querySelector('#aView');let s={};
   try{s=(await api.adminSettings()).settings||{};}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;return;}

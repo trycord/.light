@@ -41,6 +41,7 @@ const api = {
   categories: () => request('/api/catalog/categories'),
   products: (category) => request('/api/catalog/products' + (category ? '?category=' + encodeURIComponent(category) : '')),
   product: (slug, interval) => request('/api/catalog/products/' + encodeURIComponent(slug) + (interval ? '?interval=' + interval : '')),
+  productOptions: (slug) => request('/api/catalog/products/' + encodeURIComponent(slug) + '/options'),
   plans: (interval, productId) => request('/api/catalog/plans' + (interval || productId ? '?' + new URLSearchParams({ ...(interval ? { interval } : {}), ...(productId ? { productId } : {}) }) : '')),
   pricing: () => request('/api/catalog/pricing'),
   estimate: (resources, interval) => request('/api/catalog/pricing/estimate', { method: 'POST', body: { resources, interval } }),
@@ -168,6 +169,8 @@ const api = {
   adminRetryOrder: (id) => request(`/api/admin/orders/${id}/retry`, { method: 'POST', body: {} }),
   adminCancelOrder: (id) => request(`/api/admin/orders/${id}/cancel`, { method: 'POST', body: {} }),
   adminSettings: () => request('/api/admin/settings'),
+  adminSystem: () => request('/api/admin/system'),
+  restartSystem: () => request('/api/admin/system/restart', { method: 'POST', body: { confirm: 'RESTART' } }),
   updateAdminSettings: (data) => request('/api/admin/settings', { method: 'PATCH', body: { settings: data } }),
 
   // Backwards-compatible aliases used by the legacy standalone pages.

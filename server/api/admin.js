@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { spawn } from 'child_process';
 import { getDb } from '../db.js';
 import { requireAdmin, signToken } from '../auth.js';
 import { requireRealAdmin, hasPermission, requirePermission, PERMISSIONS, isValidPermission } from '../permissions.js';
@@ -124,8 +125,9 @@ export function adminRoutes() {
   router.post('/plans', asyncRoute(async (req, res) => {
     const b = req.body || {}; const name = str(b.name).trim(); if (!name) throw badRequest('name_required');
     const pid = id('plan'); const ts = now();
-    getDb().prepare(`INSERT INTO plans (id, name, description, category, product_id, cpu_cores, memory_mb, disk_gb, network_gb, instances, price_monthly, price_yearly, interval, currency, features, restrictions, supported_runtimes, status, featured, sort_order, available, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(pid, name, str(b.description, 1000), str(b.category || 'shared', 40), b.productId || null,
+    getDb().prepare(`INSERT INTO plans (id, name, description, category, product_id, runtime_id, cpu_cores, memory_mb, disk_gb, network_gb, instances, price_monthly, price_yearly, interval, currency, features, restrictions, supported_runtimes, status, featured, sort_order, available, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(pid, name, str(b.description, 1000), str(b.category || 'shared', 40), b.productId || null,
+      b.runtimeId || null,
       int(b.cpuCores, 1), int(b.memoryMb, 512), int(b.diskGb, 4), int(b.networkGb, 0), int(b.instances, 3), int(b.priceMonthly, 0), int(b.priceYearly, 0), str(b.interval || 'monthly', 20), str(b.currency || 'USD', 10),
       JSON.stringify(b.features || []), JSON.stringify(b.restrictions || []), JSON.stringify(b.supportedRuntimes || []), str(b.status || 'published', 20), b.featured ? 1 : 0, int(b.sortOrder, 0), b.available === false ? 0 : 1, ts, ts);
     audit(req, 'admin.plan.create', 'plan', pid, { name });
@@ -143,6 +145,7 @@ export function adminRoutes() {
     if (b.featured !== undefined) { sets.push('featured = ?'); values.push(b.featured ? 1 : 0); }
     if (b.available !== undefined) { sets.push('available = ?'); values.push(b.available ? 1 : 0); }
     if (b.productId !== undefined) { sets.push('product_id = ?'); values.push(b.productId || null); }
+    if (b.runtimeId !== undefined) { sets.push('runtime_id = ?'); values.push(b.runtimeId || null); }
     if (sets.length) { sets.push('updated_at = ?'); values.push(now(), p.id); getDb().prepare(`UPDATE plans SET ${sets.join(', ')} WHERE id = ?`).run(...values); }
     audit(req, 'admin.plan.update', 'plan', p.id, b);
     res.json({ plan: viewPlan(getDb().prepare('SELECT * FROM plans WHERE id = ?').get(p.id)) });
@@ -175,6 +178,30 @@ export function adminRoutes() {
   }));
   router.get('/transactions', asyncRoute(async (req, res) => {
     res.json({ transactions: getDb().prepare('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 300').all() });
+  }));
+
+  /* ---------- Platform control ---------- */
+  router.get('/system', asyncRoute(async (req, res) => {
+    res.json({ system: {
+      uptime: Math.round(process.uptime()), version: '1.0.0',
+      env: process.env.NODE_ENV || 'development', pid: process.pid,
+      node: process.version, platform: process.platform,
+      restarted: getDb().prepare("SELECT value FROM meta WHERE key = 'last_restart'").get()?.value || null,
+    } });
+  }));
+  router.post('/system/restart', requirePermission('settings.write'), asyncRoute(async (req, res) => {
+    if (str(req.body?.confirm, 40) !== 'RESTART') throw badRequest('confirmation_required');
+    audit(req, 'admin.system.restart', 'system', 'default', {});
+    res.json({ ok: true, message: 'Restarting control plane…' });
+    // Respond first, then hand off to systemd (or exit for process managers with
+    // a restart policy). Never block the response on the restart itself.
+    setTimeout(() => {
+      try {
+        const child = spawn('systemctl', ['--user', 'restart', 'light-cp'], { detached: true, stdio: 'ignore' });
+        child.unref();
+        child.on('error', () => process.exit(0));
+      } catch { process.exit(0); }
+    }, 800);
   }));
 
   /* ---------- Runtime settings (brand, payments, Cloudflare, mail, proxy) ---------- */
@@ -318,7 +345,7 @@ function viewProduct(p) { return {
   status: p.status, featured: !!p.featured, sortOrder: p.sort_order, startingPriceMonthly: p.starting_price_monthly, currency: p.currency,
 }; }
 function viewPlan(p) { return {
-  id: p.id, name: p.name, description: p.description, category: p.category, productId: p.product_id,
+  id: p.id, name: p.name, description: p.description, category: p.category, productId: p.product_id, runtimeId: p.runtime_id,
   cpuCores: p.cpu_cores, memoryMb: p.memory_mb, diskGb: p.disk_gb, networkGb: p.network_gb, instances: p.instances,
   priceMonthly: p.price_monthly, priceYearly: p.price_yearly, interval: p.interval, currency: p.currency,
   features: json(p.features, []), restrictions: json(p.restrictions, []), supportedRuntimes: json(p.supported_runtimes, []), status: p.status, featured: !!p.featured,

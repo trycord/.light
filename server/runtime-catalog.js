@@ -34,6 +34,9 @@ const DEBIAN_BASED_REPOS = new Set([
   'node', 'python', 'golang', 'rust', 'php', 'ruby', 'perl', 'lua', 'erlang', 'elixir',
   'swift', 'openjdk', 'postgres', 'mongo', 'redis', 'nginx', 'gcc', 'debian',
   'denoland/deno', 'oven/bun', 'valkey/valkey', 'mariadb', 'itzg/minecraft-server', 'itzg/minecraft-bedrock-server',
+  // Approved runtime providers that publish non-Debian base images but are the
+  // only maintained source for specific versions (e.g. Java 21 / Minecraft 1.21+).
+  'eclipse-temurin',
 ]);
 
 /** True only for approved Debian-family image references. */

@@ -7,7 +7,7 @@ const overlays = document.getElementById('overlay-root');
 let session = null, brand = {}, pollTimer = null, currentView = null, currentParam = null;
 let serversState = { search: '', category: 'all', status: 'all', sort: 'name', dir: 1, page: 1, per: 10 };
 
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { esc, trapFocus } from '/js/shared.js';
 const fmtNum = (n) => Number(n || 0).toLocaleString();
 const fmtMoney = (c, cur='USD') => new Intl.NumberFormat(undefined, { style:'currency', currency:cur||'USD' }).format(Number(c||0)/100);
 const fmtBytes = (b) => { b = Number(b || 0); if (b > 1073741824) return (b/1073741824).toFixed(1)+' GB'; if (b > 1048576) return (b/1048576).toFixed(1)+' MB'; return b+' B'; };
@@ -28,7 +28,7 @@ function modal(title, body, opts={}) {
     const formBody=body.includes('<form')?body:`<form id="modalForm">${body}</form>`;
     o.innerHTML=`<div class="lt-modal" role="dialog" aria-modal="true"><div class="lt-modal-header"><h3 class="lt-h3">${esc(title)}</h3><button class="lt-btn lt-btn-ghost lt-btn-icon" data-close aria-label="Close dialog">✕</button></div><div class="lt-modal-body">${formBody}</div><div class="lt-modal-footer">${opts.danger?`<button class="lt-btn lt-btn-danger" data-confirm>${esc(opts.confirm||'Delete')}</button>`:`<button class="lt-btn lt-btn-ghost" data-close>Cancel</button><button class="lt-btn lt-btn-primary" data-confirm>${esc(opts.confirm||'Save')}</button>`}</div></div>`;
     overlays.appendChild(o);
-    const onKey=(e)=>{if(e.key==='Escape')close(null);};
+    const onKey=(e)=>{if(e.key==='Escape')close(null);trapFocus(o,e);};
     const close=(v)=>{o.remove();document.removeEventListener('keydown',onKey);resolve(v);};
     document.addEventListener('keydown',onKey);
     o.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>close(null)));

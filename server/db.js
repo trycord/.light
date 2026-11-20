@@ -204,6 +204,27 @@ const TABLES = {
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
     ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '')`,
+  meta: `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
+  // Product-aware software package registry.
+  software_packages: `CREATE TABLE IF NOT EXISTS software_packages (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'application', product_id TEXT,
+    runtime_id TEXT, install_kind TEXT NOT NULL DEFAULT 'generic',
+    versions TEXT NOT NULL DEFAULT '[]', default_version TEXT NOT NULL DEFAULT '',
+    startup_template TEXT NOT NULL DEFAULT '', config_schema TEXT NOT NULL DEFAULT '{}',
+    ports TEXT NOT NULL DEFAULT '[]', storage TEXT NOT NULL DEFAULT '{}',
+    healthcheck TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'published',
+    featured INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  package_versions: `CREATE TABLE IF NOT EXISTS package_versions (
+    id TEXT PRIMARY KEY, package_id TEXT NOT NULL, version TEXT NOT NULL,
+    download_url TEXT NOT NULL DEFAULT '', checksum_url TEXT NOT NULL DEFAULT '',
+    sha256 TEXT NOT NULL DEFAULT '', runtime_version TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'published', created_at INTEGER NOT NULL,
+    UNIQUE(package_id, version))`,
+  product_packages: `CREATE TABLE IF NOT EXISTS product_packages (
+    product_id TEXT NOT NULL, package_id TEXT NOT NULL, required INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL, PRIMARY KEY (product_id, package_id))`,
   // Stripe Connect sample: maps a .light user to their connected account and
   // stores the platform-level subscription they purchase for access.
   connect_accounts: `CREATE TABLE IF NOT EXISTS connect_accounts (
@@ -214,7 +235,8 @@ const TABLES = {
     id TEXT PRIMARY KEY, team_id TEXT NOT NULL, user_id TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'awaiting_payment',
     product_id TEXT, plan_id TEXT, plan_snapshot TEXT NOT NULL DEFAULT '{}',
-    environment_id TEXT, runtime_version TEXT, service_name TEXT NOT NULL DEFAULT '',
+    environment_id TEXT, runtime_version TEXT, package_id TEXT, package_version TEXT,
+    package_config TEXT NOT NULL DEFAULT '{}', service_name TEXT NOT NULL DEFAULT '',
     interval TEXT NOT NULL DEFAULT 'monthly', currency TEXT NOT NULL DEFAULT 'USD',
     subtotal INTEGER NOT NULL DEFAULT 0, tax INTEGER NOT NULL DEFAULT 0,
     discount INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0,
@@ -250,7 +272,7 @@ const TABLES = {
 };
 
 const LEGACY_COLUMNS = {
-  plans: { description: "TEXT NOT NULL DEFAULT ''", category: "TEXT NOT NULL DEFAULT 'shared'", product_id: 'TEXT', supported_runtimes: "TEXT NOT NULL DEFAULT '[]'",
+  plans: { description: "TEXT NOT NULL DEFAULT ''", category: "TEXT NOT NULL DEFAULT 'shared'", product_id: 'TEXT', runtime_id: 'TEXT', supported_runtimes: "TEXT NOT NULL DEFAULT '[]'",
     price_yearly: 'INTEGER NOT NULL DEFAULT 0', interval: "TEXT NOT NULL DEFAULT 'monthly'", currency: "TEXT NOT NULL DEFAULT 'USD'",
     features: "TEXT NOT NULL DEFAULT '[]'", restrictions: "TEXT NOT NULL DEFAULT '[]'", status: "TEXT NOT NULL DEFAULT 'published'",
     featured: 'INTEGER NOT NULL DEFAULT 0', sort_order: 'INTEGER NOT NULL DEFAULT 0', available: 'INTEGER NOT NULL DEFAULT 1',
@@ -262,9 +284,10 @@ const LEGACY_COLUMNS = {
   nodes: { availability: "TEXT NOT NULL DEFAULT 'active'", cpu_used: 'REAL NOT NULL DEFAULT 0', mem_used: 'REAL NOT NULL DEFAULT 0', disk_used: 'REAL NOT NULL DEFAULT 0', net_in: 'REAL NOT NULL DEFAULT 0', net_out: 'REAL NOT NULL DEFAULT 0', temp: 'REAL NOT NULL DEFAULT 0' },
   deployments: { instance_id: "TEXT NOT NULL DEFAULT ''", team_id: "TEXT NOT NULL DEFAULT ''", source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", ref: "TEXT NOT NULL DEFAULT 'main'", commit_sha: "TEXT NOT NULL DEFAULT ''", command: "TEXT NOT NULL DEFAULT ''", created_at: 'INTEGER NOT NULL DEFAULT 0' },
   metric_samples: { instance_id: 'TEXT', temp: 'REAL NOT NULL DEFAULT 0' },
-  instances: { volumes_json: "TEXT NOT NULL DEFAULT '[]'", category: "TEXT NOT NULL DEFAULT 'web'", type: "TEXT NOT NULL DEFAULT 'custom'", container_id: 'TEXT', environment_id: 'TEXT', environment_version: 'TEXT', source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", build_command: "TEXT NOT NULL DEFAULT ''", install_command: "TEXT NOT NULL DEFAULT ''", health_status: "TEXT NOT NULL DEFAULT 'unknown'", provision_attempts: 'INTEGER NOT NULL DEFAULT 0', generation: 'INTEGER NOT NULL DEFAULT 1', order_id: 'TEXT' },
+  instances: { volumes_json: "TEXT NOT NULL DEFAULT '[]'", category: "TEXT NOT NULL DEFAULT 'web'", type: "TEXT NOT NULL DEFAULT 'custom'", container_id: 'TEXT', environment_id: 'TEXT', environment_version: 'TEXT', source: "TEXT NOT NULL DEFAULT 'image'", repo_url: "TEXT NOT NULL DEFAULT ''", build_command: "TEXT NOT NULL DEFAULT ''", install_command: "TEXT NOT NULL DEFAULT ''", health_status: "TEXT NOT NULL DEFAULT 'unknown'", provision_attempts: 'INTEGER NOT NULL DEFAULT 0', generation: 'INTEGER NOT NULL DEFAULT 1', order_id: 'TEXT', package_id: 'TEXT', package_version: 'TEXT', package_config: "TEXT NOT NULL DEFAULT '{}'" },
   environments: { version_images: "TEXT NOT NULL DEFAULT '{}'" },
   domains: { tunnel_id: 'TEXT', tunnel_token: "TEXT NOT NULL DEFAULT ''", tunnel_status: "TEXT NOT NULL DEFAULT 'pending'", updated_at: 'INTEGER' },
+  orders: { package_id: 'TEXT', package_version: 'TEXT', package_config: "TEXT NOT NULL DEFAULT '{}'" },
 };
 
 const INDEXES = [
@@ -299,6 +322,9 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_tickets_team ON support_tickets(team_id, status, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_tickets_status ON support_tickets(status, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_ticket_messages ON support_ticket_messages(ticket_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_packages_product ON software_packages(product_id, status, sort_order)',
+  'CREATE INDEX IF NOT EXISTS idx_package_versions ON package_versions(package_id, status)',
+  'CREATE INDEX IF NOT EXISTS idx_product_packages ON product_packages(product_id)',
   'CREATE INDEX IF NOT EXISTS idx_orders_team ON orders(team_id, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_orders_session ON orders(provider_session_id)',
   'CREATE INDEX IF NOT EXISTS idx_order_events ON order_events(order_id, ts)',
@@ -365,6 +391,55 @@ function seed() {
   ];
   for (const p of products) insertProduct.run(p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], JSON.stringify(p[8]), JSON.stringify(p[9]), 'published', p[10], p[11], p[12], 'USD', ts, ts);
 
+  // ---- Software package registry: Minecraft is the first complete family ----
+  const insertPackage = db.prepare(`INSERT OR IGNORE INTO software_packages
+    (id, name, description, category, product_id, runtime_id, install_kind, versions, default_version,
+     startup_template, config_schema, ports, storage, healthcheck, status, featured, sort_order, created_at, updated_at)
+    VALUES (@id, @name, @description, @category, @product_id, @runtime_id, @install_kind, @versions, @default_version,
+     @startup_template, @config_schema, @ports, @storage, @healthcheck, @status, @featured, @sort_order, @created_at, @updated_at)`);
+  const mcVersions = ['1.20.6', '1.21.1', '1.21.4'];
+  const mcConfig = {
+    motd: { type: 'text', label: 'Server MOTD', default: 'A .light server' },
+    maxPlayers: { type: 'number', label: 'Max players', default: 20, min: 1, max: 200 },
+    difficulty: { type: 'select', label: 'Difficulty', options: ['peaceful','easy','normal','hard'], default: 'normal' },
+    gameMode: { type: 'select', label: 'Game mode', options: ['survival','creative','adventure','spectator'], default: 'survival' },
+    pvp: { type: 'bool', label: 'Enable PvP', default: true },
+    onlineMode: { type: 'bool', label: 'Online mode', default: true },
+    viewDistance: { type: 'number', label: 'View distance', default: 10, min: 2, max: 32 },
+    seed: { type: 'text', label: 'World seed (optional)', default: '' },
+    eulaAccepted: { type: 'bool', label: 'I accept the Minecraft EULA', default: false, required: true },
+  };
+  const mcPackages = [
+    { id:'minecraft-vanilla', name:'Minecraft Vanilla', category:'minecraft-java', kind:'minecraft-vanilla', desc:'Official Minecraft Java Edition server software.' },
+    { id:'minecraft-paper', name:'Paper', category:'minecraft-java', kind:'minecraft-paper', desc:'High-performance Spigot fork optimized for large servers.' },
+    { id:'minecraft-purpur', name:'Purpur', category:'minecraft-java', kind:'minecraft-purpur', desc:'Paper fork with extra configuration and performance features.' },
+    { id:'minecraft-spigot', name:'Spigot', category:'minecraft-java', kind:'minecraft-spigot', desc:'CraftBukkit-based server with plugin support.' },
+    { id:'minecraft-fabric', name:'Fabric', category:'minecraft-java', kind:'minecraft-fabric', desc:'Lightweight modding platform for Minecraft.' },
+    { id:'minecraft-forge', name:'Forge', category:'minecraft-java', kind:'minecraft-forge', desc:'Minecraft Forge modded server environment.' },
+    { id:'minecraft-neoforge', name:'NeoForge', category:'minecraft-java', kind:'minecraft-neoforge', desc:'Community-driven Forge fork for modern Minecraft.', versions:['1.21.1','1.21.4'] },
+    { id:'minecraft-bedrock', name:'Bedrock Dedicated Server', category:'minecraft-bedrock', kind:'minecraft-bedrock', runtime:'bedrock', versions:['latest'], desc:'Official Minecraft Bedrock Edition dedicated server.' },
+  ];
+  const insertVersion = db.prepare('INSERT OR IGNORE INTO package_versions (id, package_id, version, download_url, runtime_version, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  for (let i = 0; i < mcPackages.length; i++) {
+    const p = mcPackages[i];
+    const versions = p.versions || mcVersions;
+    insertPackage.run({
+      id:p.id, name:p.name, description:p.desc, category:p.category, product_id:'minecraft',
+      runtime_id:p.runtime || 'java', install_kind:p.kind, versions:JSON.stringify(versions), default_version:versions[versions.length-1],
+      startup_template: p.runtime === 'bedrock' ? './bedrock_server' :
+        'java -Xms128M -Xmx${memoryMb}M -jar ${jar} nogui',
+      config_schema:JSON.stringify(mcConfig), ports:JSON.stringify(p.runtime === 'bedrock' ? ['19132/udp'] : ['25565/tcp']),
+      storage:JSON.stringify({ persistent:['.'] }), healthcheck:JSON.stringify({}), status:'published',
+      featured: i < 3 ? 1 : 0, sort_order:i+1, created_at:ts, updated_at:ts,
+    });
+    db.prepare('INSERT OR IGNORE INTO product_packages (product_id, package_id, required, created_at) VALUES (?, ?, 0, ?)')
+      .run('minecraft', p.id, ts);
+    for (const v of versions) {
+      insertVersion.run(id('pver'), p.id, v, '',
+        p.runtime === 'bedrock' ? '' : (v === '1.20.6' ? '17' : '21'), 'published', ts);
+    }
+  }
+
   // Shade runtime catalogue. Debian is the fixed OS foundation for every
   // workload — only the runtime and its explicit versions are selectable.
   const insertEnv = db.prepare(`INSERT OR IGNORE INTO environments (id, name, category, description, icon, versions, default_version, image, image_digest,
@@ -400,8 +475,8 @@ function seed() {
       {'2.0':'denoland/deno:2.0.0'},'deno run --allow-net --allow-env main.ts',['8000'],{build:1,pm:['deno'],order:3}),
     E('python','Python','runtime','Python with pip, Poetry and uv on Debian','◈',['3.12'],'3.12',
       {'3.12':'python:3.12-slim-bookworm'},'python main.py',['8000'],{build:1,pm:['pip','pipx','poetry','uv'],featured:1,order:4}),
-    E('java','Java / JVM','runtime','Java with Maven and Gradle on Debian','◈',['17'],'17',
-      {17:'openjdk:17-slim'},'java -jar application.jar',['8080'],{build:1,pm:['maven','gradle'],order:5}),
+    E('java','Java / JVM','runtime','Java with Maven and Gradle','◈',['17','21'],'21',
+      {17:'openjdk:17-slim',21:'eclipse-temurin:21-jre'},'java -jar application.jar',['8080'],{build:1,pm:['maven','gradle'],order:5}),
     E('dotnet','.NET','runtime','.NET SDK and ASP.NET Core on Debian','◈',['8'],'8',
       {8:'mcr.microsoft.com/dotnet/sdk:8.0-bookworm-slim'},'dotnet run',['8080'],{build:1,pm:['dotnet','nuget'],order:6}),
     E('go','Go','runtime','Go applications on Debian','◈',['1.23'],'1.23',
@@ -459,6 +534,12 @@ function seed() {
     if (refreshCatalog) updateEnv.run(e);
   }
   if (refreshCatalog) db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('debian_runtime_catalog', ?)").run(ts);
+
+  // Minecraft 1.21+ requires Java 21 — ensure the runtime catalogue exposes it.
+  if (!db.prepare("SELECT name FROM migrations WHERE name = 'java21_runtime'").get()) {
+    db.prepare("UPDATE environments SET versions = '[\"17\",\"21\"]', default_version = '21', version_images = '{\"17\":\"openjdk:17-slim\",\"21\":\"eclipse-temurin:21-jre\"}', image = 'eclipse-temurin:21-jre', updated_at = ? WHERE id = 'java'").run(ts);
+    db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('java21_runtime', ?)").run(ts);
+  }
 
   // Official Trycord release (only when a real image is configured by the operator).
   const trycordImage = process.env.TRYCORD_IMAGE || '';

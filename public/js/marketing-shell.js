@@ -2,8 +2,8 @@
 // Every page renders through this so navigation, footer, theme controls and
 // branding stay identical across the website.
 import api from '/js/api.js';
-
-export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+import { esc } from '/js/shared.js';
+export { esc, fmtTime, fmtAgo, fmtMoney } from '/js/shared.js';
 
 const NAV = [
   { label: 'Hosting', href: '/hosting', key: 'hosting' },

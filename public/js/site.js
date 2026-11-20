@@ -1,8 +1,9 @@
 // .light — public website data from the backend API.
 import api from '/js/api.js';
+import { esc } from '/js/shared.js';
+export { esc } from '/js/shared.js';
 
 const app = document.getElementById('site');
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function loadBranding() {
   try { return await api.branding(); } catch { return {}; }
@@ -79,5 +80,5 @@ function layout(brand, content, active = '') {
   </body></html>`;
 }
 
-export { layout, esc, loadBranding, PRODUCTS, FEATURES, FAQS };
+export { layout, loadBranding, PRODUCTS, FEATURES, FAQS };
 window.__LT_SITE__ = { layout, esc, loadBranding, PRODUCTS, FEATURES, FAQS };

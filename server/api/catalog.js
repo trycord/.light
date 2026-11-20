@@ -4,6 +4,7 @@ import { requireAuth, requireAdmin } from '../auth.js';
 import config from '../config.js';
 import { asyncRoute, notFound, badRequest, forbidden } from '../util.js';
 import { pricingConfig, calculatePrice, validateResources, publicPlan } from '../pricing.js';
+import { optionsForProduct } from '../packages.js';
 
 export function catalogRoutes() {
   const router = Router();
@@ -37,6 +38,15 @@ export function catalogRoutes() {
     const plans = getDb().prepare("SELECT * FROM plans WHERE product_id = ? AND status = 'published' ORDER BY sort_order").all(p.id);
     const products = getDb().prepare("SELECT * FROM plans WHERE status = 'published' AND (product_id IS NULL OR product_id = ?) ORDER BY sort_order").all(p.id);
     res.json({ product: publicProduct(p), locations, plans: (plans.length ? plans : products).map((x) => publicPlan(x, req.query.interval || 'monthly')) });
+  }));
+
+  // Product-aware configuration options — the frontend asks the backend which
+  // packages/runtimes are valid for a product instead of hardcoding conditionals.
+  router.get('/products/:slug/options', asyncRoute(async (req, res) => {
+    const product = getDb().prepare("SELECT * FROM products WHERE slug = ? AND status = 'published'").get(req.params.slug);
+    if (!product) throw notFound();
+    const options = optionsForProduct(product.id);
+    res.json({ productId: product.id, ...options });
   }));
 
   router.get('/plans', asyncRoute(async (req, res) => {

@@ -20,7 +20,7 @@
   <div id="store"><div class="muted">Loading storefront…</div></div>
 </div>
 <script type="module">
-const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+import { esc } from '/js/shared.js';
 // TODO(dev): the connected account id is taken from the URL for this demo.
 // In production use a human-friendly seller slug that maps to the account id.
 const parts=location.pathname.split('/').filter(Boolean);

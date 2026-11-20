@@ -28,7 +28,7 @@
 <script type="module">
 import api from '/js/api.js';
 const app = document.getElementById('app');
-const esc = (v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+import { esc } from '/js/shared.js';
 const cfg = await fetch('/api/connect/config').then(r=>r.json()).catch(()=>({}));
 document.getElementById('cfg').textContent = cfg.configured ? 'Stripe configured' : 'Stripe not configured';
 document.getElementById('cfg').className = 'lt-badge '+(cfg.configured?'lt-badge-success':'lt-badge-warning');

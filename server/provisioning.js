@@ -10,6 +10,7 @@ import { queueCommand } from './commands.js';
 import { provisionTunnel, isCloudflareConfigured } from './cloudflare.js';
 import { addOrderEvent, incrementAttempt, markOrderFailed, markOrderActive } from './orders.js';
 import { teamUsage } from './plans.js';
+import { packageForProvisioning } from './packages.js';
 
 function systemAudit(userId, action, targetType, targetId, details = {}) {
   getDb().prepare('INSERT INTO audit_logs (team_id, user_id, action, target_type, target_id, details, ip, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
@@ -49,8 +50,15 @@ export function provisionOrder(orderId) {
     checkCapacity(order.team_id, snapshot);
     addOrderEvent(order.id, 'provisioning', 'Capacity reserved; selecting runtime');
 
-    const runtime = resolveRuntime(db, { environmentId: order.environment_id, version: order.runtime_version });
-    addOrderEvent(order.id, 'provisioning', `Approved Debian runtime ${runtime.environmentName} ${runtime.version}`);
+    // The purchased software package determines the runtime and version.
+    const software = order.package_id ? packageForProvisioning(order.package_id, order.package_version) : null;
+    const runtime = resolveRuntime(db, {
+      environmentId: software?.runtimeId || order.environment_id,
+      version: software?.runtimeVersion || order.runtime_version,
+    });
+    addOrderEvent(order.id, 'provisioning',
+      software ? `Installing ${software.name} ${software.version} on ${runtime.environmentName} ${runtime.version}`
+               : `Approved Debian runtime ${runtime.environmentName} ${runtime.version}`);
 
     const node = pickNode(null);
     if (!node) throw conflict('no_capacity_available');
@@ -60,9 +68,11 @@ export function provisionOrder(orderId) {
     const memory = Math.max(128, Number(snapshot.memoryMb) || 512);
     const disk = Math.max(1, Number(snapshot.diskGb) || 4);
     const network = Number(snapshot.networkGb) || 0;
-    const command = snapshot.command || runtime.command || '';
-    const env = { ...(runtime.runtimeEnv || {}) };
-    const portsFromCatalog = (runtime.exposedPorts || []).map((p) => {
+    const command = snapshot.command || (software?.startupTemplate ? software.startupTemplate
+      .replace('${memoryMb}', String(memory)) : runtime.command) || '';
+    const env = { ...(runtime.runtimeEnv || {}), ...(software ? json(order.package_config, {}) : {}) };
+    const portSpecs = software?.ports?.length ? software.ports : runtime.exposedPorts;
+    const portsFromCatalog = (portSpecs || []).map((p) => {
       const value = typeof p === 'object' ? String(p.container ?? p.port ?? '') : String(p);
       const m = value.match(/^(\d{1,5})(?:\/(tcp|udp))?$/);
       return m ? { container: Number(m[1]), host: 0, protocol: m[2] || 'tcp' } : null;
@@ -83,12 +93,13 @@ export function provisionOrder(orderId) {
 
       db.prepare(`INSERT INTO instances (id, team_id, node_id, name, category, type, status, image, command, version,
         env_json, ports_json, volumes_json, cpu_cores, memory_mb, disk_gb, environment_id, environment_version,
-        source, order_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, 'order', ?, ?, ?)`)
-        .run(iid, order.team_id, node.id, order.service_name || 'My service', 'app',
-          runtime.environmentName, runtime.imageRef, command, runtime.version,
+        source, order_id, package_id, package_version, package_config, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?, 'order', ?, ?, ?, ?, ?, ?)`)
+        .run(iid, order.team_id, node.id, order.service_name || 'My service', software?.category || 'app',
+          runtime.environmentName, runtime.imageRef, command, software?.version || runtime.version,
           JSON.stringify(env), JSON.stringify(portsFromCatalog), cpu, memory, disk,
-          runtime.environmentId, runtime.version, order.id, ts, ts);
+          runtime.environmentId, software?.runtimeVersion || runtime.version,
+          order.id, software?.id || null, software?.version || null, JSON.stringify(json(order.package_config, {})), ts, ts);
 
       db.prepare('UPDATE orders SET instance_id = ?, updated_at = ? WHERE id = ?').run(iid, ts, order.id);
     })();
@@ -109,11 +120,16 @@ export function provisionOrder(orderId) {
 
     queueCommand(node.id, 'instance.create', {
       instanceId: iid, teamId: order.team_id, name: order.service_name || 'My service',
-      image: runtime.imageRef, command: '', defaultCommand: runtime.command,
-      env, ports: portsFromCatalog, volumes: [], cpu, memory, disk, version: runtime.version,
-      environmentId: runtime.environmentId, environmentVersion: runtime.version,
+      image: runtime.imageRef, command: '', defaultCommand: command,
+      env, ports: portsFromCatalog, volumes: [], cpu, memory, disk, version: software?.version || runtime.version,
+      environmentId: runtime.environmentId, environmentVersion: software?.runtimeVersion || runtime.version,
       digest: runtime.digest, runtimeEnv: runtime.runtimeEnv || {}, workingDir: runtime.workingDir,
       healthcheck: runtime.healthcheck, security: runtime.security, orderId: order.id,
+      // Product-aware package installation is handled by Shade.
+      package: software ? { id: software.id, installKind: software.installKind,
+        name: software.name, version: software.version, runtimeVersion: software.runtimeVersion,
+        downloadUrl: software.downloadUrl, sha256: software.sha256,
+        startupTemplate: software.startupTemplate, config: json(order.package_config, {}) } : null,
     }, iid);
 
     systemAudit(order.user_id, 'order.provision.start', 'order', order.id, { instanceId: iid, environmentId: runtime.environmentId });

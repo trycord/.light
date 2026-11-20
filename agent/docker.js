@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import config from './config.js';
 import { scaffold, DEFAULT_ENV } from './scaffolds.js';
+import { installPackage } from './packages.js';
 
 let docker;
 export function dockerOptions(host = config.dockerHost) {
@@ -212,10 +213,20 @@ export async function createInstance(payload) {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     if (!fs.existsSync(target)) fs.writeFileSync(target, content);
   }
+  // Product-aware install: downloads the purchased software into the same
+  // persistent directory. Never overwrite installed artifacts on retry.
+  let installResult = null;
+  if (payload.package) {
+    const jarExists = fs.existsSync(path.join(appDir, 'server.jar'));
+    if (!jarExists) {
+      installResult = await installPackage(payload.package, appDir, payload.memory);
+      console.log('[shade] package install:', payload.package.name, payload.package.version, installResult?.installed ? 'ok' : installResult?.reason);
+    } else installResult = { installed: true, reused: true };
+  }
   const appTarget = tpl.workdir || '/app';
   const enriched = {
     ...payload,
-    command: payload.command || tpl.command || payload.defaultCommand || '',
+    command: payload.command || (installResult?.startup) || tpl.command || payload.defaultCommand || '',
     workingDir: tpl.workdir || payload.workingDir || '/app',
     env: { ...(DEFAULT_ENV[payload.environmentId] || {}), ...(payload.env || {}),
       LIGHT_PORT: String((ports || [])[0]?.container || 3000) },

@@ -36,7 +36,7 @@ const params = new URLSearchParams(location.search);
 const productSlug = params.get('product') || '';
 const planId = params.get('plan') || '';
 const interval = params.get('interval') === 'yearly' ? 'yearly' : 'monthly';
-const state = { product: null, plans: [], environments: [], plan: null, key: sessionStorage.getItem('lt_checkout_key') || newId() };
+const state = { product: null, plans: [], environments: [], plan: null, options: { packages: [] }, key: sessionStorage.getItem('lt_checkout_key') || newId() };
 sessionStorage.setItem('lt_checkout_key', state.key);
 
 if (!api.token()) {
@@ -52,9 +52,10 @@ if (!api.token()) {
 async function boot() {
   try {
     const tasks = [api.environments(), api.plans(interval, productSlug || undefined)];
-    if (productSlug) tasks.unshift(api.product(productSlug, interval));
+    if (productSlug) { tasks.unshift(api.product(productSlug, interval)); tasks.push(api.productOptions(productSlug)); }
     const results = await Promise.all(tasks);
     if (productSlug) state.product = results.shift()?.product || null;
+    if (productSlug) state.options = results.pop() || { packages: [] };
     state.environments = (results.shift()||{}).environments || [];
     state.plans = (results.shift()||{}).plans || [];
     state.plan = state.plans.find((p) => p.id === planId) || state.plans[0] || null;
@@ -76,14 +77,23 @@ function render() {
     <p class="site-muted" style="margin-bottom:24px">Review your hosting plan and choose how your service should start.</p>
     <div class="lt-grid lt-grid-2" style="align-items:start">
       <div class="site-plan" style="padding:22px">
-        <h3>Configure your service</h3>
-        <div class="lt-field" style="margin-top:14px"><label>Service name</label>
+        <h3>Configure your ${esc(state.product?.name || 'service')}</h3>
+        <div class="lt-field" style="margin-top:14px"><label for="serviceName">Service name</label>
           <input class="lt-input" id="serviceName" value="My ${esc(state.product?.name || p.name || 'service')}" maxlength="60"></div>
-        <div class="lt-field" style="margin-top:12px"><label>Runtime</label>
-          <select class="lt-select" id="runtime">${runtimeOpts.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('')}</select></div>
-        <div class="lt-field" style="margin-top:12px"><label>Version</label>
-          <select class="lt-select" id="version"></select></div>
-        ${(state.product?.locations || []).length ? `<div class="lt-field" style="margin-top:12px"><label>Region</label>
+        ${state.options.packages.length ? `
+          <div class="lt-field" style="margin-top:12px"><label for="packageId">Server software</label>
+            <select class="lt-select" id="packageId">${state.options.packages.map(pk=>`<option value="${esc(pk.id)}">${esc(pk.name)} — ${esc(pk.description)}</option>`).join('')}</select></div>
+          <div class="lt-field" style="margin-top:12px"><label for="packageVersion">Version</label>
+            <select class="lt-select" id="packageVersion"></select></div>
+          <div id="packageConfig" style="margin-top:12px"></div>
+          <p class="lt-meta">The runtime and Debian image are resolved automatically from your software selection.</p>
+        ` : `
+          <div class="lt-field" style="margin-top:12px"><label for="runtime">Runtime</label>
+            <select class="lt-select" id="runtime">${runtimeOpts.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('')}</select></div>
+          <div class="lt-field" style="margin-top:12px"><label for="version">Version</label>
+            <select class="lt-select" id="version"></select></div>
+        `}
+        ${(state.product?.locations || []).length ? `<div class="lt-field" style="margin-top:12px"><label for="region">Region</label>
           <select class="lt-select" id="region">${(state.product.locations||[]).filter(l=>l.available).map(l=>`<option value="${esc(l.id)}">${esc(l.city||l.region||l.country||'Default')}</option>`).join('')}</select></div>` : ''}
         <p class="lt-meta" style="margin-top:14px">CPU, memory, storage, networking and the Debian runtime image are assigned automatically from your plan. You never configure infrastructure.</p>
       </div>
@@ -104,19 +114,52 @@ function render() {
   </div></section>`;
   const runtime = root.querySelector('#runtime');
   const version = root.querySelector('#version');
-  const syncVersions = () => { const e = envs.find((x) => x.id === runtime.value); version.innerHTML = (e?.versions || []).map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join(''); };
-  syncVersions(); runtime.addEventListener('change', syncVersions);
+  if (runtime && version) {
+    const syncVersions = () => { const e = envs.find((x) => x.id === runtime.value); version.innerHTML = (e?.versions || []).map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join(''); };
+    syncVersions(); runtime.addEventListener('change', syncVersions);
+  }
+  const pkgSelect = root.querySelector('#packageId');
+  if (pkgSelect) {
+    const syncPackage = () => {
+      const pkg = state.options.packages.find(x => x.id === pkgSelect.value);
+      const ver = root.querySelector('#packageVersion');
+      ver.innerHTML = (pkg?.versions || []).map(v => `<option value="${esc(v.version)}">${esc(v.version)}${v.runtimeVersion ? ' · Java ' + esc(v.runtimeVersion) : ''}</option>`).join('');
+      root.querySelector('#packageConfig').innerHTML = configFields(pkg);
+    };
+    syncPackage(); pkgSelect.addEventListener('change', syncPackage);
+  }
   root.querySelector('#placeOrder').addEventListener('click', placeOrder);
+}
+
+function configFields(pkg) {
+  const schema = pkg?.configSchema || {};
+  return Object.entries(schema).map(([key, rule]) => {
+    const l = `<label for="cfg-${key}">${esc(rule.label || key)}${rule.required ? ' *' : ''}</label>`;
+    if (rule.type === 'bool') return `<div class="lt-auth-terms"><input type="checkbox" id="cfg-${key}" data-cfg="${key}" ${rule.default ? 'checked' : ''}> ${esc(rule.label || key)}</div>`;
+    if (rule.type === 'select') return `<div class="lt-field" style="margin-top:8px">${l}<select class="lt-select" id="cfg-${key}" data-cfg="${key}">${(rule.options||[]).map(o=>`<option value="${esc(o)}" ${o===rule.default?'selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
+    const type = rule.type === 'number' ? 'number' : 'text';
+    const attrs = `${rule.min!==undefined?'min="'+rule.min+'"':''} ${rule.max!==undefined?'max="'+rule.max+'"':''}`;
+    return `<div class="lt-field" style="margin-top:8px">${l}<input class="lt-input" type="${type}" id="cfg-${key}" data-cfg="${key}" value="${esc(rule.default ?? '')}" ${attrs} ${rule.required?'required':''}></div>`;
+  }).join('');
 }
 
 async function placeOrder() {
   const btn = root.querySelector('#placeOrder'); btn.disabled = true; btn.textContent = 'Creating order…';
   try {
+    const pkgSelect = root.querySelector('#packageId');
+    const config = {};
+    root.querySelectorAll('[data-cfg]').forEach(el => {
+      config[el.dataset.cfg] = el.type === 'checkbox' ? el.checked :
+        (el.type === 'number' ? Number(el.value) : el.value);
+    });
     const r = await api.createOrder({
       productId: state.product?.id || undefined,
       planId: state.plan.id, interval,
-      environmentId: root.querySelector('#runtime').value,
-      version: root.querySelector('#version').value,
+      environmentId: root.querySelector('#runtime')?.value || undefined,
+      version: root.querySelector('#version')?.value || undefined,
+      packageId: pkgSelect?.value || undefined,
+      packageVersion: root.querySelector('#packageVersion')?.value || undefined,
+      config,
       serviceName: root.querySelector('#serviceName').value,
       idempotencyKey: state.key,
     });
