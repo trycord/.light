@@ -74,7 +74,9 @@ export function instancesRoutes() {
       cpu, memory, disk, runtime.environmentId, runtime.version, 'environment', ts, ts);
 
     queueCommand(node.id, 'instance.create', {
-      instanceId: iid, teamId: req.teamId, name, image, command, env,
+      instanceId: iid, teamId: req.teamId, name, image,
+      // Empty command tells Shade to use the runtime's default starter app.
+      command: b.command ? command : '', defaultCommand: runtime.command, env,
       ports, volumes, cpu, memory, disk, version: runtime.version,
       environmentId: runtime.environmentId, environmentVersion: runtime.version,
       digest: runtime.digest, runtimeEnv: runtime.runtimeEnv || {}, workingDir: runtime.workingDir,

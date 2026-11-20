@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { buildPortBindings, buildContainerConfig, buildTunnelConfig, tunnelContainerName } from '../agent/docker.js';
 import { mergeAssignedPorts } from '../server/api/agent.js';
 import { customImageRef, isDebianImage, imageRef } from '../server/runtime-catalog.js';
+import { scaffold } from '../agent/scaffolds.js';
 
 test('auto ports use an empty HostPort so Docker chooses a free host port', () => {
   const { exposedPorts, portBindings } = buildPortBindings([
@@ -75,6 +76,19 @@ test('container config rejects unsafe images and host mounts', () => {
   // Customer-supplied host paths are ignored: binds always come from Shade's own data root.
   const safe = buildContainerConfig({ ...base, image: 'nginx:bookworm', volumes: [{ path: '/data', host: '/var/run/docker.sock' }] });
   assert.ok(safe.HostConfig.Binds[0].startsWith('/tmp/opencode/light-node/') || safe.HostConfig.Binds[0].includes('/instances/'));
+});
+
+test('every runtime has bootable default files', () => {
+  const ids = ['node','bun','deno','python','java','dotnet','go','rust','php','ruby','cpp','zig','lua','perl','elixir','erlang','swift','static-site'];
+  for (const id of ids) {
+    const s = scaffold(id);
+    assert.ok(Object.keys(s.files).length > 0, `${id} must ship starter files`);
+    if (id !== 'static-site') assert.ok(s.command, `${id} must have a default startup command`);
+  }
+  assert.ok(scaffold('node').files['package.json'].includes('start'));
+  assert.ok(scaffold('node').files['index.js'].includes('createServer'));
+  assert.ok(scaffold('static-site').files['index.html'].includes('<html'));
+  assert.equal(scaffold('static-site').workdir, '/usr/share/nginx/html');
 });
 
 test('Cloudflare connector uses our approved image with no privileged access', () => {

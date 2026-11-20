@@ -3,6 +3,7 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import config from './config.js';
+import { scaffold, DEFAULT_ENV } from './scaffolds.js';
 
 let docker;
 export function dockerOptions(host = config.dockerHost) {
@@ -198,9 +199,31 @@ function assertContainerConfig(config) {
 }
 
 export async function createInstance(payload) {
-  const { instanceId, teamId, name, image, command, env, ports, volumes, cpu, memory, disk } = payload;
+  const { instanceId, teamId, name, image, ports, volumes } = payload;
   const d = getDocker();
-  const config = buildContainerConfig(payload);
+
+  // Write default starter files into the persistent app directory so every
+  // service boots successfully on first provision (no missing package.json).
+  const tpl = scaffold(payload.environmentId);
+  const appDir = path.join(instanceDir(instanceId), 'app');
+  fs.mkdirSync(appDir, { recursive: true });
+  for (const [relative, content] of Object.entries(tpl.files || {})) {
+    const target = path.join(appDir, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    if (!fs.existsSync(target)) fs.writeFileSync(target, content);
+  }
+  const appTarget = tpl.workdir || '/app';
+  const enriched = {
+    ...payload,
+    command: payload.command || tpl.command || payload.defaultCommand || '',
+    workingDir: tpl.workdir || payload.workingDir || '/app',
+    env: { ...(DEFAULT_ENV[payload.environmentId] || {}), ...(payload.env || {}),
+      LIGHT_PORT: String((ports || [])[0]?.container || 3000) },
+  };
+  const config = buildContainerConfig(enriched);
+  if (!config.HostConfig.Binds.some((b) => b.endsWith(`:${appTarget}`))) {
+    config.HostConfig.Binds.push(`${appDir}:${appTarget}`);
+  }
   // Ensure the image exists locally before creating the container.
   await ensureImage(image || 'nginx:bookworm');
   await ensureNetwork(teamId || 'default');
