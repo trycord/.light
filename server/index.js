@@ -95,6 +95,17 @@ api.get('/me', requireAuth, asyncRoute(async (req, res) => {
 }));
 app.use('/api', api);
 
+// Obsolete standalone pages from the pre-redesign frontend are redirected to
+// their modern equivalents rather than served with incompatible API contracts.
+const LEGACY_REDIRECTS = {
+  '/nodes.html': '/login#/servers',
+  '/workloads.html': '/login#/servers',
+  '/deployments.html': '/login#/activity',
+  '/showcase.html': '/',
+  '/widget.html': '/login#/overview',
+};
+for (const [from, to] of Object.entries(LEGACY_REDIRECTS)) app.get(from, (req, res) => res.redirect(302, to));
+
 // `index: false` stops static middleware from hijacking `/` with index.html —
 // the explicit route below must serve the public marketing homepage.
 app.use(express.static(path.join(appDir, 'public'), { index: false }));
@@ -105,6 +116,7 @@ const send = (file) => (req, res) => res.sendFile(path.join(appDir, 'public', fi
 app.get('/', send('site.html'));
 app.get('/hosting', send('hosting.html'));
 app.get('/hosting/:category', send('hosting.html'));
+app.get('/product', send('product.html'));
 app.get('/product/:slug', send('product.html'));
 app.get('/pricing', send('pricing.html'));
 app.get('/configure', send('configure.html'));

@@ -2,7 +2,10 @@
 import api from '/js/api.js';
 import { ASSETS, iconImg, brandMark, brandWordmark } from '/js/assets.js';
 
-const app = document.getElementById('app');
+const appHost = document.getElementById('app');
+// Legacy standalone pages load this module without an #app mount point. Use a
+// detached node so module evaluation is harmless and skip boot entirely.
+const app = appHost || document.createElement('div');
 const overlays = document.getElementById('overlay-root');
 let session = null;
 let pollTimer = null;
@@ -355,13 +358,13 @@ async function renderOverview() {
     <div class="lt-card" style="padding:var(--lt-space-6);border-color:var(--lt-border-ember);background:linear-gradient(140deg,var(--lt-ember-alpha-08),transparent 60%);margin-bottom:var(--lt-space-4)">
       <div style="font-size:20px;font-weight:800;letter-spacing:-.02em">Welcome to ${esc(brand.product)} 👋</div>
       <p style="color:var(--lt-text-secondary);font-size:13px;max-width:620px;line-height:1.6;margin:8px 0 16px">Your workspace is ready. Create your first server to host a game, website, application, bot or database. Choose a template or bring your own Docker image — the platform handles the rest.</p>
-      <a class="lt-btn lt-btn-primary" href="#/instances">Create Your First Server</a>
+      <a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting plans</a>
     </div>` : '';
-  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">Overview</h1><p class="lt-page-subtitle">Your hosting infrastructure at a glance</p></div><div class="lt-page-actions"><a class="lt-btn lt-btn-primary" href="#/instances">Create Your First Server</a></div></div>
+  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">Overview</h1><p class="lt-page-subtitle">Your hosting infrastructure at a glance</p></div><div class="lt-page-actions"><a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting plans</a></div></div>
     ${onboarding}
     <div class="lt-grid lt-grid-4" style="margin-bottom:var(--lt-space-4)">${kpis}</div>
     <div class="lt-stack">
-      ${section('Instances', 'Recent activity across your workspace', instanceRows ? `<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Memory</th><th>Node</th><th>Updated</th></tr></thead><tbody>${instanceRows}</tbody></table></div>` : empty('No instances yet', 'Create an instance to start hosting a game server or application.', '<a class="lt-btn lt-btn-primary" href="#/instances">Create Your First Server</a>'))}
+      ${section('Instances', 'Recent activity across your workspace', instanceRows ? `<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Name</th><th>Status</th><th>Type</th><th>Memory</th><th>Node</th><th>Updated</th></tr></thead><tbody>${instanceRows}</tbody></table></div>` : empty('No instances yet', 'Purchase a hosting plan to deploy your first service.', '<a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting plans</a>'))}
       ${section('Recent deployments', 'Latest release activity', deployRows ? `<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Instance</th><th>Status</th><th>Version</th><th>Time</th></tr></thead><tbody>${deployRows}</tbody></table></div>` : empty('No deployments', 'Deployments will appear here once you deploy an instance.'))}
     </div>`;
   poll(async () => { if (currentView === 'overview') await renderOverview(); }, 10000);
@@ -384,13 +387,10 @@ async function renderInstances(category = 'all') {
       <button class="lt-btn lt-btn-ghost lt-btn-sm" data-action="deploy" data-id="${i.id}">Deploy</button>
       <a class="lt-btn lt-btn-ghost lt-btn-sm" href="#/instance/${i.id}">Manage</a>
     </div></div>`).join('');
-  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">${category === 'game' ? 'Game servers' : category === 'web' ? 'Applications' : 'Instances'}</h1><p class="lt-page-subtitle">Create and manage your hosted workloads</p></div><div class="lt-page-actions"><button class="lt-btn lt-btn-primary" id="createInstance">New instance</button></div></div>
+  view.innerHTML = `<div class="lt-page-header"><div><h1 class="lt-page-title">${category === 'game' ? 'Game servers' : category === 'web' ? 'Applications' : 'Instances'}</h1><p class="lt-page-subtitle">Your purchased hosting services</p></div><div class="lt-page-actions"><a class="lt-btn lt-btn-primary" href="/hosting">Get hosting</a></div></div>
     <div class="lt-tabs">${filters.map((f) => `<button class="lt-tab ${f.id === category ? 'active' : ''}" data-filter="${f.id}">${f.label}</button>`).join('')}</div>
-    ${filtered.length ? `<div class="lt-grid lt-grid-3">${cards}</div>` : empty('No instances found', 'Create an instance from a template or a custom Docker image to get started.', '<button class="lt-btn lt-btn-primary" id="emptyCreate">Create instance</button>')}`;
+    ${filtered.length ? `<div class="lt-grid lt-grid-3">${cards}</div>` : empty('No services yet', 'Purchase a hosting plan to get your first service.', '<a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting</a>')}`;
   view.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/${b.dataset.filter === 'all' ? 'instances' : b.dataset.filter}`; }));
-  const create = () => openCreateInstance(templates, nodes);
-  view.querySelector('#createInstance')?.addEventListener('click', create);
-  view.querySelector('#emptyCreate')?.addEventListener('click', create);
   view.querySelectorAll('[data-action]').forEach((b) => b.addEventListener('click', async () => {
     const { action, id } = b.dataset;
     try {
@@ -402,34 +402,6 @@ async function renderInstances(category = 'all') {
       await renderInstances(category);
     } catch (error) { toast(error.message, 'error'); }
   }));
-}
-
-async function openCreateInstance(templates, nodes) {
-  const templateOptions = [{ value: '', label: 'Custom image…' }, ...templates.templates.map((t) => ({ value: t.id, label: `${t.category}: ${t.name}` }))];
-  const nodeOptions = [{ value: '', label: 'Auto-select' }, ...nodes.nodes.filter((n) => n.status === 'online').map((n) => ({ value: n.id, label: `${n.name} (${n.status})` }))];
-  const data = await modal('Create instance', `<form id="createForm">
-    ${field('Name', 'name', 'text', '', 'required')}
-    ${selectField('Template', 'templateId', templateOptions)}
-    ${field('Docker image', 'image', 'text', 'nginx:alpine', 'required')}
-    ${selectField('Category', 'category', [{ value: 'web', label: 'Web application' }, { value: 'game', label: 'Game server' }, { value: 'database', label: 'Database' }])}
-    ${field('Startup command', 'command', 'text', '')}
-    ${field('Ports (comma separated)', 'ports', 'text', '80')}
-    ${field('CPU cores', 'cpuCores', 'number', '1', 'min="1" max="32"')}
-    ${field('Memory (MB)', 'memoryMb', 'number', '512', 'min="128" max="65536"')}
-    ${field('Storage (GB)', 'diskGb', 'number', '4', 'min="1" max="2000"')}
-    ${selectField('Node', 'nodeId', nodeOptions)}
-    ${textarea('Environment variables (KEY=value, one per line)', 'env', '', 3)}
-  </form>`, { confirm: 'Create' });
-  if (!data) return;
-  const template = templates.templates.find((t) => t.id === data.templateId);
-  if (template && !data.image) data.image = template.image;
-  const ports = String(data.ports || '').split(',').map((p) => p.trim()).filter(Boolean).map((p) => ({ container: Number(p), host: 0 }));
-  const env = {};
-  for (const line of String(data.env || '').split('\n')) { const match = line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/); if (match) env[match[1]] = match[2]; }
-  try {
-    await api.createInstance({ name: data.name, image: data.image || 'nginx:alpine', command: data.command, category: data.category, ports, env, cpuCores: Number(data.cpuCores), memoryMb: Number(data.memoryMb), diskGb: Number(data.diskGb), nodeId: data.nodeId || undefined });
-    toast('Instance created', 'success'); navigate();
-  } catch (error) { toast(error.message, 'error'); }
 }
 
 async function renderInstance(id) {
@@ -659,4 +631,4 @@ async function boot() {
   try { session = await api.me(); renderShell(); await navigate(); }
   catch (error) { api.setToken(''); renderAuth('login'); }
 }
-boot();
+if (appHost) boot();

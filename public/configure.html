@@ -9,7 +9,7 @@
 <script type="module" src="/js/theme.js"></script><script src="/js/brand-sync.js"></script>
 </head><body><div id="site"><div style="padding:90px 22px;text-align:center;color:var(--lt-text-muted)">Loading configurator…</div></div>
 <script type="module">
-import api from '/js/api.js';
+import api, { newId } from '/js/api.js';
 import { page, esc } from '/js/marketing-shell.js';
 let cfg={};try{cfg=(await api.pricing()).config||{};}catch{}
 if(cfg.customPlansEnabled===false){
@@ -59,12 +59,12 @@ if(cfg.customPlansEnabled===false){
     document.querySelectorAll('[data-iv]').forEach(x=>x.classList.remove('active'));el.classList.add('active');state.interval=el.dataset.iv;refresh();}));
   document.getElementById('activate').addEventListener('click',async()=>{
     try{
-      const key=sessionStorage.getItem('lt_byop_key')||crypto.randomUUID();sessionStorage.setItem('lt_byop_key',key);
+      const key=sessionStorage.getItem('lt_byop_key')||newId();sessionStorage.setItem('lt_byop_key',key);
       const r=await api.createOrder({idempotencyKey:key,interval:state.interval,
         custom:{cpuCores:state.cpuCores,memoryMb:state.memoryMb,diskGb:state.diskGb,networkGb:state.networkGb,instances:state.instances},
         environmentId:'node',serviceName:'My custom service'});
       sessionStorage.removeItem('lt_byop_key');
-      location.href=r.checkoutUrl||('/checkout?order='+r.order.id);
+      location.href=r.checkoutUrl||('/order/'+r.order.id);
     }catch(e){alert(e.message);}
   });
   refresh();

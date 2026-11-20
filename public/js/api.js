@@ -1,6 +1,13 @@
 // .light — real API client. All functions return the parsed response body directly.
 const API_BASE = window.__LT_API_BASE__ || '';
 
+// crypto.randomUUID() is only available in secure contexts (HTTPS / localhost).
+//Self-hosted installs on plain HTTP or a LAN IP must still be able to checkout.
+export function newId() {
+  try { if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID(); } catch { /* ignore */ }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 function token() { return localStorage.getItem('lt_token') || ''; }
 function setToken(value) { value ? localStorage.setItem('lt_token', value) : localStorage.removeItem('lt_token'); }
 

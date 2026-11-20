@@ -26,17 +26,20 @@ function modal(title, body, opts={}) {
   return new Promise((resolve)=>{
     const o=document.createElement('div'); o.className='lt-modal-overlay';
     const formBody=body.includes('<form')?body:`<form id="modalForm">${body}</form>`;
-    o.innerHTML=`<div class="lt-modal" role="dialog" aria-modal="true"><div class="lt-modal-header"><h3 class="lt-h3">${esc(title)}</h3><button class="lt-btn lt-btn-ghost lt-btn-icon" data-close>✕</button></div><div class="lt-modal-body">${formBody}</div><div class="lt-modal-footer">${opts.danger?`<button class="lt-btn lt-btn-danger" data-confirm>${esc(opts.confirm||'Delete')}</button>`:`<button class="lt-btn lt-btn-ghost" data-close>Cancel</button><button class="lt-btn lt-btn-primary" data-confirm>${esc(opts.confirm||'Save')}</button>`}</div></div>`;
+    o.innerHTML=`<div class="lt-modal" role="dialog" aria-modal="true"><div class="lt-modal-header"><h3 class="lt-h3">${esc(title)}</h3><button class="lt-btn lt-btn-ghost lt-btn-icon" data-close aria-label="Close dialog">✕</button></div><div class="lt-modal-body">${formBody}</div><div class="lt-modal-footer">${opts.danger?`<button class="lt-btn lt-btn-danger" data-confirm>${esc(opts.confirm||'Delete')}</button>`:`<button class="lt-btn lt-btn-ghost" data-close>Cancel</button><button class="lt-btn lt-btn-primary" data-confirm>${esc(opts.confirm||'Save')}</button>`}</div></div>`;
     overlays.appendChild(o);
-    const close=(v)=>{o.remove();resolve(v);};
+    const onKey=(e)=>{if(e.key==='Escape')close(null);};
+    const close=(v)=>{o.remove();document.removeEventListener('keydown',onKey);resolve(v);};
+    document.addEventListener('keydown',onKey);
     o.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>close(null)));
     o.querySelector('[data-confirm]')?.addEventListener('click',()=>{const f=o.querySelector('form');if(f){if(!f.reportValidity())return;close(Object.fromEntries(new FormData(f).entries()));}else close(true);});
     o.addEventListener('click',e=>{if(e.target===o)close(null);});
+    o.querySelector('[data-confirm]')?.focus();
   });
 }
 const confirmDialog=(t,m,confirmText='Confirm')=>modal(t,`<p style="color:var(--lt-text-secondary);font-size:13px;line-height:1.6">${esc(m)}</p>`,{danger:true,confirm:confirmText});
 const field=(l,n,t='text',v='',x='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><input class="lt-input" id="f-${n}" name="${n}" type="${t}" value="${esc(v)}" ${x}></div>`;
-const selectField=(l,n,opts,sel='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><select class="lt-select" id="f-${n}" name="${n}">${opts.map(o=>{const v=typeof o==='string'?o:o.value,t=typeof o==='string'?o:o.label;return `<option value="${esc(v)}" ${v===sel?'selected':''}>${esc(t)}</option>`;}).join('')}</select></div>`;
+const selectField=(l,n,opts,sel='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><select class="lt-select" id="f-${n}" name="${n}">${opts.map(o=>{const v=Array.isArray(o)?o[0]:(typeof o==='string'?o:o.value);const t=Array.isArray(o)?o[1]:(typeof o==='string'?o:o.label);return `<option value="${esc(v)}" ${String(v)===String(sel)?'selected':''}>${esc(t)}</option>`;}).join('')}</select></div>`;
 const textarea=(l,n,v='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><textarea class="lt-textarea" id="f-${n}" name="${n}">${esc(v)}</textarea></div>`;
 const loading=()=>'<div class="lt-loading"><span class="lt-spinner"></span>Loading…</div>';
 const empty=(t,d,a='')=>`<div class="lt-empty"><div class="lt-empty-icon">◇</div><div class="lt-empty-title">${esc(t)}</div><div class="lt-empty-desc">${esc(d)}</div>${a}</div>`;
@@ -101,7 +104,8 @@ const NAV=[
 const EXTERNAL_VIEWS = { admin: '/admin', files: '/files', help: '/docs' };
 
 function renderShell(){
-  const nav=NAV.map(g=>{const items=g.items.filter(i=>!i.admin||session.user.role==='admin');if(!items.length)return '';
+  const canAdmin=()=>Boolean(session.permissions?.includes('*')||session.permissions?.includes('admin.access'));
+  const nav=NAV.map(g=>{const items=g.items.filter(i=>!i.admin||canAdmin());if(!items.length)return '';
     return `<nav class="lt-nav-section"><div class="lt-nav-section-label">${esc(g.group)}</div>${items.map(i=>`<a class="lt-nav-item" href="${EXTERNAL_VIEWS[i.v]||`#/${i.v}`}" data-nav="${i.v}">${iconImg(i.i,17)}<span>${esc(i.label)}</span></a>`).join('')}</nav>`;}).join('');
   app.innerHTML=`<a class="lt-skip" href="#view">Skip to main content</a><div class="lt-shell">
     <aside class="lt-sidebar" id="sidebar" aria-label="Primary navigation"><a class="lt-brand" href="#/overview">${brandMark(32)}<span class="lt-brand-word">${esc(brand.product||'.light')}<span class="lt-brand-sub">${esc((brand.tagline||'Universal hosting platform').split(' ')[0])}</span></span></a>${nav}
@@ -118,7 +122,7 @@ function renderShell(){
     </header><main class="lt-content" id="view">${loading()}</main></div></div>`;
   app.querySelector('#navToggle')?.addEventListener('click',()=>{const s=app.querySelector('#sidebar'),sc=app.querySelector('#scrim');const open=s.classList.toggle('is-open');sc.style.display=open?'block':'none';});
   app.querySelector('#scrim')?.addEventListener('click',()=>{app.querySelector('#sidebar').classList.remove('is-open');app.querySelector('#scrim').style.display='none';});
-  app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="/admin" ${session.user.role!=='admin'?'style="display:none"':''}>Administration</a><a href="/">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});
+  app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="/admin" ${(session.permissions?.includes('*')||session.permissions?.includes('admin.access'))?'':'style="display:none"'}>Administration</a><a href="/">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});
   app.querySelector('#globalSearch')?.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&e.target.value.trim()){serversState.search=e.target.value.trim();location.hash='#/servers';setTimeout(()=>renderServers(),50);}});
   app.querySelector('#notifBtn')?.addEventListener('click',(e)=>{e.stopPropagation();openNotifPanel(e.currentTarget);});
   if(session?.impersonatedBy){
@@ -172,7 +176,7 @@ async function navigate(){
 window.addEventListener('hashchange',navigate);
 window.addEventListener('lt:unauthorized',()=>{toast('Session expired','error');api.setToken('');session=null;renderAuth('login');});
 
-async function boot(){try{brand=await api.branding();}catch{}document.documentElement.setAttribute('data-theme',localStorage.getItem('lt_theme')||'dark');document.title=brand.docTitle||'.light';let f=document.querySelector('link[rel=icon]');if(f&&brand.favicon)f.href=brand.favicon;
+async function boot(){try{brand=await api.branding();}catch{}document.title=brand.docTitle||'.light';let f=document.querySelector('link[rel=icon]');if(f&&brand.favicon)f.href=brand.favicon;
   const{v}=parseHash();
   if(!api.token()){
     // Email links (#/verify, #/reset) must work even before signing in.
@@ -303,26 +307,6 @@ async function renderServers(category='all'){
   v.querySelector('#prev')?.addEventListener('click',()=>{serversState.page--;renderServers(serversState.category);});
   v.querySelector('#next')?.addEventListener('click',()=>{serversState.page++;renderServers(serversState.category);});
   // Service creation happens only through checkout + verified payment.
-}
-
-async function openCreate(envData,sub){
-  const envs=envData.environments||[];const plan=sub?.plan||{};
-  // Debian is fixed — customers pick a runtime + exact version, never an OS.
-  const runtimeOpts=envs.flatMap(e=>(e.versions||[]).map(v=>({value:`${e.id}|${v}`,label:`${e.name} ${v} · ${e.category}`})));
-  const d=await modal('Create Server',`<form id="cf">
-    <p class="lt-meta" style="margin-bottom:12px">Plan: <strong>${esc(plan.name||'Free')}</strong> · ${esc(plan.memoryMb||512)} MB RAM · ${esc(plan.cpuCores||1)} vCPU · ${esc(plan.diskGb||4)} GB disk · ${esc(plan.instances||3)} services. Resources are set by your plan.</p>
-    ${field('Server name','name','text','','required')}
-    ${selectField('Runtime & version','runtime',runtimeOpts)}
-    ${selectField('Category','category',[['web','Web application'],['game','Game server'],['website','Website'],['database','Database'],['bot','Bot'],['app','Application']])}
-    ${field('Startup command (optional)','command','text','','placeholder="Leave blank to use the runtime default"')}
-    <p class="lt-meta">Ports are assigned automatically. Public host ports are randomized for security.</p>
-    ${textarea('Environment (KEY=value per line)','env')}
-  </form>`,{confirm:'Create'});
-  if(!d)return;
-  const [environmentId,version]=String(d.runtime||'').split('|');
-  if(!environmentId||!version){toast('Choose a runtime and version','error');return;}
-  const env={};for(const line of String(d.env||'').split('\n')){const m=line.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/);if(m)env[m[1]]=m[2];}
-  try{await api.createInstance({name:d.name,environmentId,version,category:d.category,command:d.command,env});toast('Server created — provisioning started','success');navigate();}catch(e){toast(e.message,'error');}
 }
 
 async function renderServer(id){

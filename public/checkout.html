@@ -11,7 +11,7 @@
 <script src="/js/brand-sync.js"></script>
 </head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading checkout…</div></div>
 <script type="module">
-import api from '/js/api.js';
+import api, { newId } from '/js/api.js';
 import { page, esc } from '/js/marketing-shell.js';
 // Tolerate a stale cached HTML document that still uses the old #checkout root.
 if (!document.getElementById('site')) {
@@ -36,7 +36,7 @@ const params = new URLSearchParams(location.search);
 const productSlug = params.get('product') || '';
 const planId = params.get('plan') || '';
 const interval = params.get('interval') === 'yearly' ? 'yearly' : 'monthly';
-const state = { product: null, plans: [], environments: [], plan: null, key: sessionStorage.getItem('lt_checkout_key') || crypto.randomUUID() };
+const state = { product: null, plans: [], environments: [], plan: null, key: sessionStorage.getItem('lt_checkout_key') || newId() };
 sessionStorage.setItem('lt_checkout_key', state.key);
 
 if (!api.token()) {
@@ -122,6 +122,8 @@ async function placeOrder() {
     });
     sessionStorage.removeItem('lt_checkout_key');
     if (r.checkoutUrl) { location.href = r.checkoutUrl; return; }
+    // Free orders provision immediately — show the live provisioning status.
+    if (r.order.instanceId) { location.href = `/order/${r.order.id}`; return; }
     showOrder(r.order, r.providerConfigured);
   } catch (e) { alert(e.message); btn.disabled = false; btn.textContent = 'Place order'; }
 }
@@ -153,11 +155,22 @@ function showOrder(order, providerConfigured) {
   } else if (order.status === 'active' && order.instanceId) {
     actions.innerHTML = `<a class="lt-btn lt-btn-primary" href="/login#/server/${encodeURIComponent(order.instanceId)}">Open your service</a>`;
   }
-  if (!['active','failed'].includes(order.status)) {
-    const timer = setInterval(async () => {
-      try { const r = await api.order(order.id); showOrder(r.order, providerConfigured); if (['active','failed','cancelled'].includes(r.order.status)) clearInterval(timer); } catch {}
-    }, 4000);
-  }
+  watchOrder(order, providerConfigured);
+}
+
+// One timer for the whole page — showOrder() calls this on every refresh, so a
+// locally scoped interval would multiply and hammer the API.
+let orderTimer = null;
+function watchOrder(order, providerConfigured) {
+  if (['active','failed','cancelled'].includes(order.status)) { if (orderTimer) { clearInterval(orderTimer); orderTimer = null; } return; }
+  if (orderTimer) return;
+  orderTimer = setInterval(async () => {
+    try {
+      const r = await api.order(order.id);
+      showOrder(r.order, providerConfigured);
+      if (['active','failed','cancelled'].includes(r.order.status)) { clearInterval(orderTimer); orderTimer = null; }
+    } catch { clearInterval(orderTimer); orderTimer = null; }
+  }, 4000);
 }
 </script>
 </body></html>

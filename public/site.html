@@ -25,7 +25,7 @@ let products = [], plans = [];
 try { products = (await api.products()).products || []; } catch {}
 try { plans = (await api.plans()).plans || []; } catch {}
 
-const nav = `<nav class="mkt-nav"><div class="mkt-nav-in">
+const nav = `<a class="mkt-skip" href="#main">Skip to content</a><nav class="mkt-nav"><div class="mkt-nav-in">
   <a href="/" class="mkt-logo"><span style="color:var(--lt-ember-500)">◆</span>${product}</a>
   <div class="mkt-links" id="mktLinks">
     <a href="/hosting">Hosting</a><a href="/pricing">Plans</a><a href="/configure">Build your own</a>
@@ -116,6 +116,10 @@ const foot = `<section class="mkt-final"><h2>Ready when you are.</h2><p>Choose a
 </div></footer>`;
 
 document.getElementById('site').innerHTML = nav + hero + catalogue + features + capability + pricing + faq + foot;
+document.querySelector('.mkt-section')?.setAttribute('id','main');
+// Homepage burger uses the same aria-expanded contract as the shared shell.
+const burger=document.getElementById('burger');
+burger?.addEventListener('click',()=>burger.setAttribute('aria-expanded',document.getElementById('mktLinks')?.classList.contains('open')?'true':'false'));
 document.getElementById('burger')?.addEventListener('click', () => document.getElementById('mktLinks')?.classList.toggle('open'));
 document.querySelectorAll('[data-theme-set]').forEach(el => el.addEventListener('click', (e) => { e.preventDefault(); window.__LT_THEME__?.set(el.dataset.themeSet); }));
 </script>

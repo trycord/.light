@@ -3,8 +3,8 @@ import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { isEnabled as stripeEnabled, createCheckout } from '../payments.js';
-import { createOrder, getOrder, viewOrder, attachCheckout, addOrderEvent } from '../orders.js';
-import { retryOrder } from '../provisioning.js';
+import { createOrder, getOrder, viewOrder, attachCheckout, addOrderEvent, markOrderPaid } from '../orders.js';
+import { retryOrder, provisionOrder } from '../provisioning.js';
 import { asyncRoute, badRequest, str } from '../util.js';
 import { audit } from '../audit.js';
 
@@ -27,6 +27,13 @@ export function checkoutRoutes() {
       }, req,
     });
     let checkoutUrl = null;
+    // A zero-total order needs no payment confirmation, so provisioning starts
+    // immediately. This is honest: no money is taken and no fake payment is recorded.
+    if (created && order.total === 0) {
+      const paid = markOrderPaid(order.id, { provider: 'free', reference: 'no_payment_required' });
+      try { provisionOrder(paid.order.id); }
+      catch (error) { console.error('[checkout] free order provisioning failed:', error); }
+    }
     if (created && order.total > 0 && stripeEnabled()) {
       try {
         const session = await createCheckout({

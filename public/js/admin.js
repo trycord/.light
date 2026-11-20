@@ -17,7 +17,8 @@ const fld = (l,n,t='text',v='',x='')=>`<div class="lt-field"><label>${esc(l)}</l
 const sel = (l,n,o,sel='')=>`<div class="lt-field"><label>${esc(l)}</label><select class="lt-select" name="${n}">${o.map(x=>{const v=typeof x==='string'?x:x.value,t=typeof x==='string'?x:x.label;return `<option value="${esc(v)}" ${v===sel?'selected':''}>${esc(t)}</option>`;}).join('')}</select></div>`;
 const ta = (l,n,v='')=>`<div class="lt-field"><label>${esc(l)}</label><textarea class="lt-textarea" name="${n}">${esc(v)}</textarea></div>`;
 function toast(m,t='info'){const e=document.createElement('div');e.className='lt-toast';e.innerHTML=`<span class="lt-dot lt-dot-${t==='error'?'danger':'success'}"></span><span>${esc(m)}</span>`;let s=overlays.querySelector('.lt-toast-stack');if(!s){s=document.createElement('div');s.className='lt-toast-stack';overlays.appendChild(s);}s.appendChild(e);setTimeout(()=>e.remove(),3500);}
-function modal(title,body,opts={}){return new Promise(res=>{const o=document.createElement('div');o.className='lt-modal-overlay';const formBody=body.includes('<form')?body:`<form id="mf">${body}</form>`;o.innerHTML=`<div class="lt-modal"><div class="lt-modal-header"><h3 class="lt-h3">${esc(title)}</h3><button class="lt-btn lt-btn-ghost lt-btn-icon" data-close>✕</button></div><div class="lt-modal-body">${formBody}</div><div class="lt-modal-footer"><button class="lt-btn lt-btn-ghost" data-close>Cancel</button><button class="lt-btn ${opts.danger?'lt-btn-danger':'lt-btn-primary'}" data-ok>${esc(opts.ok||'Save')}</button></div></div>`;overlays.appendChild(o);const close=v=>{o.remove();res(v);};o.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>close(null)));o.querySelector('[data-ok]').addEventListener('click',()=>{const f=o.querySelector('form');if(f){if(!f.reportValidity())return;close(Object.fromEntries(new FormData(f).entries()));}else close(true);});o.addEventListener('click',e=>{if(e.target===o)close(null);});});}
+let modalSeq=0;
+function modal(title,body,opts={}){return new Promise(res=>{const o=document.createElement('div');o.className='lt-modal-overlay';const formBody=body.includes('<form')?body:`<form id="mf-${++modalSeq}">${body}</form>`;o.innerHTML=`<div class="lt-modal"><div class="lt-modal-header"><h3 class="lt-h3">${esc(title)}</h3><button class="lt-btn lt-btn-ghost lt-btn-icon" data-close aria-label="Close dialog">✕</button></div><div class="lt-modal-body">${formBody}</div><div class="lt-modal-footer"><button class="lt-btn lt-btn-ghost" data-close>Cancel</button><button class="lt-btn ${opts.danger?'lt-btn-danger':'lt-btn-primary'}" data-ok>${esc(opts.ok||'Save')}</button></div></div>`;overlays.appendChild(o);const close=v=>{o.remove();res(v);};o.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>close(null)));o.querySelector('[data-ok]').addEventListener('click',()=>{const f=o.querySelector('form');if(f){if(!f.reportValidity())return;close(Object.fromEntries(new FormData(f).entries()));}else close(true);});o.addEventListener('click',e=>{if(e.target===o)close(null);});});}
 const confirmDialog=(t,m)=>modal(t,`<p style="font-size:13px;color:var(--lt-text-secondary)">${esc(m)}</p>`,{danger:true,ok:'Confirm'});
 const panel=(t,s,c,a='')=>`<div class="lt-card"><div class="lt-card-header"><div><h3 class="lt-h3">${esc(t)}</h3>${s?`<div class="lt-meta">${esc(s)}</div>`:''}</div>${a}</div><div class="lt-card-body">${c}</div></div>`;
 const table=(cols,rows)=>{const body=Array.isArray(rows)?rows.join(''):(rows||`<tr><td colspan="${cols.length}" class="admin-empty-state">No records</td></tr>`);return `<div class="lt-table-wrap"><table class="admin-table"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;};
@@ -195,7 +196,7 @@ async function nodes(){
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="lt-btn lt-btn-secondary" id="drain">${x.availability==='draining'?'Enable scheduling':'Drain node'}</button>
       <button type="button" class="lt-btn lt-btn-secondary" id="rot">Rotate token</button>
       <button type="button" class="lt-btn lt-btn-danger" id="rm">Remove</button></div>`,{ok:'Close'});
-    const box=document.querySelector('.lt-modal-overlay:last-of-type');
+    const box=[...document.querySelectorAll('.lt-modal-overlay')].pop();
     const close=()=>box?.querySelector('[data-close]')?.click();
     box?.querySelector('#drain')?.addEventListener('click',async()=>{try{await api.drainNode(x.id);close();toast('Node availability updated','success');nodes();}catch(e){toast(e.message,'error');}});
     box?.querySelector('#rot')?.addEventListener('click',async()=>{try{const r=await api.nodeToken(x.id);close();await modal('New node token',`<div class="lt-console"><div class="lt-console-body" style="height:auto;padding:12px">${esc(r.token)}</div></div>`,{ok:'Done'});nodes();}catch(e){toast(e.message,'error');}});
@@ -235,7 +236,7 @@ async function openAdminOrder(id){
       ${['awaiting_payment','payment_processing','failed'].includes(o.status)?`<button type="button" class="lt-btn lt-btn-danger lt-btn-sm" id="oCancel">Cancel</button>`:''}
     </div>`;
   const promise=modal(`Order ${o.id}`,body,{ok:'Close'});
-  const box=document.querySelector('.lt-modal-overlay:last-of-type');
+  const box=[...document.querySelectorAll('.lt-modal-overlay')].pop();
   const close=()=>box?.querySelector('[data-close]')?.click();
   box?.querySelector('#oApprove')?.addEventListener('click',async()=>{try{await api.adminApproveOrder(o.id);close();toast('Order approved and provisioning started','success');orders();}catch(e){toast(e.message,'error');}});
   box?.querySelector('#oRetry')?.addEventListener('click',async()=>{try{await api.adminRetryOrder(o.id);close();toast('Provisioning retried','success');orders();}catch(e){toast(e.message,'error');}});
@@ -382,4 +383,10 @@ async function boot(){
   if(!can('admin.access')){location.href='/login';return;}
   shell();route();
 }
+window.addEventListener('lt:unauthorized', () => {
+  admin = null; adminPermissions = [];
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  api.setToken('');
+  location.href = '/login';
+});
 boot();

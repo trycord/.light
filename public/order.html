@@ -13,7 +13,9 @@ import api from '/js/api.js';
 import { page, esc, errorBox } from '/js/marketing-shell.js';
 await page({ title:'Order', active:'hosting', eyebrow:'Order confirmation', heading:'Your order.', lede:'', content:'<div id="orderBody"></div>' });
 const root=document.getElementById('orderBody');
-const id=new URLSearchParams(location.search).get('id');
+// Supports both /order/:id (clean route) and legacy ?id= links.
+const pathParts=location.pathname.split('/').filter(Boolean);
+const id=pathParts[0]==='order'?(pathParts[1]||''):new URLSearchParams(location.search).get('id');
 const money=(c,cur='USD')=>new Intl.NumberFormat(undefined,{style:'currency',currency:cur||'USD'}).format(Number(c||0)/100);
 if(!api.token()){
   root.innerHTML=`<div class="mkt-card"><h3>Sign in to view this order</h3><p class="muted">Orders are tied to your account.</p><a class="lt-btn lt-btn-primary" href="/login">Sign in</a></div>`;
