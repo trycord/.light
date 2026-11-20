@@ -17,7 +17,7 @@ export const PERMISSIONS = Object.freeze([
   'backups.read', 'schedules.read',
   'audit.read',
   'tickets.read', 'tickets.write',
-  'notifications.read',
+  'notifications.read', 'notifications.write',
   'analytics.read',
   'roles.read', 'roles.write',
   'settings.read', 'settings.write',

@@ -37,7 +37,21 @@ export function featuresRoutes() {
   // Login with 2FA: verify password then code, issue token.
   router.post('/2fa/login', asyncRoute(async (req, res) => {
     const { email, password, code } = req.body || {};
-    const user = authenticate(email, password);
+    // Same brute-force protection as the primary login route.
+    const identity = String(email || '').toLowerCase().trim();
+    const candidate = getDb().prepare('SELECT * FROM users WHERE email = ? OR lower(username) = ?').get(identity, identity);
+    if (candidate?.locked_until && candidate.locked_until > now()) throw unauthorized('account_locked');
+    let user;
+    try { user = authenticate(email, password); }
+    catch (error) {
+      if (candidate) {
+        const fails = (candidate.failed_logins || 0) + 1;
+        getDb().prepare('UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?')
+          .run(fails, fails >= 5 ? now() + 15 * 60000 : null, candidate.id);
+      }
+      throw error;
+    }
+    getDb().prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').run(user.id);
     const status = twofactor.status(user.id);
     if (status.enabled) {
       if (!code || !twofactor.verify(user.id, str(code))) throw unauthorized('invalid_2fa_code');

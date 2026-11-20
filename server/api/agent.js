@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireNode } from '../auth.js';
-import { pendingCommands, completeCommand, claimCommand, recoverStaleCommands } from '../commands.js';
+import { pendingCommands, completeCommand, claimCommand, recoverStaleCommands, renewCommand } from '../commands.js';
 import { asyncRoute, str, num, int, now } from '../util.js';
 import { setAgentHealth } from '../health.js';
 
@@ -12,6 +12,10 @@ export function agentRoutes() {
   router.post('/commands/:id/ack', asyncRoute(async (req, res) => {
     const claimed = claimCommand(req.params.id, req.node.id);
     res.json({ ok: claimed });
+  }));
+
+  router.post('/commands/:id/renew', asyncRoute(async (req, res) => {
+    res.json({ ok: renewCommand(req.params.id, req.node.id) });
   }));
 
   router.post('/health', asyncRoute(async (req, res) => {
@@ -86,12 +90,17 @@ export function agentRoutes() {
       if (!iid) continue;
       const instance = db.prepare('SELECT id, node_id, status FROM instances WHERE id = ?').get(iid);
       if (!instance || instance.node_id !== req.node.id) continue;
-      // Suspension is an operator intent, not a container state — never undo it.
-      if (instance.status === 'suspended') continue;
-      const status = str(r.status, 40) || 'stopped';
       const health = str(r.health, 40) || 'unknown';
-      db.prepare('UPDATE instances SET status = ?, health_status = ?, updated_at = ? WHERE id = ?')
-        .run(status, health, now(), iid);
+      // pending / deploying / suspended / error are control-plane intent states.
+      // Agent reports must never overwrite them — only the observed health.
+      const intent = ['pending', 'deploying', 'suspended', 'error'].includes(instance.status);
+      if (intent) {
+        db.prepare('UPDATE instances SET health_status = ? WHERE id = ?').run(health, iid);
+      } else {
+        const status = str(r.status, 40) || 'stopped';
+        db.prepare('UPDATE instances SET status = ?, health_status = ?, updated_at = ? WHERE id = ?')
+          .run(status, health, now(), iid);
+      }
       updated++;
     }
     res.json({ ok: true, updated });
@@ -102,7 +111,7 @@ export function agentRoutes() {
     const instanceId = str(b.instanceId, 100);
     const lines = Array.isArray(b.lines) ? b.lines.slice(0, 200) : [];
     if (!instanceId) return res.status(400).json({ error: 'instanceId_required' });
-    const instance = getDb().prepare('SELECT team_id FROM instances WHERE id = ?').get(instanceId);
+    const instance = getDb().prepare('SELECT team_id FROM instances WHERE id = ? AND node_id = ?').get(instanceId, req.node.id);
     if (!instance) return res.status(404).json({ error: 'not_found' });
     const stmt = getDb().prepare('INSERT INTO logs (instance_id, team_id, ts, stream, line) VALUES (?, ?, ?, ?, ?)');
     const ts = now();
@@ -116,8 +125,10 @@ export function agentRoutes() {
   router.post('/metrics', asyncRoute(async (req, res) => {
     const b = req.body || {};
     const ts = now();
-    insertSample(req.node.id, str(b.instanceId, 100) || null, b, ts);
-    if (b.instanceId && b.status) getDb().prepare('UPDATE instances SET status = ?, updated_at = ? WHERE id = ?').run(str(b.status, 40), ts, b.instanceId);
+    const instanceId = str(b.instanceId, 100);
+    const owned = instanceId ? getDb().prepare('SELECT id FROM instances WHERE id = ? AND node_id = ?').get(instanceId, req.node.id) : null;
+    insertSample(req.node.id, owned ? instanceId : null, b, ts);
+    if (owned && b.status) getDb().prepare('UPDATE instances SET status = ?, updated_at = ? WHERE id = ?').run(str(b.status, 40), ts, instanceId);
     prune();
     res.json({ ok: true });
   }));

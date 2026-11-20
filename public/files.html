@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>File manager — .light</title><meta name="description" content="Drag-and-drop file manager and editor for .light services.">
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
+<link rel="stylesheet" href="/styles/utilities.css"><link rel="stylesheet" href="/styles/layout.css">
+<link rel="stylesheet" href="/styles/app.css"><link rel="stylesheet" href="/styles/dashboard.css">
+<script src="/js/brand-sync.js"></script>
+<style>
+  body{background:var(--lt-bg);color:var(--lt-text);font-family:var(--lt-font)}
+  .fm-wrap{max-width:1180px;margin:0 auto;padding:20px}
+  .fm-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(300px,1fr);gap:16px;align-items:start}
+  .fm-drop{border:2px dashed var(--lt-border);border-radius:12px;padding:26px;text-align:center;color:var(--lt-text-muted);transition:.15s;cursor:pointer}
+  .fm-drop.is-over{border-color:var(--lt-ember-500);background:rgba(255,77,36,.07);color:var(--lt-text)}
+  .fm-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-bottom:1px solid var(--lt-border);font-size:13px}
+  .fm-row:hover{background:var(--lt-surface-2)}
+  .fm-row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fm-editor{width:100%;min-height:380px;background:var(--lt-surface-1);color:var(--lt-text);border:1px solid var(--lt-border);border-radius:8px;padding:12px;font-family:var(--lt-mono,monospace);font-size:12px;resize:vertical}
+  #fmOverlay{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);pointer-events:none}
+  #fmOverlay div{background:var(--lt-surface-2);border:2px dashed var(--lt-ember-500);border-radius:16px;padding:50px 70px;font-weight:800;font-size:18px}
+  @media(max-width:900px){.fm-grid{grid-template-columns:1fr}}
+</style>
+</head><body>
+<div class="fm-wrap">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px">
+    <div><a href="/login" style="color:var(--lt-text-muted);text-decoration:none;font-size:12px">← Dashboard</a>
+      <h1 style="margin:4px 0 0;font-size:22px">File manager</h1>
+      <p class="lt-meta" id="fmSubtitle">Drag files into the list to upload. Click a file to edit it.</p></div>
+    <a class="lt-btn lt-btn-secondary" href="/login#/servers">All services</a>
+  </div>
+  <div id="fmApp"><div style="padding:50px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
+</div>
+<div id="fmOverlay"><div>↓ Drop files to upload</div></div>
+<input type="file" id="fmPicker" multiple style="display:none">
+<script type="module">
+import api from '/js/api.js';
+const app = document.getElementById('fmApp');
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let instanceId = new URLSearchParams(location.search).get('id') || '';
+let path = '/';
+let entries = [];
+let instances = [];
+
+if (!api.token()) {
+  app.innerHTML = `<div class="lt-card" style="padding:28px"><h3>Sign in required</h3><p class="lt-meta">Sign in to manage your service files.</p><a class="lt-btn lt-btn-primary" href="/login">Sign in</a></div>`;
+} else boot();
+
+async function boot() {
+  try { instances = (await api.instances()).instances || []; } catch (e) { app.innerHTML = `<div class="lt-error">${esc(e.message)}</div>`; return; }
+  if (!instanceId && instances.length) instanceId = instances[0].id;
+  if (!instanceId) { app.innerHTML = `<div class="lt-card" style="padding:28px">No services yet. <a href="/login#/servers">Create one</a>.</div>`; return; }
+  renderShell(); await load();
+}
+
+function renderShell() {
+  app.innerHTML = `<div class="fm-grid">
+    <div class="lt-card">
+      <div class="lt-card-header"><div><h3 class="lt-h3">Files</h3><div class="lt-meta" id="fmPath">/</div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <select class="lt-select" id="fmService" style="max-width:180px">${instances.map(i => `<option value="${esc(i.id)}" ${i.id === instanceId ? 'selected' : ''}>${esc(i.name)}</option>`).join('')}</select>
+          <button class="lt-btn lt-btn-ghost lt-btn-sm" id="fmUp">↑ Up</button>
+          <button class="lt-btn lt-btn-ghost lt-btn-sm" id="fmNewFile">+ File</button>
+          <button class="lt-btn lt-btn-ghost lt-btn-sm" id="fmNewDir">+ Folder</button>
+          <button class="lt-btn lt-btn-secondary lt-btn-sm" id="fmPick">Upload</button>
+        </div></div>
+      <div class="lt-card-body" style="padding:0">
+        <div class="fm-drop" id="fmDrop">Drop files here or click Upload · max 32 MB per file</div>
+        <div id="fmList" style="max-height:520px;overflow:auto"></div>
+      </div>
+    </div>
+    <div class="lt-card"><div class="lt-card-header"><div><h3 class="lt-h3">Editor</h3><div class="lt-meta" id="fmEditPath">no file selected</div></div>
+      <button class="lt-btn lt-btn-primary lt-btn-sm" id="fmSave">Save</button></div>
+      <div class="lt-card-body"><textarea class="fm-editor" id="fmEditor" placeholder="Select a file to edit its contents"></textarea></div></div>
+  </div>`;
+
+  document.getElementById('fmService').addEventListener('change', (e) => { instanceId = e.target.value; path = '/'; load(); });
+  document.getElementById('fmUp').addEventListener('click', () => { path = path === '/' ? '/' : path.split('/').slice(0, -1).join('/') || '/'; load(); });
+  document.getElementById('fmPick').addEventListener('click', () => document.getElementById('fmPicker').click());
+  document.getElementById('fmNewFile').addEventListener('click', async () => {
+    const name = prompt('New file name'); if (!name) return;
+    await api.writeFile(instanceId, { op: 'write', path: join(name), content: '' }); await load();
+  });
+  document.getElementById('fmNewDir').addEventListener('click', async () => {
+    const name = prompt('New folder name'); if (!name) return;
+    await api.writeFile(instanceId, { op: 'mkdir', path: join(name) }); await load();
+  });
+  document.getElementById('fmSave').addEventListener('click', saveEditor);
+  setupDrop();
+}
+
+function join(name) { return (path === '/' ? '' : path) + '/' + String(name).replace(/[^A-Za-z0-9._-]/g, ''); }
+function setupDrop() {
+  const drop = document.getElementById('fmDrop');
+  const overlay = document.getElementById('fmOverlay');
+  drop.addEventListener('click', () => document.getElementById('fmPicker').click());
+  for (const target of [drop, document.body]) {
+    target.addEventListener('dragover', (e) => { e.preventDefault(); if (target === drop) drop.classList.add('is-over'); else overlay.style.display = 'flex'; });
+    target.addEventListener('dragleave', (e) => { if (target === drop) drop.classList.remove('is-over'); else overlay.style.display = 'none'; });
+    target.addEventListener('drop', async (e) => {
+      e.preventDefault(); drop.classList.remove('is-over'); overlay.style.display = 'none';
+      await uploadFiles(e.dataTransfer.files);
+    });
+  }
+  document.getElementById('fmPicker').addEventListener('change', (e) => uploadFiles(e.target.files));
+}
+async function uploadFiles(files) {
+  for (const file of files) {
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1] || ''); r.onerror = reject; r.readAsDataURL(file);
+      });
+      await api.uploadFile(instanceId, join(file.name), base64);
+    } catch (e) { alert(`Upload failed for ${file.name}: ${e.message}`); }
+  }
+  await load();
+}
+
+async function load() {
+  const list = document.getElementById('fmList');
+  list.innerHTML = '<div style="padding:20px;color:var(--lt-text-muted)">Loading…</div>';
+  try {
+    const r = await api.files(instanceId, path); path = r.path || path;
+    entries = r.entries || [];
+    document.getElementById('fmPath').textContent = path;
+    list.innerHTML = (path !== '/' ? `<div class="fm-row"><span class="grow"><button class="lt-btn lt-btn-ghost lt-btn-sm" data-nav="..">← Parent folder</button></span></div>` : '') +
+      entries.map((e, idx) => `<div class="fm-row"><span>${e.type === 'dir' ? '📁' : '📄'}</span>
+        <span class="grow" data-idx="${idx}" style="cursor:pointer">${esc(e.name)}</span>
+        <span class="lt-meta">${e.type === 'dir' ? '—' : fmtBytes(e.size)}</span>
+        <button class="lt-btn lt-btn-ghost lt-btn-sm" data-ren="${idx}">Rename</button>
+        <button class="lt-btn lt-btn-danger lt-btn-sm" data-del="${idx}">Delete</button></div>`).join('') ||
+      '<div style="padding:24px;text-align:center;color:var(--lt-text-muted)">This folder is empty.</div>';
+    list.querySelector('[data-nav]')?.addEventListener('click', () => { path = path.split('/').slice(0, -1).join('/') || '/'; load(); });
+    list.querySelectorAll('[data-idx]').forEach(el => el.addEventListener('click', async () => {
+      const e = entries[+el.dataset.idx];
+      if (e.type === 'dir') { path = join(e.name); load(); return; }
+      try { const d = await api.readFile(instanceId, join(e.name)); openEditor(join(e.name), d.content || ''); } catch (err) { alert(err.message); }
+    }));
+    list.querySelectorAll('[data-ren]').forEach(el => el.addEventListener('click', async () => {
+      const e = entries[+el.dataset.ren]; const dest = prompt('New name', e.name); if (!dest) return;
+      try { await api.writeFile(instanceId, { op: 'rename', path: join(e.name), destination: join(dest) }); await load(); } catch (err) { alert(err.message); }
+    }));
+    list.querySelectorAll('[data-del]').forEach(el => el.addEventListener('click', async () => {
+      const e = entries[+el.dataset.del]; if (!confirm(`Delete ${e.name}?`)) return;
+      try { await api.writeFile(instanceId, { op: 'delete', path: join(e.name) }); await load(); } catch (err) { alert(err.message); }
+    }));
+  } catch (e) { list.innerHTML = `<div class="lt-error">${esc(e.message)}</div>`; }
+}
+function openEditor(p, content) {
+  document.getElementById('fmEditPath').textContent = p;
+  document.getElementById('fmEditor').value = content;
+  document.getElementById('fmEditor').dataset.path = p;
+}
+async function saveEditor() {
+  const ta = document.getElementById('fmEditor'); const p = ta.dataset.path;
+  if (!p) { alert('Select a file first'); return; }
+  try { await api.writeFile(instanceId, { op: 'write', path: p, content: ta.value }); alert('Saved'); } catch (e) { alert(e.message); }
+}
+function fmtBytes(b) { b = Number(b || 0); return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : b > 1024 ? (b / 1024).toFixed(1) + ' KB' : b + ' B'; }
+</script>
+</body></html>

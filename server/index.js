@@ -109,10 +109,11 @@ app.get('/features', send('features.html'));
 app.get('/faq', send('faq.html'));
 app.get('/login', send('index.html'));
 app.get('/register', send('index.html'));
+app.get('/files', send('files.html'));
 // Administration — independent application; serves admin.html for /admin and all sub-routes.
 app.get(['/admin', /^\/admin\/.*/], send('admin.html'));
 // Legacy .html URLs still work (backward compatibility).
-const PUBLIC_PAGES = ['site','pricing','docs','about','contact','legal','product','hosting','configure','features','faq','admin'];
+const PUBLIC_PAGES = ['site','pricing','docs','about','contact','legal','product','hosting','configure','features','faq','admin','files'];
 app.get('/:page.html', (req, res, next) => {
   if (PUBLIC_PAGES.includes(req.params.page)) return send(`${req.params.page}.html`)(req, res);
   next();
@@ -124,7 +125,9 @@ app.use((error, req, res, next) => {
   const status = error instanceof HttpError ? error.status : (error.status || 500);
   const code = error.code || (status === 500 ? 'internal_error' : 'error');
   if (status >= 500) console.error('[error]', error);
-  res.status(status).json({ error: code, message: status >= 500 ? 'internal server error' : error.message });
+  // 500 stays opaque, but gateway/timeouts (502/504) carry the node's real
+  // error so the dashboard can show something actionable.
+  res.status(status).json({ error: code, message: status === 500 ? 'internal server error' : (error.message || code) });
 });
 
 const server = http.createServer(app);

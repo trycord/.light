@@ -43,6 +43,10 @@ RUN groupadd -g 10001 light && useradd -u 10001 -g light -m -d /home/light -s /b
     && mkdir -p /app /opt/runtimes /opt/light \
     && chown -R light:light /app /home/light
 
+# Arch-neutral Java path for the launcher.
+RUN mkdir -p /opt/runtimes/java && \
+    ln -sfn "/usr/lib/jvm/java-${JAVA_VERSION}-openjdk-${TARGETARCH}" /opt/runtimes/java/current
+
 # ---- Node.js (pinned exact version) ----
 RUN arch=$(case "${TARGETARCH}" in arm64) echo arm64;; *) echo x64;; esac) \
     && mkdir -p "/opt/runtimes/node/${NODE_VERSION}" \
@@ -88,7 +92,8 @@ RUN curl -fsSL https://sh.rustup.rs -o /tmp/rustup.sh \
     && rm /tmp/rustup.sh
 
 # ---- Zig ----
-RUN curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" -o /tmp/zig.txz \
+RUN zigarch=$(case "${TARGETARCH}" in arm64) echo aarch64;; *) echo x86_64;; esac) \
+    && curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-${zigarch}-${ZIG_VERSION}.tar.xz" -o /tmp/zig.txz \
     && mkdir -p "/opt/runtimes/zig/${ZIG_VERSION}" \
     && tar -xJf /tmp/zig.txz -C "/opt/runtimes/zig/${ZIG_VERSION}" --strip-components=1 \
     && rm /tmp/zig.txz

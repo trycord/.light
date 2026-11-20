@@ -59,7 +59,10 @@ export function instancesRoutes() {
     if (!node) throw conflict('no_node_available');
     const iid = id('ins');
     const ts = now();
-    const ports = normalizePorts(b.ports);
+    // Customers never choose ports. The runtime's approved port list is used
+    // and every host port is left as 0 so Docker assigns a random free port
+    // in the 1-65535 range. Additional ports are admin-allocated only.
+    const ports = catalogPorts(runtime.exposedPorts);
     const volumes = normalizeVolumes(b.volumes);
     const command = str(b.command || runtime.command, 1000);
     const env = { ...sanitizeEnv(b.env), ...(runtime.runtimeEnv || {}) };
@@ -75,6 +78,7 @@ export function instancesRoutes() {
       ports, volumes, cpu, memory, disk, version: runtime.version,
       environmentId: runtime.environmentId, environmentVersion: runtime.version,
       digest: runtime.digest, runtimeEnv: runtime.runtimeEnv || {}, workingDir: runtime.workingDir,
+      healthcheck: runtime.healthcheck, security: runtime.security,
     }, iid);
 
     // Every instance gets a free public project subdomain on the universal domain.
@@ -110,8 +114,7 @@ export function instancesRoutes() {
       }
     }
     if (b.env !== undefined) { updates.push('env_json = ?'); values.push(JSON.stringify(sanitizeEnv(b.env))); }
-    if (b.ports !== undefined) { updates.push('ports_json = ?'); values.push(JSON.stringify(normalizePorts(b.ports))); }
-    // CPU / RAM / disk are plan-granted and cannot be raised by the customer.
+    // Ports, CPU, RAM and disk are platform/plan-controlled — never customer-editable.
     if (!updates.length) throw badRequest('nothing_to_update');
     updates.push('updated_at = ?'); values.push(now()); values.push(row.id);
     getDb().prepare(`UPDATE instances SET ${updates.join(', ')} WHERE id = ?`).run(...values);
@@ -210,8 +213,8 @@ export function instancesRoutes() {
     const b = req.body || {};
     const did = id('dep');
     const ts = now();
-    getDb().prepare('INSERT INTO deployments (id, instance_id, team_id, status, version, source, repo_url, ref, command) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(did, row.id, req.teamId, 'queued', str(b.version || row.version, 100), str(b.source || 'image', 20), str(b.repoUrl || '', 500), str(b.ref || 'main', 100), str(b.command || '', 1000));
+    getDb().prepare('INSERT INTO deployments (id, instance_id, team_id, status, version, source, repo_url, ref, command, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(did, row.id, req.teamId, 'queued', str(b.version || row.version, 100), str(b.source || 'image', 20), str(b.repoUrl || '', 500), str(b.ref || 'main', 100), str(b.command || '', 1000), ts);
     getDb().prepare("UPDATE instances SET status = 'deploying', updated_at = ? WHERE id = ?").run(ts, row.id);
     let result;
     try {
@@ -281,7 +284,7 @@ export function instancesRoutes() {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
     const b = req.body || {};
-    const result = await dispatch(row.node_id, 'instance.files.write', { instanceId: row.id, path: str(b.path, 500), content: str(b.content, 2 * 1024 * 1024), op: str(b.op || 'write', 20) }, row.id);
+    const result = await dispatch(row.node_id, 'instance.files.write', { instanceId: row.id, path: str(b.path, 500), content: str(b.content, 2 * 1024 * 1024), op: str(b.op || 'write', 20), destination: str(b.destination, 500), mode: str(b.mode, 10) }, row.id);
     audit(req, 'instance.file.write', 'instance', row.id, { path: b.path, op: b.op });
     res.json(result);
   }));
@@ -290,7 +293,11 @@ export function instancesRoutes() {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
     const b = req.body || {};
-    const result = await dispatch(row.node_id, 'instance.files.write', { instanceId: row.id, path: str(b.path, 500), content: str(b.content, 8 * 1024 * 1024), op: 'write' }, row.id);
+    const payload = b.contentBase64
+      ? { instanceId: row.id, path: str(b.path, 500), contentBase64: String(b.contentBase64).slice(0, 45 * 1024 * 1024) }
+      : { instanceId: row.id, path: str(b.path, 500), content: str(b.content, 8 * 1024 * 1024), op: 'write' };
+    const result = await dispatch(row.node_id, b.contentBase64 ? 'instance.files.writeBinary' : 'instance.files.write', payload, row.id);
+    audit(req, 'instance.file.upload', 'instance', row.id, { path: b.path });
     res.json(result);
   }));
 
@@ -362,6 +369,17 @@ function sanitizeEnv(env) {
   return out;
 }
 
+/** Convert catalog port specs ('80', '25565/udp') into platform-assigned mappings. */
+export function catalogPorts(exposed = []) {
+  return (Array.isArray(exposed) ? exposed : []).map((raw) => {
+    const value = typeof raw === 'object' && raw ? String(raw.container ?? raw.port ?? '') : String(raw);
+    const m = value.match(/^(\d{1,5})(?:\/(tcp|udp))?$/);
+    if (!m) return null;
+    const container = Number(m[1]);
+    return container >= 1 && container <= 65535 ? { container, host: 0, protocol: m[2] || 'tcp' } : null;
+  }).filter(Boolean).slice(0, 20);
+}
+
 function normalizePorts(ports) {
   if (!Array.isArray(ports)) return [];
   return ports.slice(0, 20).map((p) => ({ container: int(p.container ?? p.containerPort, 0), host: int(p.host ?? p.hostPort, 0), protocol: p.protocol === 'udp' ? 'udp' : 'tcp' })).filter((p) => p.container > 0);
@@ -372,13 +390,16 @@ function normalizeVolumes(volumes) {
   return volumes.slice(0, 20).map((v) => ({ path: str(v.path ?? v.container, 300), size: Math.min(2000, int(v.size, 1)) })).filter((v) => v.path.startsWith('/'));
 }
 
-function provisionPayload(row) {
+export function provisionPayload(row) {
+  let runtime = {};
+  try { runtime = resolveRuntime(getDb(), { environmentId: row.environment_id, version: row.environment_version }); } catch { /* custom legacy instance */ }
   return {
     instanceId: row.id, teamId: row.team_id, name: row.name, image: row.image, command: row.command,
     env: json(row.env_json, {}), ports: json(row.ports_json, []), volumes: json(row.volumes_json, []),
     cpu: row.cpu_cores, memory: row.memory_mb, disk: row.disk_gb, version: row.version,
     environmentId: row.environment_id, environmentVersion: row.environment_version,
-    runtimeEnv: json(row.env_json, {}), workingDir: '/app',
+    runtimeEnv: json(row.env_json, {}), workingDir: runtime.workingDir || '/app',
+    healthcheck: runtime.healthcheck || {}, security: runtime.security || {},
   };
 }
 

@@ -5,6 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+<script src="/js/brand-sync.js"></script>
 </head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading configurator…</div></div>
 <script type="module">
 import { layout, esc, loadBranding } from '/js/site.js';
@@ -12,6 +13,13 @@ import api from '/js/api.js';
 async function boot(){
   const b = await loadBranding();
   let cfg={}; try { cfg=(await api.pricing()).config||{}; } catch {}
+  if (cfg.customPlansEnabled === false) {
+    document.getElementById('site').innerHTML = layout(b, `<section class="site-section"><div class="site-wrap">
+      <div class="site-heading"><h2>Build your own plan</h2><p>Custom plans are not enabled on this platform. Resources are granted by the available plans.</p></div>
+      <p><a class="lt-btn lt-btn-primary" href="/pricing">View plans</a></p>
+    </div></section>`, 'pricing');
+    return;
+  }
   const state={cpuCores:2,memoryMb:1024,diskGb:20,networkGb:10,instances:2,interval:'monthly'};
   const content = `<section class="site-section"><div class="site-wrap">
     <div class="site-heading"><h2>Build your own plan</h2><p>Choose exactly the resources you need. Pricing is calculated by the platform and validated before activation.</p></div>
@@ -56,8 +64,12 @@ async function boot(){
   document.querySelectorAll('[data-res]').forEach(el=>el.addEventListener('input',()=>{state[el.dataset.res]=Number(el.value);document.getElementById('label-'+el.dataset.res).textContent=el.value;refresh();}));
   document.querySelectorAll('[data-iv]').forEach(el=>el.addEventListener('click',()=>{document.querySelectorAll('[data-iv]').forEach(x=>x.classList.remove('active'));el.classList.add('active');state.interval=el.dataset.iv;refresh();}));
   document.getElementById('activate').addEventListener('click',async()=>{
-    let r;try{r=await api.activatePlan({custom:{cpuCores:state.cpuCores,memoryMb:state.memoryMb,diskGb:state.diskGb,networkGb:state.networkGb,instances:state.instances},interval:state.interval});}catch(e){alert(e.message);return;}
-    location.href='/login#/billing?activated='+(r.subscription?.id||'1');
+    try{
+      await api.activatePlan({custom:{cpuCores:state.cpuCores,memoryMb:state.memoryMb,diskGb:state.diskGb,networkGb:state.networkGb,instances:state.instances},interval:state.interval});
+      // Checkout provisions the first service immediately, like preset plans.
+      const created=await api.createInstance({name:'My service',environmentId:'node',version:'22',category:'web'});
+      location.href='/login#/server/'+created.instance.id;
+    }catch(e){alert(e.message);}
   });
   refresh();
 }

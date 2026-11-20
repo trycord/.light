@@ -39,7 +39,7 @@ export function environmentsRoutes() {
         str(b.image), str(b.imageDigest || '', 200), J(b.architectures || ['amd64']), str(b.defaultCommand || '', 500), str(b.defaultEntrypoint || '', 300),
         str(b.workingDir || '/app', 200), b.buildCapable ? 1 : 0, J(b.packageManagers), JSON.stringify(b.defaultEnv || {}), J(b.exposedPorts),
         JSON.stringify(b.healthcheck || {}), JSON.stringify(b.storage || {}), JSON.stringify(b.resourceRecommendations || {}), J(b.lifecycle), JSON.stringify(b.security || {}),
-        str(b.status || 'published', 20), b.featured ? 1 : 0, int(b.sortOrder, 0), ts, ts);
+        JSON.stringify(b.versionImages || {}), str(b.status || 'published', 20), b.featured ? 1 : 0, int(b.sortOrder, 0), ts, ts);
     res.status(201).json({ environment: view(getDb().prepare('SELECT * FROM environments WHERE id = ?').get(eid)) });
   }));
 
@@ -48,7 +48,7 @@ export function environmentsRoutes() {
     if (!e) throw notFound();
     const b = req.body || {};
     const textMap = { name: 'name', category: 'category', description: 'description', icon: 'icon', defaultVersion: 'default_version', image: 'image', imageDigest: 'image_digest', defaultCommand: 'default_command', defaultEntrypoint: 'default_entrypoint', workingDir: 'working_dir', status: 'status' };
-    const jsonMap = { versions: 'versions', architectures: 'architectures', packageManagers: 'package_managers', exposedPorts: 'exposed_ports', lifecycle: 'lifecycle', defaultEnv: 'default_env', healthcheck: 'healthcheck', storage: 'storage', resourceRecommendations: 'resource_recommendations', security: 'security' };
+    const jsonMap = { versions: 'versions', architectures: 'architectures', packageManagers: 'package_managers', exposedPorts: 'exposed_ports', lifecycle: 'lifecycle', defaultEnv: 'default_env', healthcheck: 'healthcheck', storage: 'storage', resourceRecommendations: 'resource_recommendations', security: 'security', versionImages: 'version_images' };
     const sets = []; const values = [];
     for (const [k, col] of Object.entries(textMap)) if (b[k] !== undefined) { sets.push(`${col} = ?`); values.push(str(b[k], 1000)); }
     for (const [k, col] of Object.entries(jsonMap)) if (b[k] !== undefined) { sets.push(`${col} = ?`); values.push(JSON.stringify(b[k])); }
@@ -70,7 +70,7 @@ function view(e) {
     workingDir: e.working_dir, buildCapable: !!e.build_capable, packageManagers: json(e.package_managers, []),
     defaultEnv: json(e.default_env, {}), exposedPorts: json(e.exposed_ports, []), healthcheck: json(e.healthcheck, {}),
     storage: json(e.storage, {}), resourceRecommendations: json(e.resource_recommendations, {}),
-    lifecycle: json(e.lifecycle, []), security: json(e.security, {}),
+    lifecycle: json(e.lifecycle, []), security: json(e.security, {}), versionImages: json(e.version_images, {}),
     status: e.status, featured: !!e.featured, sortOrder: e.sort_order,
   };
 }

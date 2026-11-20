@@ -5,11 +5,18 @@ import path from 'path';
 import config from './config.js';
 
 let docker;
-export function getDocker() {
-  if (!docker) {
-    const socket = (config.dockerHost || '').replace(/^unix:\/\//, '') || '/var/run/docker.sock';
-    docker = new Docker({ socketPath: socket });
+export function dockerOptions(host = config.dockerHost) {
+  const value = String(host || '').trim();
+  if (/^tcp:\/\//i.test(value)) {
+    const url = new URL(value);
+    return { protocol: 'http', host: url.hostname, port: Number(url.port) || 2375 };
   }
+  if (/^npipe:\/\//i.test(value)) return { socketPath: decodeURIComponent(value.replace(/^npipe:\/\//i, '')) };
+  if (/^unix:\/\//i.test(value)) return { socketPath: decodeURIComponent(value.replace(/^unix:\/\//i, '')) };
+  return { socketPath: value || '/var/run/docker.sock' };
+}
+export function getDocker() {
+  if (!docker) docker = new Docker(dockerOptions());
   return docker;
 }
 
@@ -25,11 +32,35 @@ export function ensureDirs() {
 export function containerName(instanceId) { return `lt-${instanceId.replace(/[^A-Za-z0-9_-]/g, '')}`; }
 export function networkName(teamId) { return `lt-net-${String(teamId).replace(/[^A-Za-z0-9_-]/g, '')}`; }
 
+/** Deterministic private subnet per team, outside Docker's default address pools. */
+export function teamSubnet(teamId, offset = 0) {
+  const value = String(teamId || 'default');
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  const third = 20 + ((hash + offset) % 220);
+  return `10.231.${third}.0/24`;
+}
+
 async function ensureNetwork(teamId) {
   const name = networkName(teamId);
   try { return await getDocker().getNetwork(name).inspect(); } catch { /* create */ }
-  try { return await getDocker().createNetwork({ Name: name, Driver: 'bridge', Internal: false }); }
-  catch (error) { if (error.statusCode === 409) return getDocker().getNetwork(name).inspect(); throw error; }
+  // Explicit subnets avoid exhausting Docker's predefined address pools when
+  // many teams are provisioned on one node.
+  let lastError;
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const subnet = teamSubnet(teamId, attempt);
+    try {
+      return await getDocker().createNetwork({
+        Name: name, Driver: 'bridge', Internal: false,
+        IPAM: { Driver: 'default', Config: [{ Subnet: subnet, Gateway: subnet.replace('.0/24', '.1') }] },
+      });
+    } catch (error) {
+      if (error.statusCode === 409) return getDocker().getNetwork(name).inspect();
+      lastError = error;
+      if (!/pool overlaps|address pool/i.test(String(error.message))) throw error;
+    }
+  }
+  throw lastError || new Error('network_subnet_unavailable');
 }
 
 export async function hostMetrics() {
@@ -103,7 +134,7 @@ async function ensureImage(image) {
  */
 export function buildContainerConfig(payload) {
   const { instanceId, teamId, name, image, command, env, ports, volumes, cpu, memory, disk,
-    environmentId, environmentVersion, healthcheck, security } = payload || {};
+    environmentId, environmentVersion, healthcheck, security, workingDir } = payload || {};
   const binds = [];
   (volumes || []).forEach((volume, index) => {
     const hostPath = volumeDir(instanceId, String(index));
@@ -114,6 +145,7 @@ export function buildContainerConfig(payload) {
     Image: image,
     name: containerName(instanceId),
     Cmd: command ? ['/bin/sh', '-c', command] : undefined,
+    WorkingDir: String(workingDir || '/app').slice(0, 200),
     Env: envArray(env),
     ExposedPorts: exposedPorts,
     Labels: {
@@ -298,7 +330,7 @@ export async function containerStatus(instanceId) {
 }
 
 export async function deployImage(instanceId, config = {}) {
-  const image = config.image || 'nginx:alpine';
+  const image = config.image || 'nginx:bookworm';
   await new Promise((resolve, reject) => {
     getDocker().pull(image, (error, stream) => {
       if (error) return reject(error);

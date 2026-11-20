@@ -54,7 +54,7 @@ export function subscriptionsRoutes() {
         VALUES (?, ?, ?, 'activation', ?, ?, ?, 'manual', 'none', ?, ?)`).run(txid, req.teamId, sid, planId ? `Plan activation: ${planId}` : 'Custom plan activation', price, currency, sid, ts);
     })();
     audit(req, 'subscription.activate', 'subscription', sid, { planId, source, price });
-    res.status(201).json({ subscription: view(getDb().prepare('SELECT * FROM subscriptions WHERE id = ?').get(sid)), requiresManualApproval: !process.env.PAYMENT_PROVIDER });
+    res.status(201).json({ subscription: view(getDb().prepare('SELECT * FROM subscriptions WHERE id = ?').get(sid)), requiresManualApproval: !process.env.STRIPE_SECRET_KEY });
   }));
 
   router.post('/cancel', asyncRoute(async (req, res) => {

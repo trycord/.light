@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import 'dotenv/config';
 
 const rootDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -65,9 +66,11 @@ test('Shade health reports are persisted on services', async () => {
     body: { name: 'health-test', environmentId: 'static-site' } });
   assert.equal(created.status, 201);
   const iid = created.body.instance.id;
-  const secrets = JSON.parse(fs.readFileSync(path.join(rootDir, 'data', '.secrets.json'), 'utf8'));
+  let nodeToken = process.env.NODE_TOKEN || '';
+  try { nodeToken = JSON.parse(fs.readFileSync(path.join(rootDir, 'data', '.secrets.json'), 'utf8')).NODE_TOKEN || nodeToken; } catch { /* use env */ }
+  assert.ok(nodeToken, 'node token must be available');
   const reported = await req('/api/agent/instances/health', { method: 'POST',
-    headers: { 'x-node-token': secrets.NODE_TOKEN },
+    headers: { 'x-node-token': nodeToken },
     body: { instances: [{ instanceId: iid, status: 'running', health: 'healthy' }] } });
   assert.equal(reported.status, 200);
   assert.equal(reported.body.updated, 1);

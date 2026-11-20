@@ -65,13 +65,16 @@ test('catalog returns real templates and plans', async () => {
 test('node agent auth is enforced', async () => {
   const denied = await request('/api/agent/commands');
   assert.equal(denied.status, 401);
-  const nodeToken = fs.existsSync(path.join(root, '.env'))
-    ? (fs.readFileSync(path.join(root, '.env'), 'utf8').match(/^NODE_TOKEN=(.+)$/m) || [])[1]
-    : 'test-node-token';
-  if (nodeToken) {
-    const allowed = await request('/api/agent/commands', { headers: { 'x-node-token': nodeToken.trim() } });
-    assert.equal(allowed.status, 200);
+  let nodeToken = process.env.NODE_TOKEN || '';
+  if (!nodeToken && fs.existsSync(path.join(root, 'data', '.secrets.json'))) {
+    try { nodeToken = JSON.parse(fs.readFileSync(path.join(root, 'data', '.secrets.json'), 'utf8')).NODE_TOKEN || ''; } catch { /* ignore */ }
   }
+  if (!nodeToken && fs.existsSync(path.join(root, '.env'))) {
+    nodeToken = (fs.readFileSync(path.join(root, '.env'), 'utf8').match(/^NODE_TOKEN=(.+)$/m) || [])[1] || '';
+  }
+  assert.ok(nodeToken, 'a node token must be available for the authorized check');
+  const allowed = await request('/api/agent/commands', { headers: { 'x-node-token': nodeToken.trim() } });
+  assert.equal(allowed.status, 200);
 });
 
 test('plan grants fixed resources; client overrides are ignored', async () => {

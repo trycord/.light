@@ -5,6 +5,7 @@ import { audit } from '../audit.js';
 import { asyncRoute, badRequest, id, now, str } from '../util.js';
 import * as github from '../github.js';
 import { queueCommand } from '../commands.js';
+import crypto from 'crypto';
 
 export function githubRoutes() {
   const router = Router();
@@ -70,7 +71,7 @@ export function githubRoutes() {
     if (!instance) throw badRequest('instance_not_found');
     const fullName = str(b.repoFullName);
     if (!/^[\w.-]+\/[\w.-]+$/.test(fullName)) throw badRequest('invalid_repo');
-    const secret = require('crypto').randomBytes(24).toString('hex');
+    const secret = crypto.randomBytes(24).toString('hex');
     const did = id('ad');
     getDb().prepare(`INSERT INTO auto_deploys (id, instance_id, team_id, repo_full_name, branch, install_command, build_command, secret, enabled, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`).run(did, instance.id, req.teamId, fullName, str(b.branch || 'main'), str(b.installCommand || '', 2000), str(b.buildCommand || '', 2000), secret, now());

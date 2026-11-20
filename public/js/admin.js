@@ -42,7 +42,7 @@ function shell(){
     </aside>
     <div class="admin-scrim" id="aScrim" style="display:none"></div>
     <div class="admin-main"><header class="admin-topbar">
-      <button class="lt-btn lt-btn-ghost lt-btn-icon" id="aToggle" style="display:none">☰</button>
+      <button class="lt-btn lt-btn-ghost lt-btn-icon" id="aToggle">☰</button>
       <div class="lt-breadcrumb"><span>Administration</span><span class="sep">/</span><span class="cur" id="aCrumb">Dashboard</span></div>
       <div class="lt-topbar-spacer"></div>
       <div class="lt-global-search admin-search"><input id="aSearch" placeholder="Search records…"></div>
@@ -134,7 +134,12 @@ async function customers(){
 async function services(){
   const view=root.querySelector('#aView');let inst=[];try{inst=(await api.instances(true)).instances;}catch{}
   view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Services</h1><p class="lt-page-subtitle">All customer hosting services</p></div></div>
-    ${panel('Service directory','',table(['ID','Name','Customer','Type','Status','Node','Resources','Created',''],inst.map(i=>`<tr><td class="lt-td-mono">${esc(i.id)}</td><td class="lt-td-strong">${esc(i.name)}</td><td class="lt-td-mono">${esc(i.teamId)}</td><td>${esc(i.category)}</td><td>${badge(i.status)}</td><td>${esc(i.nodeName||'—')}</td><td class="lt-td-mono">${i.cpuCores}c/${i.memoryMb}MB</td><td>${fmtAgo(i.createdAt)}</td><td><a class="lt-btn lt-btn-ghost lt-btn-sm" href="/login#/server/${i.id}">Inspect</a></td></tr>`)))}`;
+    ${panel('Service directory','',table(['ID','Name','Customer','Type','Status','Node','Resources','Ports','Created',''],inst.map(i=>`<tr><td class="lt-td-mono">${esc(i.id)}</td><td class="lt-td-strong">${esc(i.name)}</td><td class="lt-td-mono">${esc(i.teamId)}</td><td>${esc(i.category)}</td><td>${badge(i.status)}</td><td>${esc(i.nodeName||'—')}</td><td class="lt-td-mono">${i.cpuCores}c/${i.memoryMb}MB</td><td class="lt-td-mono">${(i.ports||[]).map(p=>`${p.container}/${p.protocol||'tcp'}`).join(', ')||'—'}</td><td>${fmtAgo(i.createdAt)}</td><td><a class="lt-btn lt-btn-ghost lt-btn-sm" href="/login#/server/${i.id}">Inspect</a> <button class="lt-btn lt-btn-ghost lt-btn-sm" data-port="${esc(i.id)}">+ Port</button></td></tr>`)))}`;
+  view.querySelectorAll('[data-port]').forEach(b=>b.addEventListener('click',async()=>{
+    const d=await modal('Allocate port',fld('Container port','container','number','8080','min="1" max="65535"')+sel('Protocol','protocol',['tcp','udp']),{ok:'Allocate'});
+    if(!d)return;
+    try{await api.adminAddPort(b.dataset.port,{container:+d.container,protocol:d.protocol});toast('Port allocated — host port assigned randomly','success');services();}catch(e){toast(e.message,'error');}
+  }));
 }
 
 async function products(){
@@ -180,7 +185,19 @@ async function nodes(){
   view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Nodes</h1><p class="lt-page-subtitle">Shade infrastructure nodes</p></div><div class="lt-page-actions"><button class="lt-btn lt-btn-primary" id="addNode">+ Register node</button></div></div>
     ${panel('Infrastructure nodes','',table(['Name','Host','Region','Status','CPU','RAM','Workloads','Heartbeat','Availability',''],n.map(x=>`<tr><td class="lt-td-strong">${esc(x.name)}</td><td class="lt-td-mono">${esc(x.host)}</td><td>${esc(x.region)}</td><td>${badge(x.status)}</td><td>${Math.round(x.cpu_used)}%</td><td>${Math.round(x.mem_used)}%</td><td>${x.workload_count}</td><td>${fmtAgo(x.last_heartbeat)}</td><td>${badge(x.availability)}</td><td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-n="${x.id}">Manage</button></td></tr>`)))}`;
   view.querySelector('#addNode').addEventListener('click',async()=>{const d=await modal('Register node',fld('Name','name','text','node-02','required')+fld('Host','host','text','node.local','required')+fld('Region','region','text','local')+fld('CPU cores','cpuCores','number','4')+fld('Memory MB','memoryMb','number','8192')+fld('Disk GB','diskGb','number','100'),{ok:'Register'});if(d){const r=await api.createNode(d);await modal('Node token',`<p style="font-size:12px;color:var(--lt-text-secondary)">Save this token for Shade:</p><div class="lt-console"><div class="lt-console-body" style="height:auto;padding:12px">${esc(r.token)}</div></div>`,{ok:'Done'});nodes();}});
-  view.querySelectorAll('[data-n]').forEach(b=>b.addEventListener('click',async()=>{const x=n.find(y=>y.id===b.dataset.n);const d=await modal('Manage node',`<p style="font-size:13px">${esc(x.name)} · ${esc(x.host)}</p><button class="lt-btn lt-btn-secondary" id="drain">${x.availability==='draining'?'Enable scheduling':'Drain node'}</button> <button class="lt-btn lt-btn-secondary" id="rot">Rotate token</button> <button class="lt-btn lt-btn-danger" id="rm">Remove</button>`,{ok:'Close'});if(!d)return;}));
+  view.querySelectorAll('[data-n]').forEach(b=>b.addEventListener('click',async()=>{
+    const x=n.find(y=>y.id===b.dataset.n);
+    const promise=modal('Manage node',`<p style="font-size:13px">${esc(x.name)} · ${esc(x.host)}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="lt-btn lt-btn-secondary" id="drain">${x.availability==='draining'?'Enable scheduling':'Drain node'}</button>
+      <button type="button" class="lt-btn lt-btn-secondary" id="rot">Rotate token</button>
+      <button type="button" class="lt-btn lt-btn-danger" id="rm">Remove</button></div>`,{ok:'Close'});
+    const box=document.querySelector('.lt-modal-overlay:last-of-type');
+    const close=()=>box?.querySelector('[data-close]')?.click();
+    box?.querySelector('#drain')?.addEventListener('click',async()=>{try{await api.drainNode(x.id);close();toast('Node availability updated','success');nodes();}catch(e){toast(e.message,'error');}});
+    box?.querySelector('#rot')?.addEventListener('click',async()=>{try{const r=await api.nodeToken(x.id);close();await modal('New node token',`<div class="lt-console"><div class="lt-console-body" style="height:auto;padding:12px">${esc(r.token)}</div></div>`,{ok:'Done'});nodes();}catch(e){toast(e.message,'error');}});
+    box?.querySelector('#rm')?.addEventListener('click',async()=>{if(!await confirmDialog('Remove node','Workloads on this node will be orphaned.'))return;try{await api.deleteNode(x.id);close();toast('Node removed','success');nodes();}catch(e){toast(e.message,'error');}});
+    await promise;
+  }));
 }
 
 async function deployments(){const view=root.querySelector('#aView');let d=[];try{d=(await api.deployments()).deployments;}catch{}view.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Deployments</h1></div>${panel('All deployments','',table(['ID','Instance','Status','Source','Version','Time'],d.map(x=>`<tr><td class="lt-td-mono">${esc(x.id)}</td><td>${esc(x.instanceName||x.instanceId)}</td><td>${badge(x.status)}</td><td>${esc(x.source)}</td><td class="lt-td-mono">${esc(x.version)}</td><td>${fmtTime(x.createdAt)}</td></tr>`)))}`;}

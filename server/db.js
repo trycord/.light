@@ -465,7 +465,7 @@ function seed() {
     ['factorio', 'Factorio', 'game', 'factorio/factorio', ['latest'], '["34197/udp"]', '{}'],
     ['rust', 'Rust', 'game', 'rustserver/rust', ['latest'], '["28015/udp"]', '{}'],
     ['satisfactory', 'Satisfactory', 'game', 'satisfactory-server', ['latest'], '["7777/udp"]', '{}'],
-    ['rust', 'Rust (SteamCMD)', 'game', 'gameserversteamcmd/steamcmd', ['258550'], '["28015/udp"]', '{"GAME":"rust","STEAM_APPID":"258550"}'],
+    ['rust-steamcmd', 'Rust (SteamCMD)', 'game', 'gameserversteamcmd/steamcmd', ['258550'], '["28015/udp"]', '{"GAME":"rust","STEAM_APPID":"258550"}'],
     ['valheim', 'Valheim (SteamCMD)', 'game', 'gameserversteamcmd/steamcmd', ['896660'], '["2456/udp"]', '{"GAME":"valheim","STEAM_APPID":"896660"}'],
     ['palworld', 'Palworld (SteamCMD)', 'game', 'gameserversteamcmd/steamcmd', ['1623730'], '["8211/udp"]', '{"GAME":"palworld","STEAM_APPID":"1623730"}'],
     ['cs2', 'Counter-Strike 2 (SteamCMD)', 'game', 'gameserversteamcmd/steamcmd', ['730'], '["27015/udp"]', '{"GAME":"cs2","STEAM_APPID":"730"}'],
@@ -500,7 +500,7 @@ function seed() {
   ]) insertRole.run(r[0], r[1], r[2], JSON.stringify(r[3]), ts, ts);
 
   if (config.nodeToken) {
-    const nid = process.env.NODE_ID || 'node-01';
+    const nid = process.env.NODE_ID || process.env.LIGHT_NODE_ID || 'node-01';
     const existing = db.prepare('SELECT id, token FROM nodes WHERE id = ?').get(nid);
     if (!existing) {
       db.prepare('INSERT INTO nodes (id, token, name, host, region, version, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')

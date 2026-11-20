@@ -2,6 +2,7 @@
 import { getDb } from './db.js';
 import { encrypt, decrypt } from './crypto.js';
 import { id, now } from './util.js';
+import crypto from 'crypto';
 
 const GITHUB_API = 'https://api.github.com';
 
@@ -86,6 +87,6 @@ export async function exchangeCode(code) {
 export function verifyWebhookSignature(rawBody, signatureHeader) {
   const secret = process.env.GITHUB_WEBHOOK_SECRET || '';
   if (!secret || !signatureHeader) return false;
-  const digest = 'sha256=' + require('crypto').createHmac('sha256', secret).update(rawBody).digest('hex');
-  try { return require('crypto').timingSafeEqual(Buffer.from(digest), Buffer.from(signatureHeader)); } catch { return false; }
+  const digest = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  try { return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signatureHeader)); } catch { return false; }
 }

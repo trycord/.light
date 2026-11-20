@@ -41,10 +41,18 @@ export function claimCommand(commandId, nodeId) {
   return result.changes > 0;
 }
 
-// Reset commands orphaned by an agent restart back to pending.
+// Agents renew a lease while executing long commands (builds, game installs).
+// Only the owning node may renew its own in-progress command.
+export function renewCommand(commandId, nodeId) {
+  return getDb().prepare("UPDATE node_commands SET updated_at = ? WHERE id = ? AND node_id = ? AND status = 'in_progress'")
+    .run(Date.now(), commandId, nodeId).changes > 0;
+}
+
+// Safety net for agents that die without renewing. The threshold is well above
+// the longest legitimate command so a slow build is never executed twice.
 export function recoverStaleCommands(nodeId) {
   getDb().prepare("UPDATE node_commands SET status = 'pending' WHERE node_id = ? AND status = 'in_progress' AND updated_at < ?")
-    .run(nodeId, Date.now() - 60000);
+    .run(nodeId, Date.now() - 15 * 60000);
 }
 
 export function completeCommand(commandId, status, result) {

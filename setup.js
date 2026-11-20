@@ -319,8 +319,8 @@ export async function run(argv = process.argv.slice(2)) {
     cfg.PLATFORM_DOMAIN = await ask('Platform domain', cfg.PLATFORM_DOMAIN, (v) => isValidDomain(v) ? null : 'Enter a valid domain, e.g. example.com');
   } else step(3, `Network: control ${cfg.PORT}, agent ${cfg.AGENT_PORT}, domain ${cfg.PLATFORM_DOMAIN}`);
   cfg.CONTROL_PLANE_PORT = cfg.PORT;
-  cfg.CONTROL_URL = `http://127.0.0.1:${cfg.PORT}`;
-  cfg.CONTROL_BASE_URL = `http://localhost:${cfg.PORT}`;
+  if (existing.CONTROL_URL === undefined && opts.set.CONTROL_URL === undefined) cfg.CONTROL_URL = `http://127.0.0.1:${cfg.PORT}`;
+  if (existing.CONTROL_BASE_URL === undefined && opts.set.CONTROL_BASE_URL === undefined) cfg.CONTROL_BASE_URL = `http://localhost:${cfg.PORT}`;
   cfg.AGENT_PORT = cfg.AGENT_PORT || '5859';
 
   if (interactive) {
@@ -370,7 +370,7 @@ export async function run(argv = process.argv.slice(2)) {
 
   out('\n[7/7] Write configuration & launch');
   if (fs.existsSync(ENV_PATH) && !opts.force && !interactive) warn('Existing .env found — values will be merged (use --force to overwrite)');
-  const merged = updateEnvText(existingText, cfg);
+  const merged = updateEnvText(opts.force ? '' : existingText, cfg);
   fs.writeFileSync(ENV_PATH, merged, { mode: 0o600 });
   ok(`.env written (${Object.keys(cfg).length} settings, existing comments preserved)`);
   ok(`JWT secret ${mask(cfg.JWT_SECRET)} · node token ${mask(cfg.NODE_TOKEN)}`);

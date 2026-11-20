@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+<script src="/js/brand-sync.js"></script>
 </head><body>
   <div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
   <script type="module">
@@ -18,7 +19,7 @@
         <h1>Host anything.<br><span class="hl">Without the infrastructure headache.</span></h1>
         <p>Game servers, web applications, websites, bots and databases — deployed in moments and managed from one beautifully simple dashboard.</p>
         <div class="site-cta">
-          <a href="/login#register" class="lt-btn lt-btn-primary">Get Started — It's Free</a>
+          <a href="/login?plan=free#register" class="lt-btn lt-btn-primary">Get Started — It's Free</a>
           <a href="/#products" class="lt-btn lt-btn-secondary">Explore Products</a>
         </div>
       </div></section>
@@ -75,9 +76,9 @@
         const plans = await mod.default.plans();
         const el = document.getElementById('homePlans');
         if (el) el.innerHTML = (plans.plans || []).slice(0,3).map(p => `<div class="site-plan ${p.id === 'shared' ? 'featured' : ''}">
-          <h3>${esc(p.name)}</h3><div class="price">${p.price_monthly ? '$' + (p.price_monthly/100).toFixed(0) + '/mo' : 'Free'}</div>
-          <ul><li>${p.memory_mb} MB RAM</li><li>${p.disk_gb} GB storage</li><li>${p.cpu_cores} CPU cores</li><li>${p.instances} instances</li></ul>
-          <a href="/login#register" class="lt-btn ${p.id === 'shared' ? 'lt-btn-primary' : 'lt-btn-secondary'}">Get Started</a></div>`).join('');
+          <h3>${esc(p.name)}</h3><div class="price">${p.priceMonthly ? '$' + (p.priceMonthly/100).toFixed(0) + '/mo' : 'Free'}</div>
+          <ul><li>${p.memoryMb} MB RAM</li><li>${p.diskGb} GB storage</li><li>${p.cpuCores} CPU cores</li><li>${p.instances} instances</li></ul>
+          <a href="/login?plan=${encodeURIComponent(p.id)}#register" class="lt-btn ${p.id === 'free' ? 'lt-btn-primary' : 'lt-btn-secondary'}">Get ${esc(p.name)}</a></div>`).join('');
       } catch { /* pricing loads on pricing page */ }
     }
     boot();

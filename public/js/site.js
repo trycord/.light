@@ -23,7 +23,7 @@ const FEATURES = [
   ['Built-in file manager', 'Browse, upload, edit and manage files without SSH.'],
   ['Automatic backups', 'Schedule snapshots and restore them whenever you need.'],
   ['Custom domains & SSL', 'Point a domain at your service with automated certificate provisioning.'],
-  ['Resource controls', 'Set CPU, memory and storage limits that are enforced by the platform.'],
+  ['Fair resource limits', 'CPU, memory and storage are granted by your plan and enforced by the platform.'],
   ['Distributed nodes', 'Capacity scales across machines while your dashboard stays simple.'],
   ['Tenant isolation', 'Every service runs isolated — your data stays yours.'],
 ];
@@ -32,7 +32,7 @@ const FAQS = [
   ['Do I need to know Docker or Linux?', 'No. .light handles containers, networking and infrastructure for you. You choose what to host and configure it through a simple dashboard.'],
   ['What can I host?', 'Game servers, websites, web applications, bots, databases, APIs and virtually any Docker-based service.'],
   ['Can I use my own domain?', 'Yes. Every service gets a project subdomain, and you can attach custom domains with automatic SSL.'],
-  ['Is there a free plan?', 'Yes. The free plan includes 512 MB RAM and 4 GB storage — enough to get started. Upgrade any time.'],
+  ['Is there a free plan?', 'Yes. The free plan includes 512 MB RAM and 4 GB storage — enough to get started. Additional plans may be defined by your operator.'],
   ['Are my services isolated?', 'Yes. Each service runs in its own container with resource limits and strict tenant isolation.'],
   ['Can I self-host .light?', 'Yes. .light is available as a single Docker container with Docker Compose, independent of Trycord infrastructure.'],
 ];
@@ -53,7 +53,7 @@ function layout(brand, content, active = '') {
       <a href="/" class="site-brand"><img src="${esc(brand.logo || '/assets/logos/light-primary.svg')}" height="34" alt="${product}"></a>
       <nav class="site-links">
         <a href="/hosting" class="${active === 'products' ? 'active' : ''}">Products</a>
-        <a href="/#features">Features</a>
+        <a href="/features">Features</a>
         <a href="/pricing" class="${active === 'pricing' ? 'active' : ''}">Pricing</a>
         <a href="/docs">Docs</a><a href="/about">About</a>
       </nav>

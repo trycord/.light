@@ -30,7 +30,7 @@ fi
 
 # Some runtimes ship as a single directory (bun/zig) or need DOTNET_ROOT.
 case "$RUNTIME" in
-  bun)  BIN_DIR="${BIN_DIR}/bun-linux-$(uname -m | sed 's/aarch64/x64/;s/arm64/x64/')" ;;
+  bun)  BIN_DIR="${BIN_DIR}/bun-linux-$(uname -m | sed 's/x86_64/x64/;s/aarch64/x64/;s/arm64/x64/')" ;;
   zig)  : ;;
   dotnet) export DOTNET_ROOT="$BIN_DIR" ;;
 esac

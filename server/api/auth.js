@@ -166,17 +166,25 @@ export function authRoutes() {
     if (confirm !== 'DELETE') throw badRequest('confirmation_required');
     const db = getDb();
     db.transaction(() => {
-      const instances = db.prepare('SELECT id FROM instances WHERE team_id = ?').all(req.teamId).map((r) => r.id);
-      for (const iid of instances) {
-        for (const t of ['deployments','logs','metric_samples','backups','schedules','domains','node_commands']) {
-          try { db.prepare(`DELETE FROM ${t} WHERE instance_id = ?`).run(iid); } catch {}
-        }
-      }
-      db.prepare('DELETE FROM instances WHERE team_id = ?').run(req.teamId);
+      // Only remove the requesting user. Never destroy a shared workspace.
       db.prepare('DELETE FROM sessions WHERE user_id = ?').run(req.user.id);
       db.prepare('DELETE FROM team_members WHERE user_id = ?').run(req.user.id);
-      db.prepare('DELETE FROM teams WHERE id = ?').run(req.teamId);
+      db.prepare('DELETE FROM notifications WHERE user_id = ?').run(req.user.id);
+      db.prepare('DELETE FROM two_factor WHERE user_id = ?').run(req.user.id);
+      db.prepare("UPDATE support_tickets SET status = 'closed' WHERE user_id = ?").run(req.user.id);
       db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
+      // A sole owner leaving dissolves their own workspace; shared ones persist.
+      const remaining = db.prepare('SELECT COUNT(*) AS c FROM team_members WHERE team_id = ?').get(req.teamId).c;
+      if (remaining === 0) {
+        const instances = db.prepare('SELECT id FROM instances WHERE team_id = ?').all(req.teamId).map((r) => r.id);
+        for (const iid of instances) {
+          for (const t of ['deployments','logs','metric_samples','backups','schedules','domains','node_commands']) {
+            try { db.prepare(`DELETE FROM ${t} WHERE instance_id = ?`).run(iid); } catch {}
+          }
+        }
+        db.prepare('DELETE FROM instances WHERE team_id = ?').run(req.teamId);
+        db.prepare('DELETE FROM teams WHERE id = ?').run(req.teamId);
+      }
     })();
     res.json({ ok: true });
   }));

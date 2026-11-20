@@ -58,7 +58,13 @@ export function runSchedules() {
     if (typeMap[schedule.action]) {
       dispatch(instance.node_id, typeMap[schedule.action], { instanceId: instance.id }, instance.id).catch(() => {});
     } else if (schedule.action === 'backup') {
-      dispatch(instance.node_id, 'instance.backup', { instanceId: instance.id, backupId: id('bak') }, instance.id).catch(() => {});
+      const backupId = id('bak');
+      db.prepare('INSERT INTO backups (id, instance_id, team_id, name, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(backupId, instance.id, instance.team_id, `Scheduled ${new Date().toISOString()}`, 'pending', now());
+      dispatch(instance.node_id, 'instance.backup', { instanceId: instance.id, backupId }, instance.id)
+        .then((result) => db.prepare("UPDATE backups SET status = 'ready', location = ?, size_bytes = ?, finished_at = ? WHERE id = ?")
+          .run(String(result.location || ''), Number(result.sizeBytes) || 0, now(), backupId))
+        .catch(() => db.prepare("UPDATE backups SET status = 'failed' WHERE id = ?").run(backupId));
     }
   }
 }

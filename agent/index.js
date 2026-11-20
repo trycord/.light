@@ -1,9 +1,35 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import net from 'net';
+import dns from 'dns/promises';
+
+// Block SSRF: only public IPs are reachable from customer-supplied mod URLs.
+function isPrivateIp(ip) {
+  if (net.isIPv4(ip)) {
+    const p = ip.split('.').map(Number);
+    return p[0] === 10 || p[0] === 127 || p[0] === 0 || p[0] >= 224 ||
+      (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 192 && p[1] === 168) ||
+      (p[0] === 169 && p[1] === 254) || (p[0] === 100 && p[1] >= 64 && p[1] <= 127);
+  }
+  if (net.isIPv6(ip)) {
+    const v = ip.toLowerCase();
+    return v === '::1' || v === '::' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe80');
+  }
+  return true;
+}
+async function isPublicUrl(raw) {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:') return false;
+    if (net.isIP(url.hostname)) return !isPrivateIp(url.hostname);
+    const records = await dns.lookup(url.hostname, { all: true });
+    return records.length > 0 && records.every((r) => !isPrivateIp(r.address));
+  } catch { return false; }
+}
 import config from './config.js';
 import { hostMetrics, createInstance, startInstance, stopInstance, restartInstance, suspendInstance, resumeInstance, removeInstance, reinstallInstance, execCommand, deployImage, containerStatus, containerStats, followLogs, ensureDirs, containerName, containerHealth, startTunnelConnector, stopTunnelConnector } from './docker.js';
-import { listFiles, readFile, writeFile, fileOperation, storageUsage, createBackup, restoreBackup } from './files.js';
+import { listFiles, readFile, writeFile, writeBinary, fileOperation, storageUsage, createBackup, restoreBackup } from './files.js';
 import { installSteamGame, isSteamGame, resolveGame } from './games.js';
 import { buildSource, cloneRepository, validateBuildSpec } from './build.js';
 
@@ -89,7 +115,7 @@ async function execute(command) {
       for (const mod of (payload.mods || [])) {
         try {
           const url = String(mod.url || '');
-          if (!/^https:\/\//.test(url)) { results.push({ name: mod.name, ok: false, reason: 'invalid_url' }); continue; }
+          if (!/^https:\/\//.test(url) || !(await isPublicUrl(url))) { results.push({ name: mod.name, ok: false, reason: 'invalid_url' }); continue; }
           const res = await fetch(url);
           if (!res.ok) { results.push({ name: mod.name, ok: false, reason: 'download_' + res.status }); continue; }
           const buf = Buffer.from(await res.arrayBuffer());
@@ -128,6 +154,7 @@ async function execute(command) {
     case 'instance.files.write': return payload.op && payload.op !== 'write'
       ? fileOperation(command.instanceId, payload.op, payload.path, payload)
       : writeFile(command.instanceId, payload.path, payload.content);
+    case 'instance.files.writeBinary': return writeBinary(command.instanceId, payload.path, payload.contentBase64);
     case 'instance.files.remove': return fileOperation(command.instanceId, 'delete', payload.path, payload);
     case 'instance.storage': return storageUsage(command.instanceId);
     case 'instance.backup': return createBackup(command.instanceId, payload.backupId);
@@ -147,8 +174,14 @@ async function pollCommands() {
         const ack = await fetch(`${CONTROL}/api/agent/commands/${command.id}/ack`, { method: 'POST', headers: HEADERS });
         const ackBody = await ack.json().catch(() => ({}));
         if (!ackBody.ok) continue; // claimed by another poll
-        const result = await execute(command);
-        await reportResult(command.id, result, result?.status);
+        // Keep the command lease alive so long builds/installs are not re-queued.
+        const lease = setInterval(() => {
+          post(`/api/agent/commands/${command.id}/renew`, {}).catch(() => {});
+        }, 15000);
+        try {
+          const result = await execute(command);
+          await reportResult(command.id, result, result?.status);
+        } finally { clearInterval(lease); }
       } catch (error) {
         await reportResult(command.id, { error: error.message }, 'error');
       }
@@ -171,9 +204,11 @@ function enqueueLog(instanceId, entry) {
 async function flushLogs(instanceId) {
   const buffer = logBuffers.get(instanceId);
   if (!buffer || !buffer.length) return;
-  logBuffers.set(instanceId, []);
-  try { await post('/api/agent/logs', { instanceId, lines: buffer }); }
-  catch { /* logs will be retried on next flush */ }
+  const batch = buffer.slice(0, 200);
+  try {
+    await post('/api/agent/logs', { instanceId, lines: batch });
+    buffer.splice(0, batch.length); // only drop lines after a successful post
+  } catch { /* keep buffered for the next flush */ }
 }
 
 async function startLogStreams() {

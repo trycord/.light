@@ -1,0 +1,22 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Features — .light</title><meta name="description" content="Features of the .light universal hosting platform.">
+<link rel="icon" href="/assets/logos/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+<script src="/js/brand-sync.js"></script>
+</head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
+<script type="module">
+import { layout, FEATURES } from '/js/site.js';
+const boot = async () => {
+  const b = await (await fetch('/api/branding')).json();
+  const content = `<div class="site-prose">
+    <h1>Features</h1><p class="site-muted">Everything you need to run services on ${b.product || '.light'}.</p>
+    ${FEATURES.map(f => `<h2>${f[0]}</h2><p>${f[1]}</p>`).join('')}
+    <p><a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting</a></p>
+  </div>`;
+  document.getElementById('site').innerHTML = layout(b, content);
+};
+boot();
+</script></body></html>

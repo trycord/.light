@@ -5,6 +5,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
+<script src="/js/brand-sync.js"></script>
 </head><body><div id="site"><div style="padding:80px;text-align:center;color:var(--lt-text-muted)">Loading…</div></div>
 <script type="module">
 import { layout, esc, loadBranding } from '/js/site.js';
@@ -18,10 +19,10 @@ async function boot(){
     <div class="site-grid" style="max-width:1040px;margin:0 auto">
       ${plans.map(p => `<div class="site-plan ${p.id === 'shared' ? 'featured' : ''}">
         <h3>${esc(p.name)}</h3>
-        <div class="price">${p.price_monthly ? '$' + (p.price_monthly/100).toFixed(0) + '<span style="font-size:14px;color:var(--lt-text-muted)">/mo</span>' : 'Free'}</div>
+        <div class="price">${p.priceMonthly ? '$' + (p.priceMonthly/100).toFixed(0) + '<span style="font-size:14px;color:var(--lt-text-muted)">/mo</span>' : 'Free'}</div>
         <p class="site-muted">${esc(p.description || '')}</p>
-        <ul><li>${p.memory_mb} MB RAM</li><li>${p.disk_gb} GB storage</li><li>${p.cpu_cores} CPU cores</li><li>Up to ${p.instances} instances</li><li>Live console & logs</li><li>Backups & domains</li></ul>
-        <a href="/login#register" class="lt-btn ${p.id === 'shared' ? 'lt-btn-primary' : 'lt-btn-secondary'}" style="margin-top:auto">Get Started</a>
+        <ul><li>${p.memoryMb} MB RAM</li><li>${p.diskGb} GB storage</li><li>${p.cpuCores} CPU cores</li><li>Up to ${p.instances} instances</li><li>Live console & logs</li><li>Backups & domains</li></ul>
+        <a href="/login?plan=${encodeURIComponent(p.id)}#register" class="lt-btn ${p.id === 'free' ? 'lt-btn-primary' : 'lt-btn-secondary'}" style="margin-top:auto">Get ${esc(p.name)}</a>
       </div>`).join('') || '<div class="site-muted">No plans configured yet.</div>'}
     </div>
     <div class="site-draft" style="max-width:1040px;margin:30px auto 0">Pricing and plan data are loaded from the platform configuration. Contact your operator or administrator for billing, upgrades and custom allocations.</div>

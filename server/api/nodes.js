@@ -15,7 +15,7 @@ export function nodesRoutes() {
     res.json({ nodes: rows.map((n) => isAdmin ? n : publicNode(n)) });
   }));
 
-  router.post('/', asyncRoute(async (req, res) => {
+  router.post('/', requireAdmin, asyncRoute(async (req, res) => {
     const b = req.body || {};
     const name = str(b.name).trim();
     const host = str(b.host).trim();
@@ -28,7 +28,7 @@ export function nodesRoutes() {
     res.status(201).json({ node: getDb().prepare('SELECT * FROM nodes WHERE id = ?').get(nid), token });
   }));
 
-  router.patch('/:id', asyncRoute(async (req, res) => {
+  router.patch('/:id', requireAdmin, asyncRoute(async (req, res) => {
     const node = getDb().prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id);
     if (!node) throw notFound();
     const b = req.body || {};
@@ -43,14 +43,14 @@ export function nodesRoutes() {
     res.json({ node: getDb().prepare('SELECT * FROM nodes WHERE id = ?').get(node.id) });
   }));
 
-  router.post('/:id/drain', asyncRoute(async (req, res) => {
+  router.post('/:id/drain', requireAdmin, asyncRoute(async (req, res) => {
     const node = getDb().prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id);
     if (!node) throw notFound();
     getDb().prepare("UPDATE nodes SET availability = 'draining', updated_at = ? WHERE id = ?").run(now(), node.id);
     res.json({ ok: true });
   }));
 
-  router.post('/:id/token', asyncRoute(async (req, res) => {
+  router.post('/:id/token', requireAdmin, asyncRoute(async (req, res) => {
     const node = getDb().prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id);
     if (!node) throw notFound();
     const token = `n_${id('tok')}`;
@@ -58,7 +58,7 @@ export function nodesRoutes() {
     res.json({ token });
   }));
 
-  router.delete('/:id', asyncRoute(async (req, res) => {
+  router.delete('/:id', requireAdmin, asyncRoute(async (req, res) => {
     const node = getDb().prepare('SELECT * FROM nodes WHERE id = ?').get(req.params.id);
     if (!node) throw notFound();
     const assigned = getDb().prepare('SELECT COUNT(*) AS count FROM instances WHERE node_id = ?').get(node.id).count;

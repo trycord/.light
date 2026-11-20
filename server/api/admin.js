@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { getDb } from '../db.js';
 import { requireAdmin, signToken } from '../auth.js';
-import { requireRealAdmin, hasPermission, PERMISSIONS, isValidPermission } from '../permissions.js';
+import { requireRealAdmin, hasPermission, requirePermission, PERMISSIONS, isValidPermission } from '../permissions.js';
+import { queueCommand } from '../commands.js';
+import { provisionPayload } from './instances.js';
 import { audit } from '../audit.js';
 import { asyncRoute, badRequest, forbidden, notFound, conflict, id, now, str, int, num, json } from '../util.js';
 
@@ -169,6 +171,28 @@ export function adminRoutes() {
   }));
   router.get('/transactions', asyncRoute(async (req, res) => {
     res.json({ transactions: getDb().prepare('SELECT * FROM transactions ORDER BY created_at DESC LIMIT 300').all() });
+  }));
+
+  /* ---------- Service ports (admin allocation by server ID) ---------- */
+  router.post('/instances/:id/ports', requirePermission('services.write'), asyncRoute(async (req, res) => {
+    const row = getDb().prepare('SELECT * FROM instances WHERE id = ?').get(req.params.id);
+    if (!row) throw notFound();
+    const b = req.body || {};
+    const container = int(b.container ?? b.port, 0);
+    const protocol = b.protocol === 'udp' ? 'udp' : 'tcp';
+    if (container < 1 || container > 65535) throw badRequest('invalid_port');
+    const ports = json(row.ports_json, []);
+    if (ports.some((p) => p.container === container && p.protocol === protocol)) throw conflict('port_exists');
+    if (ports.length >= 20) throw conflict('port_limit_reached');
+    // host=0 means Docker picks a random free host port at provisioning time.
+    ports.push({ container, host: 0, protocol });
+    const generation = (row.generation || 1) + 1;
+    getDb().prepare("UPDATE instances SET ports_json = ?, status = 'pending', generation = ?, updated_at = ? WHERE id = ?")
+      .run(JSON.stringify(ports), generation, now(), row.id);
+    const fresh = getDb().prepare('SELECT * FROM instances WHERE id = ?').get(row.id);
+    queueCommand(row.node_id, 'instance.reprovision', { ...provisionPayload(fresh), ports, generation, preserveData: true }, row.id);
+    audit(req, 'admin.instance.port.add', 'instance', row.id, { container, protocol });
+    res.json({ ok: true, ports, generation });
   }));
 
   /* ---------- RBAC roles ---------- */

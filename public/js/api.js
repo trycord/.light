@@ -88,6 +88,7 @@ const api = {
   files: (id, p = '/') => request(`/api/instances/${id}/files?path=${encodeURIComponent(p)}`),
   writeFile: (id, data) => request(`/api/instances/${id}/files`, { method: 'POST', body: data }),
   readFile: (id, p) => request(`/api/instances/${id}/files/download?path=${encodeURIComponent(p)}`),
+  uploadFile: (id, p, base64) => request(`/api/instances/${id}/files/upload`, { method: 'POST', body: { path: p, contentBase64: base64 } }),
   backups: (id) => request(`/api/instances/${id}/backups`),
   backupsAll: () => request('/api/backups'),
   deleteBackup: (id) => request(`/api/backups/${id}`, { method: 'DELETE' }),
@@ -130,6 +131,7 @@ const api = {
   createTicket: (data) => request('/api/tickets', { method: 'POST', body: data }),
   replyTicket: (id, message) => request(`/api/tickets/${id}/messages`, { method: 'POST', body: { message } }),
   updateTicket: (id, data) => request(`/api/tickets/${id}`, { method: 'PATCH', body: data }),
+  adminAddPort: (id, data) => request(`/api/admin/instances/${id}/ports`, { method: 'POST', body: data }),
   adminTickets: (status) => request('/api/admin/tickets' + (status ? '?status=' + encodeURIComponent(status) : '')),
   adminTicket: (id) => request(`/api/admin/tickets/${id}`),
   adminUpdateTicket: (id, data) => request(`/api/admin/tickets/${id}`, { method: 'PATCH', body: data }),
@@ -143,6 +145,15 @@ const api = {
   updateRole: (id, data) => request(`/api/admin/roles/${id}`, { method: 'PATCH', body: data }),
   deleteRole: (id) => request(`/api/admin/roles/${id}`, { method: 'DELETE' }),
   impersonate: (id) => request(`/api/admin/users/${id}/impersonate`, { method: 'POST', body: {} }),
+
+  // Backwards-compatible aliases used by the legacy standalone pages.
+  getNodes: () => request('/api/nodes'),
+  getNodeMetrics: (id, range = 60) => request(`/api/nodes/${id}/metrics?range=${range}`),
+  getDeployments: () => request('/api/deployments'),
+  getWorkloads: () => request('/api/instances'),
+  getStats: () => request('/api/stats'),
+  deployWorkload: (id, data) => request(`/api/instances/${id}/deploy`, { method: 'POST', body: data || {} }),
+  setWorkloadState: (id, action) => request(`/api/instances/${id}/action`, { method: 'POST', body: { action } }),
 };
 
 window.__LT_API__ = api;

@@ -38,6 +38,16 @@ export async function writeFile(instanceId, filePath, content) {
   return { path: filePath, size: stat.size };
 }
 
+/** Write an uploaded file (base64) safely inside the instance volume. */
+export async function writeBinary(instanceId, filePath, base64) {
+  const target = resolveSafe(instanceId, filePath);
+  const buf = Buffer.from(String(base64 || ''), 'base64');
+  if (buf.length > 32 * 1024 * 1024) throw Object.assign(new Error('file_too_large'), { status: 413 });
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, buf);
+  return { path: filePath, size: buf.length };
+}
+
 export async function fileOperation(instanceId, op, filePath, payload) {
   const target = resolveSafe(instanceId, filePath);
   switch (op) {
@@ -74,8 +84,13 @@ export async function storageUsage(instanceId) {
 
 export async function createBackup(instanceId, backupId) {
   const fsExtra = await import('node:child_process');
-  const out = path.join((await import('./docker.js')).DATA_ROOT, 'backups', `${backupId}.tar.gz`);
+  const safeId = String(backupId || '').replace(/[^A-Za-z0-9_-]/g, '');
+  if (!safeId) throw Object.assign(new Error('invalid_backup_id'), { status: 400 });
+  const out = path.join((await import('./docker.js')).DATA_ROOT, 'backups', `${safeId}.tar.gz`);
   const source = instanceDir(instanceId);
+  // A service with no declared volumes may have no directory yet — still
+  // produce a valid (empty) backup instead of failing with "tar exited 2".
+  fs.mkdirSync(source, { recursive: true });
   fs.mkdirSync(path.dirname(out), { recursive: true });
   await new Promise((resolve, reject) => {
     const proc = fsExtra.spawn('tar', ['-czf', out, '-C', source, '.'], { stdio: 'ignore' });

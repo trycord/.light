@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
+import 'dotenv/config';
 
+const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@trycord.dev';
+const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD || 'LightAdmin2026!';
 const base = process.env.LIGHT_TEST_URL || 'http://127.0.0.1:5858';
 async function req(route, options = {}) {
   const r = await fetch(base + route, {
@@ -12,7 +15,7 @@ async function req(route, options = {}) {
   return { status: r.status, body: await r.json().catch(() => ({})) };
 }
 async function login() {
-  const r = await req('/api/auth/login', { method: 'POST', body: { email: process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@trycord.dev', password: process.env.BOOTSTRAP_ADMIN_PASSWORD || 'LightAdmin2026!' } });
+  const r = await req('/api/auth/login', { method: 'POST', body: { email: adminEmail, password: adminPassword } });
   return r.body.token;
 }
 
@@ -28,31 +31,36 @@ function totp(secret, counter = Math.floor(Date.now() / 30000)) {
 }
 
 test('2FA setup produces a valid secret and enabling requires a correct code', async () => {
-  const token = await login();
-  const setup = await req('/api/features/2fa/setup', { method: 'POST', token, body: {} });
-  assert.equal(setup.status, 200);
-  assert.ok(setup.body.secret && setup.body.secret.length >= 16);
-  const bad = await req('/api/features/2fa/enable', { method: 'POST', token, body: { code: '000000' } });
-  assert.ok(bad.status === 400 || bad.body.enabled === false, 'wrong code must not enable 2FA');
-  // Enable with a real TOTP code.
-  const code = totp(setup.body.secret);
-  const enabled = await req('/api/features/2fa/enable', { method: 'POST', token, body: { code } });
-  assert.equal(enabled.status, 200);
-  assert.equal(enabled.body.enabled, true);
-  assert.equal(enabled.body.backupCodes.length, 8);
-  // Status reflects enabled.
-  const status = await req('/api/features/2fa/status', { token });
-  assert.equal(status.body.enabled, true);
-  // Login now requires 2FA code.
-  const noCode = await req('/api/features/2fa/login', { method: 'POST', body: { email: 'admin@trycord.dev', password: 'LightAdmin2026!' } });
-  assert.equal(noCode.status, 401);
-  const withCode = await req('/api/features/2fa/login', { method: 'POST', body: { email: 'admin@trycord.dev', password: 'LightAdmin2026!', code: totp(setup.body.secret) } });
-  assert.equal(withCode.status, 200);
-  assert.ok(withCode.body.token);
-  // Disable again with a fresh code.
-  const disabled = await req('/api/features/2fa/disable', { method: 'POST', token, body: { code: totp(setup.body.secret) } });
-  assert.equal(disabled.status, 200);
-  assert.equal(disabled.body.enabled, false);
+  // Use a throwaway user so a failure can never leave the shared admin locked behind 2FA.
+  const email = `2fa-${Date.now().toString(36)}@test.dev`, password = 'twofa-password-123';
+  const reg = await req('/api/auth/register', { method: 'POST', body: { email, password, name: '2FA Test' } });
+  assert.equal(reg.status, 201);
+  const token = reg.body.token;
+  let secret = '';
+  try {
+    const setup = await req('/api/features/2fa/setup', { method: 'POST', token, body: {} });
+    assert.equal(setup.status, 200);
+    assert.ok(setup.body.secret && setup.body.secret.length >= 16);
+    secret = setup.body.secret;
+    const bad = await req('/api/features/2fa/enable', { method: 'POST', token, body: { code: '000000' } });
+    assert.ok(bad.status === 400 || bad.body.enabled === false, 'wrong code must not enable 2FA');
+    const enabled = await req('/api/features/2fa/enable', { method: 'POST', token, body: { code: totp(secret) } });
+    assert.equal(enabled.status, 200);
+    assert.equal(enabled.body.enabled, true);
+    assert.equal(enabled.body.backupCodes.length, 8);
+    const status = await req('/api/features/2fa/status', { token });
+    assert.equal(status.body.enabled, true);
+    const noCode = await req('/api/features/2fa/login', { method: 'POST', body: { email, password } });
+    assert.equal(noCode.status, 401);
+    const withCode = await req('/api/features/2fa/login', { method: 'POST', body: { email, password, code: totp(secret) } });
+    assert.equal(withCode.status, 200);
+    assert.ok(withCode.body.token);
+    const disabled = await req('/api/features/2fa/disable', { method: 'POST', token, body: { code: totp(secret) } });
+    assert.equal(disabled.status, 200);
+    assert.equal(disabled.body.enabled, false);
+  } finally {
+    if (secret) await req('/api/features/2fa/disable', { method: 'POST', token, body: { code: totp(secret) } }).catch(() => {});
+  }
 });
 
 test('payment providers are honest when unconfigured', async () => {

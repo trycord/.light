@@ -118,7 +118,7 @@ async function init() {
       window.dispatchEvent(new CustomEvent('lt:toast', { detail: { message: 'Console session requested for ' + name, type: 'info' } }));
     } else if (action === 'restart') {
       if (id) {
-        window.__LT_API__().setWorkloadState(id, 'restart').then(function () {
+        window.__LT_API__.setWorkloadState(id, 'restart').then(function () {
           window.dispatchEvent(new CustomEvent('lt:toast', { detail: { message: 'Restart queued for ' + name, type: 'info' } }));
         });
       } else {
@@ -126,7 +126,7 @@ async function init() {
       }
     } else if (action === 'stop') {
       if (id) {
-        window.__LT_API__().setWorkloadState(id, 'stop').then(function () {
+        window.__LT_API__.setWorkloadState(id, 'stop').then(function () {
           window.dispatchEvent(new CustomEvent('lt:toast', { detail: { message: 'Stop signal sent to ' + name, type: 'warning' } }));
         });
       } else {

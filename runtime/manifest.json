@@ -9,7 +9,7 @@
     "bun":      { "versions": { "1.2": "/opt/runtimes/bun/1.2.2" } },
     "deno":     { "versions": { "2.0": "/opt/runtimes/deno/2.0.0" } },
     "python":   { "versions": { "3.12": "/opt/runtimes/python/3.12.9/bin" } },
-    "java":     { "versions": { "17": "/usr/lib/jvm/java-17-openjdk-amd64/bin" } },
+    "java":     { "versions": { "17": "/opt/runtimes/java/current/bin" } },
     "dotnet":   { "versions": { "8": "/opt/runtimes/dotnet/8.0.13" } },
     "go":       { "versions": { "1.23": "/opt/runtimes/go/1.23.6/bin" } },
     "rust":     { "versions": { "1.84": "/opt/runtimes/rust/1.84.1/bin" } },
