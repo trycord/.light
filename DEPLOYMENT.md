@@ -63,6 +63,49 @@ docker push trycd/trycord-light:latest
 docker push trycd/trycord-light:shade
 ```
 
+## Linking a second machine as a Shade node (distributed testing)
+
+The control plane can schedule workloads across multiple Shade nodes. A second,
+higher-powered machine can join as a node without sharing any control-plane
+secrets beyond its own node token.
+
+**On the main machine** — ensure the control plane is reachable from the second
+machine on port `5858` (firewall / VPN / tunnel). The node agent talks to
+`http://<control-plane>:5858/api/agent/*` with its node token.
+
+**On the second machine**:
+
+```bash
+# Point at the main control plane
+export CONTROL_URL=http://<main-machine-ip>:5858
+export BOOTSTRAP_ADMIN_EMAIL=admin@trycord.dev
+export BOOTSTRAP_ADMIN_PASSWORD='...'
+export SHADE_NODE_NAME=big-machine
+
+npm run link-node     # or: bash scripts/link-node.sh
+```
+
+The script logs in, registers (or reuses) the node, writes a `0600` env file to
+`/tmp/light-shade.env`, and prints the exact `docker run` command:
+
+```bash
+docker run -d --name light-shade --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --env-file /tmp/light-shade.env \
+  trycd/trycord-light:shade
+```
+
+**Verify** on the main machine: the node appears in *Admin → Infrastructure →
+Nodes* as `online`, with real CPU/RAM/disk heartbeats. Shade selects online
+nodes by lowest load, so new services land on the least busy machine.
+
+Notes:
+- The Docker socket is mounted **only** in the Shade container — never expose it
+  to customers or the control-plane service.
+- Re-running `link-node.sh` with the same `SHADE_NODE_NAME` reuses the node token
+  (idempotent), so it is safe to run again after a machine rebuild.
+- Use distinct names (`big-machine`, `gpu-node`, etc.) for distinct machines.
+
 ## Verification performed
 
 - Platform image: `/health` ok, `/`, `/login`, `/admin` all 200, `/api/branding` and admin login functional.
