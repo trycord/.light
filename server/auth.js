@@ -16,7 +16,18 @@ export function signToken(user, options = {}) {
 }
 
 export function verifyToken(token) {
-  return jwt.verify(token, config.jwtSecret, { audience: AUDIENCE, issuer: ISSUER });
+  try {
+    return jwt.verify(token, config.jwtSecret, { audience: AUDIENCE, issuer: ISSUER });
+  } catch (error) {
+    // JsonWebTokenError / TokenExpiredError have no HTTP status. Letting them
+    // bubble makes the global error handler return a 500 for a bad or expired
+    // bearer token — translate to a proper 401 instead.
+    if (error instanceof jwt.JsonWebTokenError || error instanceof jwt.NotBeforeError) {
+      throw unauthorized('invalid_token');
+    }
+    if (error instanceof jwt.TokenExpiredError) throw unauthorized('token_expired');
+    throw error;
+  }
 }
 
 function bearer(req) {

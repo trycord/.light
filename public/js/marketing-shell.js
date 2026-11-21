@@ -51,6 +51,19 @@ export async function page({ title, description, active, eyebrow, heading, lede,
   const product = esc(b.product || '.light');
   const root = document.getElementById('site');
   if (title) document.title = `${title} — ${product}`;
+  // A thin ember hairline tracks scroll progress — quiet, premium feedback.
+  if (!document.querySelector('.mp-progress')) {
+    const bar = document.createElement('div');
+    bar.className = 'mp-progress';
+    document.body.appendChild(bar);
+    const update = () => {
+      const h = document.documentElement.scrollHeight - window.innerHeight;
+      bar.style.width = (h > 0 ? Math.min(100, (window.scrollY / h) * 100) : 0) + '%';
+    };
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update, { passive: true });
+    update();
+  }
   root.innerHTML = nav(b, active) + `<main id="main">
     <section class="mkt-page-hero"><div class="mkt-hero-grid" style="grid-template-columns:1fr">
       <div><span class="mkt-eyebrow">${esc(eyebrow || product)}</span>

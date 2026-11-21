@@ -41,9 +41,22 @@ const confirmDialog=(t,m,confirmText='Confirm')=>modal(t,`<p style="color:var(--
 const field=(l,n,t='text',v='',x='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><input class="lt-input" id="f-${n}" name="${n}" type="${t}" value="${esc(v)}" ${x}></div>`;
 const selectField=(l,n,opts,sel='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><select class="lt-select" id="f-${n}" name="${n}">${opts.map(o=>{const v=Array.isArray(o)?o[0]:(typeof o==='string'?o:o.value);const t=Array.isArray(o)?o[1]:(typeof o==='string'?o:o.label);return `<option value="${esc(v)}" ${String(v)===String(sel)?'selected':''}>${esc(t)}</option>`;}).join('')}</select></div>`;
 const textarea=(l,n,v='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><textarea class="lt-textarea" id="f-${n}" name="${n}">${esc(v)}</textarea></div>`;
-const loading=()=>'<div class="lt-loading"><span class="lt-spinner"></span>Loading…</div>';
+const loading=()=>`<div class="lt-loading" role="status" aria-live="polite">
+  <div class="mp-skeleton" style="height:34px;width:42%;margin-bottom:18px"></div>
+  <div class="mp-skeleton mp-skeleton-line medium"></div>
+  <div class="mp-skeleton mp-skeleton-line"></div>
+  <div class="mp-skeleton mp-skeleton-line short"></div>
+  <div style="display:flex;align-items:center;gap:10px;margin-top:16px;color:var(--lt-text-muted);font-size:12px">
+    <span class="lt-spinner"></span> Loading…
+  </div>
+</div>`;
 const empty=(t,d,a='')=>`<div class="lt-empty"><div class="lt-empty-icon">◇</div><div class="lt-empty-title">${esc(t)}</div><div class="lt-empty-desc">${esc(d)}</div>${a}</div>`;
-const errState=(e)=>`<div class="lt-error">${esc(e.message||e)}</div>`;
+const errState=(e)=>`<div class="mp-empty" role="alert">
+  <div class="mp-empty-ico">⚠</div>
+  <h3>Something went wrong</h3>
+  <p>${esc(e.message||e)}</p>
+  <button class="lt-btn lt-btn-secondary lt-btn-sm" onclick="location.reload()" style="margin-top:10px">Try again</button>
+</div>`;
 const section=(t,s,c,a='')=>`<div class="lt-card"><div class="lt-card-header"><div><h3 class="lt-h3">${esc(t)}</h3>${s?`<div class="lt-meta">${esc(s)}</div>`:''}</div>${a}</div><div class="lt-card-body">${c}</div></div>`;
 
 /* ---------- auth ---------- */

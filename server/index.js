@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
@@ -43,15 +44,21 @@ const appDir = path.join(__dirname, '..');
 
 const app = express();
 app.disable('x-powered-by');
+// Behind Cloudflare / a reverse proxy, trust the first hop so rate limits and
+// audit logs see the real client IP instead of the proxy address.
+app.set('trust proxy', 1);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
 app.use(cors({ origin: config.env === 'production' ? false : true }));
 app.use(compression());
 // Capture raw body for webhook signature verification via express.json verify hook.
 app.use(express.json({ limit: '12mb', verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); } }));
 
-// Mandatory software identification on every response (cannot be white-labeled away).
+// Mandatory software identification + request correlation on every response.
 const IDENT = softwareIdentification();
 app.use((req, res, next) => {
+  const requestId = String(req.headers['x-request-id'] || '').slice(0, 64) || crypto.randomUUID();
+  req.id = requestId;
+  res.setHeader('X-Request-Id', requestId);
   res.setHeader('X-Powered-By', `${IDENT.software} ${IDENT.version}`);
   res.setHeader('X-Light-Identifier', IDENT.identifier);
   next();
@@ -61,10 +68,12 @@ app.get('/api/branding', (req, res) => res.json(publicBranding()));
 app.get('/api/identify', (req, res) => res.json(IDENT));
 // Observability — admin only, real data from process + database.
 app.get('/api/observability', requireAuth, requireAdmin, asyncRoute(async (req, res) => res.json(observabilitySnapshot())));
-app.get('/health', (req, res) => {
+const healthHandler = (req, res) => {
   const health = combinedHealth();
   res.status(health.status === 'ok' ? 200 : 503).json(health);
-});
+};
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 
 // Node agents report results/heartbeats frequently; exempt them from the
 // browser-oriented rate limit so provisioning never times out under load.
@@ -72,9 +81,20 @@ const apiLimiter = rateLimit({
   windowMs: 60000, max: 600, standardHeaders: true, legacyHeaders: false,
   skip: (req) => Boolean(req.headers['x-node-token']),
 });
+// Brute-force protection for credential endpoints — tighter than the general API.
+const authLimiter = rateLimit({
+  windowMs: 60000, max: 30, standardHeaders: true, legacyHeaders: false,
+  message: { error: 'rate_limited', message: 'Too many attempts. Try again shortly.' },
+});
 const api = express.Router();
 api.use(instrument);
 api.use(apiLimiter);
+api.use((req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+// Only throttle credential endpoints, not every authenticated /auth call.
+api.use('/auth', (req, res, next) => {
+  if (/^\/(login|register|forgot-password|reset-password|verify)$/.test(req.path)) return authLimiter(req, res, next);
+  next();
+});
 api.use('/auth', authRoutes());
 api.use('/instances', instancesRoutes());
 api.use('/nodes', nodesRoutes());
@@ -117,8 +137,21 @@ for (const [from, to] of Object.entries(LEGACY_REDIRECTS)) app.get(from, (req, r
 
 // `index: false` stops static middleware from hijacking `/` with index.html —
 // the explicit route below must serve the public marketing homepage.
-app.use(express.static(path.join(appDir, 'public'), { index: false }));
-app.use('/assets', express.static(path.join(appDir, 'assets')));
+app.use(express.static(path.join(appDir, 'public'), {
+  index: false,
+  setHeaders: (res, filePath) => {
+    // Hashed/static assets may be cached; HTML must always be revalidated so
+    // deployments and branding changes are visible immediately.
+    if (/\.(?:css|js|woff2?|svg|png|webp|ico|avif)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    } else if (/\.html?$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
+app.use('/assets', express.static(path.join(appDir, 'assets'), {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'public, max-age=604800, immutable'),
+}));
 // Clean, human-friendly routes (no .html exposed to visitors).
 const send = (file) => (req, res) => res.sendFile(path.join(appDir, 'public', file));
 
@@ -153,14 +186,28 @@ app.get('/:page.html', (req, res, next) => {
 });
 app.get(/^\/(?!api|health|assets).*/, send('index.html'));
 app.use((req, res) => res.status(404).json({ error: 'not_found' }));
+/** Map unexpected error classes to honest HTTP statuses instead of blanket 500s. */
+function statusForError(error) {
+  if (error instanceof HttpError) return error.status;
+  if (Number.isInteger(error.status) && error.status >= 400 && error.status < 600) return error.status;
+  if (error.type === 'entity.parse.failed' || error instanceof SyntaxError) return 400;
+  if (error.type === 'entity.too.large') return 413;
+  if (typeof error.code === 'string' && error.code.startsWith('SQLITE_CONSTRAINT')) return 409;
+  if (error.code === 'LIMIT_FILE_SIZE') return 413;
+  return 500;
+}
+
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
-  const status = error instanceof HttpError ? error.status : (error.status || 500);
-  const code = error.code || (status === 500 ? 'internal_error' : 'error');
-  if (status >= 500) console.error('[error]', error);
-  // 500 stays opaque, but gateway/timeouts (502/504) carry the node's real
-  // error so the dashboard can show something actionable.
-  res.status(status).json({ error: code, message: status === 500 ? 'internal server error' : (error.message || code) });
+  const status = statusForError(error);
+  const code = error.code && status !== 500 ? error.code : (status === 500 ? 'internal_error' : 'error');
+  if (status >= 500) console.error(`[error] request=${req.id || '-'}`, error);
+  // 500 stays opaque, but actionable client errors carry the real message.
+  res.status(status).json({
+    error: code,
+    message: status === 500 ? 'internal server error' : (error.message || code),
+    requestId: req.id || undefined,
+  });
 });
 
 const server = http.createServer(app);

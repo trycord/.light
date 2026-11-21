@@ -34,7 +34,14 @@ function modal(title,body,opts={}){return new Promise(res=>{
 const confirmDialog=(t,m)=>modal(t,`<p style="font-size:13px;color:var(--lt-text-secondary)">${esc(m)}</p>`,{danger:true,ok:'Confirm'});
 const panel=(t,s,c,a='')=>`<div class="lt-card"><div class="lt-card-header"><div><h3 class="lt-h3">${esc(t)}</h3>${s?`<div class="lt-meta">${esc(s)}</div>`:''}</div>${a}</div><div class="lt-card-body">${c}</div></div>`;
 const table=(cols,rows)=>{const body=Array.isArray(rows)?rows.join(''):(rows||`<tr><td colspan="${cols.length}" class="admin-empty-state">No records</td></tr>`);return `<div class="lt-table-wrap"><table class="admin-table"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;};
-const loading=()=>'<div class="lt-loading"><span class="lt-spinner"></span>Loading…</div>';
+const loading=()=>`<div class="lt-loading" role="status" aria-live="polite">
+  <div class="mp-skeleton" style="height:34px;width:38%;margin-bottom:18px"></div>
+  <div class="mp-skeleton mp-skeleton-line medium"></div>
+  <div class="mp-skeleton mp-skeleton-line"></div>
+  <div class="mp-skeleton mp-skeleton-line short"></div>
+  <div style="display:flex;align-items:center;gap:10px;margin-top:16px;color:var(--lt-text-muted);font-size:12px"><span class="lt-spinner"></span> Loading…</div>
+</div>`;
+const adminErr=(e)=>`<div class="mp-empty" role="alert"><div class="mp-empty-ico">⚠</div><h3>Could not load</h3><p>${esc(e.message||e)}</p><button class="lt-btn lt-btn-secondary lt-btn-sm" onclick="location.reload()" style="margin-top:10px">Try again</button></div>`;
 
 const NAV=[
   {g:'Overview',items:[['dashboard','Dashboard','monitoring','admin.access'],['analytics','Analytics','monitoring','analytics.read']]},
@@ -105,7 +112,7 @@ function setNav(v){root.querySelectorAll('[data-view]').forEach(a=>a.classList.t
 async function render(v){
   stopPoll();currentView=v;const view=root.querySelector('#aView');if(!view)return;
   const R={dashboard:dashboard,analytics:analytics,customers:customers,orders:orders,packages:packages,compatibility:compatibility,system:system,support:support,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,notifications:notifications,roles:roles,settings:settings};
-  view.innerHTML=loading();try{await (R[v]||dashboard)();}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;}}
+  view.innerHTML=loading();try{await (R[v]||dashboard)();}catch(e){view.innerHTML=adminErr(e);}}
 function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 function poll(fn,ms=15000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&admin)fn().catch(()=>{});},ms);}
 
@@ -338,7 +345,7 @@ async function audit(){const view=root.querySelector('#aView');let e=[];try{e=(a
 async function system(){
   const view=root.querySelector('#aView');let s={};
   if(sessionStorage.getItem('lt_restarted')){sessionStorage.removeItem('lt_restarted');toast('Server restarted successfully','success');}
-  try{s=(await api.adminSystem()).system||{};}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;return;}
+  try{s=(await api.adminSystem()).system||{};}catch(e){view.innerHTML=`${adminErr(e)}`;return;}
   const uptime=s.uptime||0;const days=Math.floor(uptime/86400),hours=Math.floor((uptime%86400)/3600),mins=Math.floor((uptime%3600)/60);
   let tunnelRows='<p class="lt-meta">Loading…</p>';
   try{
@@ -374,7 +381,7 @@ async function system(){
 
 async function settings(){
   const view=root.querySelector('#aView');let s={};
-  try{s=(await api.adminSettings()).settings||{};}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;return;}
+  try{s=(await api.adminSettings()).settings||{};}catch(e){view.innerHTML=`${adminErr(e)}`;return;}
   const sections={general:'General & platform',payments:'Payments',cloudflare:'Cloudflare tunnels',mail:'Email / mail delivery',proxy:'Reverse proxy & TLS',runtime:'Runtime image'};
   const fieldFor=(k,m)=>{
     const v=m.value??'';
@@ -403,7 +410,7 @@ async function settings(){
 
 async function analytics(){
   const view=root.querySelector('#aView');let a;
-  try{a=await api.analytics();}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;return;}
+  try{a=await api.analytics();}catch(e){view.innerHTML=`${adminErr(e)}`;return;}
   const s=a.summary||{};
   const cards=[['Users',s.users,'registered'],['Workspaces',s.teams,'total'],['Services',s.instances,`${s.runningInstances} running`],
     ['Nodes online',`${s.nodesOnline}/${s.nodes}`,'connected'],['Open tickets',s.openTickets,'awaiting reply'],

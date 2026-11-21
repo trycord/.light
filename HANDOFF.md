@@ -167,6 +167,12 @@ start.js            - process supervisor
 - Settings apply immediately (no restart). Admin restart button restarts the full stack via `scripts/restart-all.sh`. Shade heartbeats retry before reporting degraded.
 - "Sell with Connect" link removed from customer-facing footers.
 
+**Masterpiece hardening pass (latest):**
+- Fixed an "internal server error" on authenticated calls: malformed/expired JWTs threw `JsonWebTokenError` without an HTTP status, so the global handler returned 500. `verifyToken` now maps them to 401 (`invalid_token` / `token_expired`).
+- Backend: request correlation IDs (`X-Request-Id`) on every response, `/api/health` alias, `trust proxy`, scoped brute-force rate limit on credential endpoints, no-store on API responses, immutable caching for static assets, and global error normalization (parse errors → 400, payloads → 413, SQLite constraints → 409) instead of blanket 500s.
+- Visual: global `styles/polish.css` loaded on all 18 pages — brand focus rings, selection colors, refined scrollbars, ambient hero glow/grid, gradient-text and glass utilities, shimmer skeletons, status pulses, empty/error states, scroll-progress hairline, and a strict reduced-motion fallback. Dashboard and admin loaders/errors upgraded from bare spinners to skeletons and actionable empty states.
+- No AI indicators exist in any product UI, copy, asset, or code comment (verified by scanning all rendered pages and source files).
+
 **Still outstanding:**
 - ACME certificate issuance delegated to Caddy (not native).
 - Payment methods beyond Stripe not added (PayPal etc listed as possibilities only).
