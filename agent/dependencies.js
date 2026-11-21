@@ -4,7 +4,9 @@
 // mounted at /home/container; never on the host and never as root.
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 import { getDocker } from './docker.js';
+import { checkBackend } from './backend.js';
 import { instanceDir } from './docker.js';
 
 const CUSTOMER_ROOT = '/home/container';
@@ -60,9 +62,42 @@ export function detectProject(instanceId) {
  * Run the detected install command inside a short-lived container using the
  * same runtime image as the service. Returns structured progress + logs.
  */
+/**
+ * Fallback when no execution backend is reachable (e.g. single-container
+ * deployment without a mounted Docker socket). Runs the package manager
+ * directly in the agent's own isolated container against the customer dir.
+ * The agent already runs as uid 1000 and never as root in this mode.
+ */
+async function installDependenciesLocal({ instanceId, hostDir, command, packageManager, env = {} }) {
+  const started = Date.now();
+  const logs = [];
+  const cleanEnv = {
+    ...process.env,
+    HOME: hostDir,
+    npm_config_cache: '/tmp/npm-cache',
+    ...Object.fromEntries(Object.entries(env || {}).filter(([k]) => /^(NODE_ENV|NPM_CONFIG|PNPM|YARN|PYTHON|PIP|COMPOSER|BUNDLE|MAVEN|GRADLE|CARGO|GO)/i.test(k))),
+  };
+  const exitCode = await new Promise((resolve) => {
+    const child = spawn('/bin/sh', ['-c', command], { cwd: hostDir, env: cleanEnv });
+    child.stdout.on('data', (c) => logs.push(c.toString('utf8')));
+    child.stderr.on('data', (c) => logs.push(c.toString('utf8')));
+    child.on('error', (error) => { logs.push(`spawn_error: ${error.message}\n`); resolve(-1); });
+    child.on('exit', (code) => resolve(code ?? -1));
+  });
+  return {
+    ok: exitCode === 0, exitCode, packageManager, command, mode: 'local',
+    durationMs: Date.now() - started, output: logs.join('').slice(-MAX_LOG),
+  };
+}
+
 export async function installDependencies({ instanceId, image, env = {}, command, packageManager }) {
-  const d = getDocker();
   const hostDir = path.join(instanceDir(instanceId), 'app');
+  const backend = await checkBackend();
+  if (!backend.ok) {
+    console.warn('[shade] deps backend unavailable, using local install:', backend.error);
+    return installDependenciesLocal({ instanceId, hostDir, command, packageManager, env });
+  }
+  const d = getDocker();
   // Customer files are written by the privileged agent; hand them to uid 1000
   // so the unprivileged install container can create node_modules/.venv, etc.
   try {
