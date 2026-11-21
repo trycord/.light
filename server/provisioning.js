@@ -77,8 +77,12 @@ export function provisionOrder(orderId) {
     const memory = Math.max(128, Number(snapshot.memoryMb) || 512);
     const disk = Math.max(1, Number(snapshot.diskGb) || 4);
     const network = Number(snapshot.networkGb) || 0;
-    const command = snapshot.command || (software?.startupTemplate ? software.startupTemplate
-      .replace('${memoryMb}', String(memory)) : runtime.command) || '';
+    // Image-based packages (Trycord) carry their app in the image; Shade's
+    // package installer supplies the correct absolute startup command. Passing
+    // a relative command here would execute it from the /home/container mount,
+    // where the baked application does not live.
+    const command = imageBased ? '' : (snapshot.command || (software?.startupTemplate
+      ? software.startupTemplate.replace('${memoryMb}', String(memory)) : runtime.command) || '');
     const env = { ...(runtime.runtimeEnv || {}), ...(software ? json(order.package_config, {}) : {}) };
     const portSpecs = software?.ports?.length ? software.ports : runtime.exposedPorts;
     const portsFromCatalog = (portSpecs || []).map((p) => {

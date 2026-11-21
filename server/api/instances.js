@@ -201,9 +201,17 @@ export function instancesRoutes() {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
     await dispatch(row.node_id, 'instance.reinstall', {
-      ...withContainerId(row), teamId: row.team_id, name: row.name, image: row.image, command: row.command,
+      ...withContainerId(row), teamId: row.team_id, name: row.name, image: row.image,
+      // Image-based packages (Trycord) supply their own startup command from
+      // the installer; a stale relative command would run from /home/container.
+      command: row.package_id === 'trycord' ? '' : row.command,
       env: json(row.env_json, {}), ports: json(row.ports_json, []), volumes: json(row.volumes_json, []),
       cpu: row.cpu_cores, memory: row.memory_mb, disk: row.disk_gb, version: row.version,
+      package: row.package_id ? {
+        id: row.package_id, installKind: row.package_id === 'trycord' ? 'trycord' : undefined,
+        version: row.package_version, name: row.package_id, runtimeVersion: row.environment_version,
+        config: json(row.package_config, {}),
+      } : null,
     }, row.id);
     getDb().prepare("UPDATE instances SET status = 'stopped', updated_at = ? WHERE id = ?").run(now(), row.id);
     audit(req, 'instance.reinstall', 'instance', row.id, {});

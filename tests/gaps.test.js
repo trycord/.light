@@ -21,7 +21,7 @@ async function admin() {
 
 test('node tunnel API reports per-node state without exposing secrets', async () => {
   const token = await admin();
-  const r = await req('/api/cloudflare/tunnels', { token });
+  const r = await req('/api/features/cloudflare/tunnels', { token });
   assert.equal(r.status, 200);
   assert.ok(Array.isArray(r.body.tunnels));
   for (const t of r.body.tunnels) {

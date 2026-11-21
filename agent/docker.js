@@ -92,6 +92,26 @@ function envArray(env) {
   return Object.entries(env || {}).map(([key, value]) => `${key}=${value}`);
 }
 
+/**
+ * Convert a catalogue-style healthcheck ({ path, interval, ... }) into the
+ * Docker Healthcheck object the API expects. Images ship their own HEALTHCHECK
+ * too, but the control plane supplies one for observability, so it must be a
+ * valid Test command rather than a raw `{ path }` object (which Docker rejects).
+ */
+function normalizeHealthcheck(hc) {
+  if (!hc || !Object.keys(hc).length) return null;
+  if (Array.isArray(hc.Test) && hc.Test.length) return hc;
+  const path = String(hc.path || '/').replace(/[^A-Za-z0-9/_\-.]/g, '').slice(0, 200) || '/';
+  const probe = `node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'${path}').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"`;
+  return {
+    Test: ['CMD-SHELL', probe],
+    Interval: Number(hc.interval) || 30e9,
+    Timeout: Number(hc.timeout) || 5e9,
+    Retries: Number(hc.retries) || 3,
+    StartPeriod: Number(hc.startPeriod) || 20e9,
+  };
+}
+
 function parsePort(port) {
   const match = String(port).match(/^(\d+)(?:\/(tcp|udp))?$/);
   if (!match) return null;
@@ -177,7 +197,7 @@ export function buildContainerConfig(payload) {
   if (security?.rootless) config.User = '10001:10001';
   // A minimal default probe keeps Docker health status meaningful even for
   // runtimes that do not ship a catalog-specific healthcheck.
-  config.Healthcheck = (healthcheck && Object.keys(healthcheck).length) ? healthcheck : {
+  config.Healthcheck = normalizeHealthcheck(healthcheck) || {
     Test: ['CMD-SHELL', 'test -d /proc/1'],
     Interval: 30000000000, Timeout: 5000000000, Retries: 3, StartPeriod: 10000000000,
   };
@@ -232,6 +252,7 @@ export async function createInstance(payload) {
     command: payload.command || (installResult?.startup) || tpl.command || payload.defaultCommand || '',
     workingDir: appTarget,
     env: { ...(DEFAULT_ENV[payload.environmentId] || {}), ...(payload.env || {}),
+      ...(installResult?.env && !Array.isArray(installResult.env) ? installResult.env : {}),
       LIGHT_PORT: String((ports || [])[0]?.container || 3000) },
   };
   const config = buildContainerConfig(enriched);

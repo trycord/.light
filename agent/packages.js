@@ -77,18 +77,39 @@ export async function installPackage({ installKind, name, version, runtimeVersio
   // approved Docker image — no artifact is downloaded into the customer volume.
   // We only prepare persistent directories and write runtime config.
   if (installKind === 'trycord') {
+    // The application binary is baked into the custom image at /app/backend.
+    // The customer-visible workspace (/home/container -> this dir) holds only
+    // persistent data + config; the runtime layer stays replaceable.
     fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'uploads'), { recursive: true });
-    const env = [
-      'NODE_ENV=production', 'PORT=9971', 'HOST=0.0.0.0', 'DB_CLIENT=sqlite',
-      'DB_FILE=/home/container/data/trycord.db', 'UPLOAD_DIR=/home/container/uploads',
-      'SERVER_HOST_TYPE=express', 'MAIL_MODE=' + String(config?.mailMode || 'log'),
-      'TRYCORD_INSTANCE_ID=' + String(config?.instanceName || 'trycord').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60),
-      'JWT_SECRET=' + crypto.randomBytes(32).toString('hex'),
-    ];
-    if (config?.publicUrl) env.push('TRYCORD_PUBLIC_URL=' + String(config.publicUrl).slice(0, 500));
-    fs.writeFileSync(path.join(dir, '.env'), env.join('\n') + '\n', { mode: 0o600 });
-    return { installed: true, imageBased: true, startup: 'node src/server.js', env };
+    const envFile = path.join(dir, '.env');
+    let jwt = '';
+    try {
+      const prior = fs.readFileSync(envFile, 'utf8');
+      jwt = (prior.match(/^JWT_SECRET=(.+)$/m) || [])[1] || '';
+    } catch { /* first install */ }
+    if (!jwt) jwt = crypto.randomBytes(32).toString('hex');
+    const env = {
+      NODE_ENV: 'production', PORT: '9971', HOST: '0.0.0.0', DB_CLIENT: 'sqlite',
+      DB_FILE: '/home/container/data/trycord.db', UPLOAD_DIR: '/home/container/uploads',
+      SERVER_HOST_TYPE: 'express', MAIL_MODE: String(config?.mailMode || 'log'),
+      TRYCORD_INSTANCE_ID: String(config?.instanceName || 'trycord').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60) || 'trycord',
+      JWT_SECRET: jwt,
+      DOTENV_CONFIG_PATH: '/home/container/.env',
+      TINI_SUBREAPER: '1',
+    };
+    if (config?.publicUrl) env.TRYCORD_PUBLIC_URL = String(config.publicUrl).slice(0, 500);
+    fs.writeFileSync(envFile, Object.entries(env).map(([k, v]) => `${k}=${v}`).join('\n') + '\n', { mode: 0o600 });
+    // The image runs as the non-root `node` user (uid 1000). The agent creates
+    // these host-side paths as root, so hand them to uid 1000 or SQLite cannot
+    // create its database and the container crash-loops on "unable to open file".
+    const chown = (p) => { try { fs.chownSync(p, 1000, 1000); } catch { /* non-linux / already owned */ } };
+    chown(dir); chown(path.join(dir, 'data')); chown(path.join(dir, 'uploads')); chown(envFile);
+    return {
+      installed: true, imageBased: true,
+      startup: 'cd /app/backend && exec node src/server.js',
+      env,
+    };
   }
   fs.mkdirSync(dir, { recursive: true });
   let result;

@@ -460,7 +460,7 @@ function seed() {
       id:'trycord', name:'Trycord', description:'The real Trycord community platform (API + WebSocket + web client)',
       category:'trycord', product_id:'trycord', runtime_id:'node', install_kind:'trycord',
       versions:JSON.stringify(['7.2.0']), default_version:'7.2.0',
-      startup_template:'node src/server.js',
+      startup_template:'cd /app/backend && exec node src/server.js',
       config_schema:JSON.stringify({
         instanceName:{type:'text',label:'Instance name',default:'My Trycord'},
         mailMode:{type:'select',label:'Mail mode',options:['log','smtp'],default:'log'},
