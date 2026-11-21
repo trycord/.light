@@ -38,7 +38,7 @@ function footer(b) {
         ${['system','light','dark','high-contrast'].map(t => `<a href="#" data-theme-set="${t}" style="display:inline;margin-right:6px">${t}</a>`).join('')}</div></div>
     <div><h4>Platform</h4><a href="/hosting">Hosting</a><a href="/pricing">Plans</a><a href="/features">Features</a><a href="/docs">Documentation</a></div>
     <div><h4>Company</h4><a href="/about">About</a><a href="/contact">Contact & support</a><a href="/legal">Legal</a></div>
-    <div><h4>Account</h4><a href="/login">Dashboard</a><a href="/checkout">Checkout</a><a href="/connect">Sell with Connect</a></div>
+    <div><h4>Account</h4><a href="/login">Dashboard</a><a href="/checkout">Checkout</a></div>
   </div><div class="mkt-foot-in mkt-wm">
     <span>${esc(b.attribution || '.light is a Trycord product')} · © 2026 Trycord</span>
     <span><a href="https://trycord.dev" target="_blank" rel="noopener">POWERED BY TRYCORD</a> · <span class="lt-wm-mark">ΔΓΟ</span></span>

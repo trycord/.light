@@ -52,16 +52,12 @@ export function provisionOrder(orderId) {
 
     // The purchased software package determines the runtime and version.
     const software = order.package_id ? packageForProvisioning(order.package_id, order.package_version) : null;
-    // Image-based packages (Trycord) carry the whole application in their
-    // approved custom image; the runtime catalogue is only a fallback.
-    const imageBased = software?.id === 'trycord';
-    const imageRef = imageBased ? 'trycord/light-trycord:1.0.0' : null;
-    const runtime = imageBased ? {
-      environmentId: 'node', environmentName: 'Trycord', version: software.version,
-      imageRef, command: software.startupTemplate || 'node src/server.js',
-      workingDir: '/app', exposedPorts: software.ports || ['9971/tcp'],
-      digest: '', runtimeEnv: {}, healthcheck: software.healthcheck || { path: '/api/health' }, security: {},
-    } : resolveRuntime(db, {
+    // The runtime catalogue is the single source of truth for the exact image.
+    // The Trycord package auto-selects the custom `trycord` runtime; no special
+    // image is hardcoded here. Image-based packages only leave the startup
+    // command empty so Shade's installer supplies the absolute launch command.
+    const imageBased = software?.installKind === 'trycord';
+    const runtime = resolveRuntime(db, {
       environmentId: software?.runtimeId || order.environment_id,
       version: software?.runtimeVersion || order.runtime_version,
     });

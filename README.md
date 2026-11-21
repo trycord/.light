@@ -101,6 +101,8 @@ state and never pretends an operation succeeded.
 - Shade reports real container state every 20s (`/api/agent/instances/health`); the panel shows it as service health, and in-progress commands are recovered after an agent restart.
 - Run `npm run pin:digests -- --apply` to resolve Docker Hub image references to digests for the approved-image mode.
 - Runtime/version changes require an explicit migration (`POST /api/instances/:id/runtime` with `confirm: MIGRATE`) and preserve data volumes.
+- **Trycord Hosting** is a first-class product backed by a custom image (`packages/trycord/`, `trycord/light-trycord:1.0.0`, built with `docker build -f packages/trycord/Dockerfile packages/trycord`). It is registered as product + package + custom runtime `trycord`; selecting it auto-selects the runtime at checkout. The real app runs from the image while persistent data lives in `/home/container`.
+- Saving settings applies immediately. The admin restart button restarts the whole product (control plane + Shade + watchdog) via `scripts/restart-all.sh`.
 
 ## Plans & resources
 

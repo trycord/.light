@@ -458,7 +458,7 @@ function seed() {
   if (!db.prepare("SELECT id FROM software_packages WHERE id = 'trycord'").get()) {
     insertPackage.run({
       id:'trycord', name:'Trycord', description:'The real Trycord community platform (API + WebSocket + web client)',
-      category:'trycord', product_id:'trycord', runtime_id:'node', install_kind:'trycord',
+      category:'trycord', product_id:'trycord', runtime_id:'trycord', install_kind:'trycord',
       versions:JSON.stringify(['7.2.0']), default_version:'7.2.0',
       startup_template:'cd /app/backend && exec node src/server.js',
       config_schema:JSON.stringify({
@@ -470,7 +470,7 @@ function seed() {
       healthcheck:JSON.stringify({path:'/api/health'}), status:'published', featured:1, sort_order:0,
       created_at:ts, updated_at:ts,
     });
-    insertVersion.run(id('pver'), 'trycord', '7.2.0', '', '', '', '22', 'published', ts);
+    insertVersion.run(id('pver'), 'trycord', '7.2.0', '', '7.2.0', 'published', ts);
     db.prepare('INSERT OR IGNORE INTO product_packages (product_id, package_id, required, created_at) VALUES (?, ?, 1, ?)')
       .run('trycord', 'trycord', ts);
   }
@@ -554,6 +554,14 @@ function seed() {
       {node:'node:22-bookworm',python:'python:3.12-slim-bookworm'},'npm start',[],{build:1,pm:['npm'],featured:1,order:25}),
     E('static-site','Static Site','web','Static websites served by Nginx','◇',['latest'],'latest',
       'nginx:bookworm','',['80'],{dir:'/usr/share/nginx/html',featured:1,order:26}),
+    // Custom .light application image: the real Trycord platform, built from
+    // Debian bookworm-slim. Selecting this runtime uses our own image, and the
+    // Trycord package auto-selects it (no customer infrastructure choices).
+    E('trycord','Trycord','app','Trycord community platform (custom Debian image)','◆',['7.2.0'],'7.2.0',
+      { '7.2.0':'trycord/light-trycord:1.0.0' },'node src/server.js',['9971'],
+      { dir:'/app/backend', healthcheck:{ path:'/api/health' },
+        env:{ NODE_ENV:'production', PORT:'9971', DB_CLIENT:'sqlite' },
+        storage:{ persistent:['/data','/app/uploads'] }, featured:1, order:27 }),
   ];
   // Refresh the built-in catalog once on upgrade so existing installs migrate
   // off legacy images; after that, administrator edits to environments persist.
@@ -574,6 +582,25 @@ function seed() {
   if (!db.prepare("SELECT name FROM migrations WHERE name = 'java21_runtime'").get()) {
     db.prepare("UPDATE environments SET versions = '[\"17\",\"21\"]', default_version = '21', version_images = '{\"17\":\"openjdk:17-slim\",\"21\":\"eclipse-temurin:21-jre\"}', image = 'eclipse-temurin:21-jre', updated_at = ? WHERE id = 'java'").run(ts);
     db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('java21_runtime', ?)").run(ts);
+  }
+
+  // Native Trycord runtime reconciliation. Upgrades existing installs so the
+  // custom runtime is resolvable (earlier seeds left the package on `node`
+  // with no package_versions row, which broke runtime auto-selection).
+  if (!db.prepare("SELECT name FROM migrations WHERE name = 'trycord_runtime'").get()) {
+    const trycordEnv = envs.find((e) => e.id === 'trycord');
+    if (trycordEnv) { insertEnv.run(trycordEnv); updateEnv.run(trycordEnv); }
+    if (db.prepare("SELECT id FROM software_packages WHERE id = 'trycord'").get()) {
+      db.prepare("UPDATE software_packages SET runtime_id = 'trycord', startup_template = ?, healthcheck = ?, ports = ?, storage = ?, updated_at = ? WHERE id = 'trycord'")
+        .run('cd /app/backend && exec node src/server.js', JSON.stringify({ path: '/api/health' }),
+          JSON.stringify(['9971/tcp']), JSON.stringify({ persistent: ['/data', '/app/uploads'] }), ts);
+    }
+    db.prepare('INSERT OR IGNORE INTO package_versions (id, package_id, version, download_url, runtime_version, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id('pver'), 'trycord', '7.2.0', '', '7.2.0', 'published', ts);
+    if (db.prepare("SELECT id FROM products WHERE id = 'trycord'").get()) {
+      db.prepare("INSERT OR IGNORE INTO product_packages (product_id, package_id, required, created_at) VALUES ('trycord', 'trycord', 1, ?)").run(ts);
+    }
+    db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('trycord_runtime', ?)").run(ts);
   }
 
   // Official Trycord release (only when a real image is configured by the operator).

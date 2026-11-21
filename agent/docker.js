@@ -259,7 +259,9 @@ export async function createInstance(payload) {
   if (!config.HostConfig.Binds.some((b) => b.endsWith(`:${appTarget}`))) {
     config.HostConfig.Binds.push(`${appDir}:${appTarget}`);
   }
-  if (tpl.workdir && tpl.workdir !== appTarget &&
+  // Image-based packages (Trycord) carry their app inside the image. Binding the
+  // scaffold's generic workdir over /app would hide the baked application.
+  if (!installResult?.imageBased && tpl.workdir && tpl.workdir !== appTarget &&
       !config.HostConfig.Binds.some((b) => b.endsWith(`:${tpl.workdir}`))) {
     config.HostConfig.Binds.push(`${appDir}:${tpl.workdir}`);
   }

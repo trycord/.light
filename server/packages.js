@@ -28,8 +28,16 @@ export function optionsForProduct(productId) {
     const versions = db.prepare("SELECT version, runtime_version, status FROM package_versions WHERE package_id = ? AND status='published' ORDER BY created_at").all(p.id);
     return { ...viewPackage(p), versions: versions.length ? versions.map((v) => ({ version: v.version, runtimeVersion: v.runtime_version })) : json(p.versions, []) };
   });
-  const runtimes = [...new Set(packages.map((p) => p.runtimeId).filter(Boolean))];
-  return { packages, runtimes };
+  const runtimeIds = [...new Set(packages.map((p) => p.runtimeId).filter(Boolean))];
+  // Rich runtime details let the checkout show what the backend auto-selected
+  // for a package without the customer ever choosing infrastructure.
+  const runtimeCatalog = runtimeIds.map((rid) => {
+    const env = db.prepare("SELECT id, name, category, versions, default_version FROM environments WHERE id = ? AND status = 'published'").get(rid);
+    return env
+      ? { id: env.id, name: env.name, category: env.category, versions: json(env.versions, []), defaultVersion: env.default_version }
+      : { id: rid, name: rid, versions: [] };
+  });
+  return { packages, runtimes: runtimeIds, runtimeCatalog };
 }
 
 /** Validate a customer's package selection against the purchased product. */

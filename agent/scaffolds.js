@@ -68,6 +68,9 @@ export function scaffold(environmentId) {
     swift: { files: { 'main.swift': swiftApp }, command: 'swift main.swift' },
     'static-site': { files: { 'index.html': staticHtml }, command: '', workdir: '/usr/share/nginx/html' },
     'discord-bot': { files: { 'package.json': pkg('node index.js'), 'index.js': nodeApp }, command: 'npm start' },
+    // The Trycord app is baked into its custom image; no scaffold files or
+    // alternate workdir bind are needed (the customer workspace holds data only).
+    trycord: { files: {}, command: '' },
   };
   return table[environmentId] || { files: {}, command: '', workdir: '/app' };
 }

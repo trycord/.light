@@ -32,11 +32,12 @@ setTimeout(() => {
   }
 }, 8000);
 const money = (cents, cur='USD') => new Intl.NumberFormat(undefined, { style: 'currency', currency: cur || 'USD' }).format((Number(cents)||0)/100);
+const badgeLite = (text) => `<span class="lt-badge lt-badge-neutral" style="margin-left:8px">${esc(text)}</span>`;
 const params = new URLSearchParams(location.search);
 const productSlug = params.get('product') || '';
 const planId = params.get('plan') || '';
 const interval = params.get('interval') === 'yearly' ? 'yearly' : 'monthly';
-const state = { product: null, plans: [], environments: [], plan: null, options: { packages: [] }, key: sessionStorage.getItem('lt_checkout_key') || newId() };
+const state = { product: null, plans: [], environments: [], plan: null, options: { packages: [], runtimeCatalog: [] }, key: sessionStorage.getItem('lt_checkout_key') || newId() };
 sessionStorage.setItem('lt_checkout_key', state.key);
 
 if (!api.token()) {
@@ -55,7 +56,7 @@ async function boot() {
     if (productSlug) { tasks.unshift(api.product(productSlug, interval)); tasks.push(api.productOptions(productSlug)); }
     const results = await Promise.all(tasks);
     if (productSlug) state.product = results.shift()?.product || null;
-    if (productSlug) state.options = results.pop() || { packages: [] };
+    if (productSlug) state.options = results.pop() || { packages: [], runtimeCatalog: [] };
     state.environments = (results.shift()||{}).environments || [];
     state.plans = (results.shift()||{}).plans || [];
     state.plan = state.plans.find((p) => p.id === planId) || state.plans[0] || null;
@@ -86,7 +87,9 @@ function render() {
           <div class="lt-field" style="margin-top:12px"><label for="packageVersion">Version</label>
             <select class="lt-select" id="packageVersion"></select></div>
           <div id="packageConfig" style="margin-top:12px"></div>
-          <p class="lt-meta">The runtime and Debian image are resolved automatically from your software selection.</p>
+          <div id="packageRuntime" style="margin-top:14px"></div>
+          <input type="hidden" id="autoEnvironmentId"><input type="hidden" id="autoRuntimeVersion">
+          <p class="lt-meta">The runtime and Debian image are resolved automatically from your software selection. You never choose infrastructure.</p>
         ` : `
           <div class="lt-field" style="margin-top:12px"><label for="runtime">Runtime</label>
             <select class="lt-select" id="runtime">${runtimeOpts.map((e) => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('')}</select></div>
@@ -120,13 +123,33 @@ function render() {
   }
   const pkgSelect = root.querySelector('#packageId');
   if (pkgSelect) {
+    // Runtime auto-select: the backend is authoritative. We only mirror its
+    // choice in the UI so customers can see what will be provisioned.
+    const syncRuntime = () => {
+      const pkg = state.options.packages.find(x => x.id === pkgSelect.value);
+      const ver = root.querySelector('#packageVersion');
+      const rt = (state.options.runtimeCatalog || []).find(r => r.id === pkg?.runtimeId);
+      const selected = ver?.value || pkg?.defaultVersion || rt?.defaultVersion || '';
+      const name = rt?.name || pkg?.runtimeId || 'Auto';
+      root.querySelector('#packageRuntime').innerHTML = `<div class="lt-field">
+        <label>Runtime <span class="lt-meta">(auto-selected)</span></label>
+        <div class="lt-input" style="display:flex;align-items:center;min-height:38px">${esc(name)} ${selected ? badgeLite(selected) : ''}</div>
+      </div>`;
+      const envInput = root.querySelector('#autoEnvironmentId');
+      const verInput = root.querySelector('#autoRuntimeVersion');
+      if (envInput) envInput.value = rt?.id || pkg?.runtimeId || '';
+      if (verInput) verInput.value = selected;
+    };
     const syncPackage = () => {
       const pkg = state.options.packages.find(x => x.id === pkgSelect.value);
       const ver = root.querySelector('#packageVersion');
-      ver.innerHTML = (pkg?.versions || []).map(v => `<option value="${esc(v.version)}">${esc(v.version)}${v.runtimeVersion ? ' · Java ' + esc(v.runtimeVersion) : ''}</option>`).join('');
+      ver.innerHTML = (pkg?.versions || []).map(v => `<option value="${esc(v.version)}">${esc(v.version)}${v.runtimeVersion ? ' · runtime ' + esc(v.runtimeVersion) : ''}</option>`).join('');
       root.querySelector('#packageConfig').innerHTML = configFields(pkg);
+      syncRuntime();
     };
-    syncPackage(); pkgSelect.addEventListener('change', syncPackage);
+    syncPackage();
+    pkgSelect.addEventListener('change', syncPackage);
+    root.querySelector('#packageVersion').addEventListener('change', syncRuntime);
   }
   root.querySelector('#placeOrder').addEventListener('click', placeOrder);
 }
@@ -155,8 +178,8 @@ async function placeOrder() {
     const r = await api.createOrder({
       productId: state.product?.id || undefined,
       planId: state.plan.id, interval,
-      environmentId: root.querySelector('#runtime')?.value || undefined,
-      version: root.querySelector('#version')?.value || undefined,
+      environmentId: root.querySelector('#autoEnvironmentId')?.value || root.querySelector('#runtime')?.value || undefined,
+      version: root.querySelector('#autoRuntimeVersion')?.value || root.querySelector('#version')?.value || undefined,
       packageId: pkgSelect?.value || undefined,
       packageVersion: root.querySelector('#packageVersion')?.value || undefined,
       config,

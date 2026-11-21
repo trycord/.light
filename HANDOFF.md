@@ -158,6 +158,15 @@ start.js            - process supervisor
 - Cloudflare connector command (`tunnel.start`/`tunnel.stop`) runs cloudflared inside our approved image on the team network; binary is installed by `runtime/Dockerfile`.
 - `npm run pin:digests -- --apply` resolves approved Docker Hub images to digests.
 
+**Native Trycord package + custom runtime (latest):**
+- `packages/trycord/` holds the real Trycord 7.2.0 source (copied from `/home/ultim/trycord/.trycord`, excluding `.git`/`node_modules`/`.env`/DBs) and its multi-stage Debian `Dockerfile` (`trycord/light-trycord:1.0.0`). Non-root `node` user, tini, port 9971, `/api/health`.
+- Registered as product `trycord`, package `trycord`, and custom runtime `trycord` in the catalogue (`trycord_runtime` migration). The package auto-selects this runtime — customers never pick an OS/runtime; checkout shows the auto-selected runtime read-only.
+- The app is baked into the image at `/app/backend`; the customer workspace `/home/container` holds persistent `data/` + `uploads/` and `.env` (per-service `JWT_SECRET`). Shade chowns these to uid 1000 so SQLite can write; image-based packages skip the generic scaffold workdir bind and supply their absolute startup command.
+- Trycord services provision through the standard Shade `instance.create` pipeline; the runtime catalogue is the single source of truth for the image ref. Verified live: healthy container, `/api/health` ok, only `/home/container` mounted.
+- Cloudflare: one tunnel per application + DNS CNAME + hostname ingress, verified live. Wildcard shared-tunnel fallback when the zone nears its 200-record limit; `POST /api/domains/:id/retry-route`.
+- Settings apply immediately (no restart). Admin restart button restarts the full stack via `scripts/restart-all.sh`. Shade heartbeats retry before reporting degraded.
+- "Sell with Connect" link removed from customer-facing footers.
+
 **Still outstanding:**
 - ACME certificate issuance delegated to Caddy (not native).
 - Payment methods beyond Stripe not added (PayPal etc listed as possibilities only).
