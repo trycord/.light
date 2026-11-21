@@ -39,7 +39,7 @@ const loading=()=>'<div class="lt-loading"><span class="lt-spinner"></span>Loadi
 const NAV=[
   {g:'Overview',items:[['dashboard','Dashboard','monitoring','admin.access'],['analytics','Analytics','monitoring','analytics.read']]},
   {g:'Customers',items:[['customers','Customers','teams','customers.read'],['support','Support tickets','security','tickets.read']]},
-  {g:'Hosting',items:[['services','Services','instances','services.read'],['products','Products','applications','products.read'],['plans','Plans','templates','plans.read'],['environments','Environments','settings','environments.read']]},
+  {g:'Hosting',items:[['services','Services','instances','services.read'],['products','Products','applications','products.read'],['plans','Plans','templates','plans.read'],['packages','Software packages','settings','products.read'],['compatibility','Compatibility','security','products.read'],['environments','Environments','settings','environments.read']]},
   {g:'Infrastructure',items:[['nodes','Nodes','nodes','nodes.read'],['deployments','Deployments','schedules','services.read']]},
   {g:'Commercial',items:[['orders','Orders & provisioning','schedules','orders.read'],['subscriptions','Subscriptions','storage','billing.read'],['transactions','Transactions','security','billing.read'],['pricing','Pricing','settings','billing.read']]},
   {g:'Operations',items:[['domains','Domains','network','domains.read'],['backups','Backups','backups','backups.read'],['audit','Audit log','security','audit.read'],['notifications','Notifications','settings','notifications.read']]},
@@ -104,7 +104,7 @@ function setNav(v){root.querySelectorAll('[data-view]').forEach(a=>a.classList.t
 
 async function render(v){
   stopPoll();currentView=v;const view=root.querySelector('#aView');if(!view)return;
-  const R={dashboard:dashboard,analytics:analytics,customers:customers,orders:orders,system:system,support:support,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,notifications:notifications,roles:roles,settings:settings};
+  const R={dashboard:dashboard,analytics:analytics,customers:customers,orders:orders,packages:packages,compatibility:compatibility,system:system,support:support,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,notifications:notifications,roles:roles,settings:settings};
   view.innerHTML=loading();try{await (R[v]||dashboard)();}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;}}
 function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 function poll(fn,ms=15000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&admin)fn().catch(()=>{});},ms);}
@@ -199,6 +199,59 @@ async function plans(){
   view.querySelector('#addPlan').addEventListener('click',()=>submitPlan('New plan',form(),'Create',api.adminCreatePlan));
   view.querySelectorAll('[data-pl]').forEach(b=>b.addEventListener('click',()=>{const p=pls.find(x=>x.id===b.dataset.pl);submitPlan(`Edit plan: ${p.name}`,form(p),'Save',(d)=>api.adminUpdatePlan(p.id,d));}));
   view.querySelectorAll('[data-pld]').forEach(b=>b.addEventListener('click',async()=>{if(await confirmDialog('Archive plan','Existing subscriptions are preserved.')){try{await api.adminDeletePlan(b.dataset.pld);toast('Archived','success');plans();}catch(e){toast(e.message,'error');}}}));
+}
+
+async function packages(){
+  const view=root.querySelector('#aView');let pkgs=[],prods=[],envs=[];
+  try{[pkgs,prods,envs]=await Promise.all([api.adminPackages(),api.adminProducts(),api.adminEnvironments()]);pkgs=pkgs.packages||[];prods=prods.products||[];envs=envs.environments||[];}catch{}
+  view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Software packages</h1>
+    <p class="lt-page-subtitle">What gets installed for each hosting product</p></div>
+    <div class="lt-page-actions"><button class="lt-btn lt-btn-primary" id="addPkg">+ New package</button></div></div>
+    ${panel('Registry',`${pkgs.length} packages`,table(['ID','Name','Category','Product','Runtime','Versions','Status',''],pkgs.map(p=>`<tr>
+      <td class="lt-td-mono">${esc(p.id)}</td><td class="lt-td-strong">${esc(p.name)}</td><td>${esc(p.category)}</td>
+      <td>${esc((prods.find(x=>x.id===p.productId)||{}).name||'—')}</td><td>${esc(p.runtimeId||'—')}</td>
+      <td class="lt-td-mono">${(p.versions||[]).join(', ')}</td><td>${badge(p.status)}</td>
+      <td><button class="lt-btn lt-btn-ghost lt-btn-sm" data-pkg="${esc(p.id)}">Edit</button></td></tr>`)))}`;
+  const form=(p={})=>`<form id="pf">
+    ${fld('Package ID','id','text',p.id||'','required pattern="[a-z0-9-]+"')}${fld('Name','name','text',p.name||'','required')}
+    ${fld('Description','description','text',p.description||'')}
+    ${sel('Product','productId',[{value:'',label:'Any'},...prods.map(x=>({value:x.id,label:x.name}))],p.productId||'')}
+    ${sel('Runtime','runtimeId',[{value:'',label:'Auto'},...envs.map(e=>({value:e.id,label:e.name}))],p.runtimeId||'')}
+    ${fld('Category','category','text',p.category||'application')}${fld('Install kind','installKind','text',p.installKind||'generic')}
+    ${fld('Versions (comma)','versions','text',(p.versions||[]).join(', '))}
+    ${fld('Startup template','startupTemplate','text',p.startupTemplate||'')}
+    ${sel('Status','status',['published','draft','deprecated','disabled'],p.status||'published')}
+  </form>`;
+  const parse=d=>{d.versions=String(d.versions||'').split(',').map(x=>x.trim()).filter(Boolean);return d;};
+  view.querySelector('#addPkg').addEventListener('click',async()=>{const d=await modal('New package',form(),{ok:'Create'});if(d){try{await api.adminCreatePackage(parse(d));toast('Package created','success');packages();}catch(e){toast(e.message,'error');}}});
+  view.querySelectorAll('[data-pkg]').forEach(b=>b.addEventListener('click',async()=>{
+    const p=pkgs.find(x=>x.id===b.dataset.pkg);
+    const d=await modal('Edit package',form(p)+`<div class="lt-field" style="margin-top:12px"><label>Add version</label><input class="lt-input" id="newVer" placeholder="e.g. 1.21.4"></div>`,{ok:'Save'});
+    if(!d)return;
+    try{
+      await api.adminUpdatePackage(p.id,parse(d));
+      const v=document.querySelector('#newVer')?.value.trim();
+      if(v)await api.adminPackageVersion(p.id,{version:v});
+      toast('Saved','success');packages();
+    }catch(e){toast(e.message,'error');}
+  }));
+}
+
+async function compatibility(){
+  const view=root.querySelector('#aView');let links=[],pkgs=[],prods=[];
+  try{[links,pkgs,prods]=await Promise.all([api.adminCompatibility(),api.adminPackages(),api.adminProducts()]);links=links.links||[];pkgs=pkgs.packages||[];prods=prods.products||[];}catch{}
+  view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Compatibility</h1>
+    <p class="lt-page-subtitle">Which packages each hosting product may offer</p></div></div>
+    ${panel('Links',`${links.length} combinations`,table(['Product','Package','Required',''],links.map(l=>`<tr>
+      <td>${esc(l.product_name)}</td><td>${esc(l.package_name)}</td><td>${l.required?'Yes':'—'}</td>
+      <td><button class="lt-btn lt-btn-danger lt-btn-sm" data-unlink="${esc(l.package_id)}|${esc(l.product_id)}">Remove</button></td></tr>`)))}
+    ${panel('Add link','',`<div class="lt-field"><label>Package</label><select class="lt-select" id="cPkg">${pkgs.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></div>
+      <div class="lt-field" style="margin-top:8px"><label>Product</label><select class="lt-select" id="cProd">${prods.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></div>
+      <button class="lt-btn lt-btn-primary" id="addLink" style="margin-top:12px">Add compatibility</button>`)}`;
+  view.querySelector('#addLink')?.addEventListener('click',async()=>{
+    try{await api.adminSetCompatibility(view.querySelector('#cPkg').value,{productId:view.querySelector('#cProd').value});toast('Link added','success');compatibility();}catch(e){toast(e.message,'error');}
+  });
+  view.querySelectorAll('[data-unlink]').forEach(b=>b.addEventListener('click',()=>toast('Use package editor to change product links','info')));
 }
 
 async function environments(){

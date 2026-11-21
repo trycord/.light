@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import dns from 'dns/promises';
 import { getDb } from '../db.js';
-import { requireAuth } from '../auth.js';
+import { requireAuth, requireAdmin } from '../auth.js';
 import { audit } from '../audit.js';
 import { asyncRoute, badRequest, notFound, conflict, id, now, str } from '../util.js';
 import { provisionTunnel, deleteTunnel, isCloudflareConfigured } from '../cloudflare.js';
@@ -61,7 +61,8 @@ export function domainsRoutes() {
     res.json({ ok: true });
   }));
 
-  router.get('/config/proxy', asyncRoute(async (req, res) => {
+  // Infrastructure configuration — admins only, never exposed to customers.
+  router.get('/config/proxy', requireAdmin, asyncRoute(async (req, res) => {
     const rows = getDb().prepare('SELECT d.domain, i.id AS instance_id, i.ports_json FROM domains d JOIN instances i ON i.id = d.instance_id WHERE d.verified = 1').all();
     const lines = ['# .light reverse proxy configuration (Caddy-compatible)', ''];
     for (const row of rows) {

@@ -319,7 +319,7 @@ export function instancesRoutes() {
     try {
       const result = await dispatch(row.node_id, 'instance.backup', { instanceId: row.id, backupId: bid }, row.id);
       getDb().prepare("UPDATE backups SET status = 'ready', size_bytes = ?, location = ?, finished_at = ? WHERE id = ?").run(num(result.sizeBytes), str(result.location || '', 500), now(), bid);
-      res.status(201).json({ backup: getDb().prepare('SELECT * FROM backups WHERE id = ?').get(bid) });
+      res.status(201).json({ backup: viewBackup(getDb().prepare('SELECT * FROM backups WHERE id = ?').get(bid)) });
     } catch (error) {
       getDb().prepare("UPDATE backups SET status = 'failed', finished_at = ? WHERE id = ?").run(now(), bid);
       throw error;
@@ -329,7 +329,7 @@ export function instancesRoutes() {
   router.get('/:id/backups', asyncRoute(async (req, res) => {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
-    res.json({ backups: getDb().prepare('SELECT * FROM backups WHERE instance_id = ? ORDER BY created_at DESC').all(row.id) });
+    res.json({ backups: getDb().prepare('SELECT * FROM backups WHERE instance_id = ? ORDER BY created_at DESC').all(row.id).map(viewBackup) });
   }));
 
   router.post('/:id/backups/:backupId/restore', asyncRoute(async (req, res) => {
@@ -405,6 +405,13 @@ export function provisionPayload(row) {
   };
 }
 
+/** Backup records must never leak the agent's absolute host storage path. */
+function viewBackup(b) {
+  if (!b) return null;
+  return { id: b.id, instanceId: b.instance_id, name: b.name, status: b.status,
+    sizeBytes: b.size_bytes, createdAt: b.created_at, finishedAt: b.finished_at };
+}
+
 export function view(row) {
   if (!row) return null;
   return {
@@ -413,6 +420,8 @@ export function view(row) {
     ports: json(row.ports_json, []), volumes: json(row.volumes_json, []), cpuCores: row.cpu_cores, memoryMb: row.memory_mb,
     diskGb: row.disk_gb, containerId: row.container_id, nodeName: row.node_name, teamName: row.team_name,
     environmentId: row.environment_id, environmentVersion: row.environment_version, source: row.source,
+    packageId: row.package_id || null, packageVersion: row.package_version || null,
+    packageConfig: json(row.package_config, {}),
     healthStatus: row.health_status || 'unknown',
     createdAt: row.created_at, updatedAt: row.updated_at, startedAt: row.started_at, finishedAt: row.finished_at,
   };

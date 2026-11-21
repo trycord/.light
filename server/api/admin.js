@@ -204,6 +204,66 @@ export function adminRoutes() {
     }, 800);
   }));
 
+  /* ---------- Product-aware package registry ---------- */
+  router.get('/packages', asyncRoute(async (req, res) => {
+    res.json({ packages: getDb().prepare('SELECT * FROM software_packages ORDER BY sort_order, name').all().map(viewPackageRow) });
+  }));
+  router.post('/packages', requirePermission('products.write'), asyncRoute(async (req, res) => {
+    const b = req.body || {}; const pkgId = str(b.id || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+    if (!pkgId || !str(b.name)) throw badRequest('id_and_name_required');
+    if (getDb().prepare('SELECT id FROM software_packages WHERE id = ?').get(pkgId)) throw conflict('package_exists');
+    const ts = now();
+    getDb().prepare(`INSERT INTO software_packages (id,name,description,category,product_id,runtime_id,install_kind,versions,default_version,startup_template,config_schema,ports,storage,healthcheck,status,featured,sort_order,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(pkgId, str(b.name, 100), str(b.description, 500), str(b.category || 'application', 60), b.productId || null,
+        b.runtimeId || null, str(b.installKind || 'generic', 60), JSON.stringify(b.versions || []), str(b.defaultVersion || '', 60),
+        str(b.startupTemplate, 500), JSON.stringify(b.configSchema || {}), JSON.stringify(b.ports || []), JSON.stringify(b.storage || {}),
+        JSON.stringify(b.healthcheck || {}), str(b.status || 'published', 20), b.featured ? 1 : 0, int(b.sortOrder, 0), ts, ts);
+    audit(req, 'admin.package.create', 'package', pkgId, { name: b.name });
+    res.status(201).json({ package: viewPackageRow(getDb().prepare('SELECT * FROM software_packages WHERE id = ?').get(pkgId)) });
+  }));
+  router.patch('/packages/:id', requirePermission('products.write'), asyncRoute(async (req, res) => {
+    const row = getDb().prepare('SELECT * FROM software_packages WHERE id = ?').get(req.params.id);
+    if (!row) throw notFound();
+    const b = req.body || {}; const sets = []; const values = [];
+    for (const k of ['name','description','category','runtimeId','installKind','defaultVersion','startupTemplate','status']) {
+      const col = k === 'runtimeId' ? 'runtime_id' : k === 'installKind' ? 'install_kind' : k === 'defaultVersion' ? 'default_version' : k === 'startupTemplate' ? 'startup_template' : k;
+      if (b[k] !== undefined) { sets.push(`${col} = ?`); values.push(str(b[k], 2000)); }
+    }
+    for (const k of ['versions','configSchema','ports','storage','healthcheck']) {
+      const col = k === 'configSchema' ? 'config_schema' : k;
+      if (b[k] !== undefined) { sets.push(`${col} = ?`); values.push(JSON.stringify(b[k])); }
+    }
+    if (b.productId !== undefined) { sets.push('product_id = ?'); values.push(b.productId || null); }
+    if (b.featured !== undefined) { sets.push('featured = ?'); values.push(b.featured ? 1 : 0); }
+    if (sets.length) { sets.push('updated_at = ?'); values.push(now(), row.id); getDb().prepare(`UPDATE software_packages SET ${sets.join(', ')} WHERE id = ?`).run(...values); }
+    audit(req, 'admin.package.update', 'package', row.id, b);
+    res.json({ package: viewPackageRow(getDb().prepare('SELECT * FROM software_packages WHERE id = ?').get(row.id)) });
+  }));
+  router.post('/packages/:id/versions', requirePermission('products.write'), asyncRoute(async (req, res) => {
+    const pkg = getDb().prepare('SELECT id FROM software_packages WHERE id = ?').get(req.params.id);
+    if (!pkg) throw notFound();
+    const b = req.body || {}; const version = str(b.version, 60);
+    if (!version) throw badRequest('version_required');
+    getDb().prepare('INSERT OR REPLACE INTO package_versions (id, package_id, version, download_url, checksum_url, sha256, runtime_version, status, created_at) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(id('pver'), pkg.id, version, str(b.downloadUrl, 500), str(b.checksumUrl, 500), str(b.sha256, 128), str(b.runtimeVersion, 30), str(b.status || 'published', 20), now());
+    const versions = getDb().prepare('SELECT version FROM package_versions WHERE package_id = ? AND status = ?').all(pkg.id, 'published').map(v => v.version);
+    getDb().prepare('UPDATE software_packages SET versions = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(versions), now(), pkg.id);
+    res.status(201).json({ version });
+  }));
+  router.post('/packages/:id/compatibility', requirePermission('products.write'), asyncRoute(async (req, res) => {
+    const b = req.body || {};
+    if (!getDb().prepare('SELECT id FROM software_packages WHERE id = ?').get(req.params.id)) throw notFound();
+    if (!getDb().prepare('SELECT id FROM products WHERE id = ?').get(str(b.productId))) throw badRequest('invalid_product');
+    getDb().prepare('INSERT OR REPLACE INTO product_packages (product_id, package_id, required, created_at) VALUES (?,?,?,?)')
+      .run(b.productId, req.params.id, b.required ? 1 : 0, now());
+    audit(req, 'admin.package.compatibility', 'package', req.params.id, { productId: b.productId });
+    res.json({ ok: true });
+  }));
+  router.get('/compatibility', asyncRoute(async (req, res) => {
+    res.json({ links: getDb().prepare('SELECT pp.*, p.name AS product_name, sp.name AS package_name FROM product_packages pp JOIN products p ON p.id=pp.product_id JOIN software_packages sp ON sp.id=pp.package_id ORDER BY p.name, sp.name').all() });
+  }));
+
   /* ---------- Runtime settings (brand, payments, Cloudflare, mail, proxy) ---------- */
   router.get('/settings', asyncRoute(async (req, res) => {
     res.json({ settings: publicSettings() });
@@ -344,6 +404,13 @@ function viewProduct(p) { return {
   description: p.description, image: p.image, icon: p.icon, features: json(p.features, []), tags: json(p.tags, []),
   status: p.status, featured: !!p.featured, sortOrder: p.sort_order, startingPriceMonthly: p.starting_price_monthly, currency: p.currency,
 }; }
+function viewPackageRow(p) {
+  return { id: p.id, name: p.name, description: p.description, category: p.category,
+    productId: p.product_id, runtimeId: p.runtime_id, installKind: p.install_kind,
+    versions: json(p.versions, []), defaultVersion: p.default_version,
+    startupTemplate: p.startup_template, configSchema: json(p.config_schema, {}),
+    ports: json(p.ports, []), status: p.status, featured: !!p.featured };
+}
 function viewPlan(p) { return {
   id: p.id, name: p.name, description: p.description, category: p.category, productId: p.product_id, runtimeId: p.runtime_id,
   cpuCores: p.cpu_cores, memoryMb: p.memory_mb, diskGb: p.disk_gb, networkGb: p.network_gb, instances: p.instances,

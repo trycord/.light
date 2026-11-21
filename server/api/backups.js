@@ -9,7 +9,9 @@ export function backupsRoutes() {
 
   router.get('/', asyncRoute(async (req, res) => {
     const limit = Math.min(500, Math.max(1, int(req.query.limit, 100)));
-    res.json({ backups: getDb().prepare('SELECT b.*, i.name AS instance_name FROM backups b JOIN instances i ON i.id = b.instance_id WHERE b.team_id = ? ORDER BY b.created_at DESC LIMIT ?').all(req.teamId, limit) });
+    const rows = getDb().prepare('SELECT b.*, i.name AS instance_name FROM backups b JOIN instances i ON i.id = b.instance_id WHERE b.team_id = ? ORDER BY b.created_at DESC LIMIT ?').all(req.teamId, limit);
+    res.json({ backups: rows.map((b) => ({ id: b.id, instanceId: b.instance_id, instanceName: b.instance_name,
+      name: b.name, status: b.status, sizeBytes: b.size_bytes, createdAt: b.created_at, finishedAt: b.finished_at })) });
   }));
 
   router.delete('/:id', asyncRoute(async (req, res) => {

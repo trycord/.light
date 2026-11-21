@@ -223,17 +223,24 @@ export async function createInstance(payload) {
       console.log('[shade] package install:', payload.package.name, payload.package.version, installResult?.installed ? 'ok' : installResult?.reason);
     } else installResult = { installed: true, reused: true };
   }
-  const appTarget = tpl.workdir || '/app';
+  // Customer-visible filesystem boundary. Every service sees /home/container;
+  // the runtime's expected directory is bind-mounted from the same source for
+  // compatibility (e.g. nginx's /usr/share/nginx/html).
+  const appTarget = '/home/container';
   const enriched = {
     ...payload,
     command: payload.command || (installResult?.startup) || tpl.command || payload.defaultCommand || '',
-    workingDir: tpl.workdir || payload.workingDir || '/app',
+    workingDir: appTarget,
     env: { ...(DEFAULT_ENV[payload.environmentId] || {}), ...(payload.env || {}),
       LIGHT_PORT: String((ports || [])[0]?.container || 3000) },
   };
   const config = buildContainerConfig(enriched);
   if (!config.HostConfig.Binds.some((b) => b.endsWith(`:${appTarget}`))) {
     config.HostConfig.Binds.push(`${appDir}:${appTarget}`);
+  }
+  if (tpl.workdir && tpl.workdir !== appTarget &&
+      !config.HostConfig.Binds.some((b) => b.endsWith(`:${tpl.workdir}`))) {
+    config.HostConfig.Binds.push(`${appDir}:${tpl.workdir}`);
   }
   // Ensure the image exists locally before creating the container.
   await ensureImage(image || 'nginx:bookworm');

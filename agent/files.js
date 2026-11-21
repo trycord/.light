@@ -2,32 +2,49 @@ import fs from 'fs';
 import path from 'path';
 import { instanceDir, volumeDir } from './docker.js';
 
+// Customers only ever see /home/container — their service workspace. Internal
+// host paths are never returned by the API. Both '/' and '/home/container' map
+// to the same root so older callers keep working.
+export const CUSTOMER_ROOT = '/home/container';
+
+function customerPath(requested) {
+  let p = String(requested || '/');
+  if (p.startsWith(CUSTOMER_ROOT)) p = p.slice(CUSTOMER_ROOT.length) || '/';
+  if (!p.startsWith('/')) p = '/' + p;
+  return p;
+}
+
 function resolveSafe(instanceId, requested) {
-  const root = path.resolve(instanceDir(instanceId));
-  const target = path.resolve(root, '.' + String(requested || '/'));
+  const root = path.resolve(instanceDir(instanceId), 'app');
+  const target = path.resolve(root, '.' + customerPath(requested));
   if (target !== root && !target.startsWith(root + path.sep)) throw Object.assign(new Error('path_traversal_denied'), { status: 403 });
   return target;
 }
 
+function displayPath(requested) {
+  const p = customerPath(requested);
+  return p === '/' ? CUSTOMER_ROOT : CUSTOMER_ROOT + p;
+}
+
 export async function listFiles(instanceId, requestedPath) {
   const target = resolveSafe(instanceId, requestedPath);
-  if (!fs.existsSync(target)) return { path: requestedPath, entries: [] };
+  if (!fs.existsSync(target)) return { path: displayPath(requestedPath), entries: [] };
   const stat = fs.statSync(target);
-  if (!stat.isDirectory()) return { path: requestedPath, entries: [{ name: path.basename(target), type: 'file', size: stat.size }] };
+  if (!stat.isDirectory()) return { path: displayPath(requestedPath), entries: [{ name: path.basename(target), type: 'file', size: stat.size }] };
   const entries = fs.readdirSync(target, { withFileTypes: true }).map((entry) => {
     const full = path.join(target, entry.name);
     let size = 0;
     try { size = fs.statSync(full).size; } catch { /* ignore */ }
     return { name: entry.name, type: entry.isDirectory() ? 'dir' : 'file', size };
   }).sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
-  return { path: requestedPath, entries };
+  return { path: displayPath(requestedPath), entries };
 }
 
 export async function readFile(instanceId, filePath) {
   const target = resolveSafe(instanceId, filePath);
   const stat = fs.statSync(target);
   if (stat.size > 8 * 1024 * 1024) throw Object.assign(new Error('file_too_large'), { status: 413 });
-  return { path: filePath, content: fs.readFileSync(target, 'utf8'), size: stat.size };
+  return { path: displayPath(filePath), content: fs.readFileSync(target, 'utf8'), size: stat.size };
 }
 
 export async function writeFile(instanceId, filePath, content) {
@@ -35,7 +52,7 @@ export async function writeFile(instanceId, filePath, content) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, String(content ?? ''));
   const stat = fs.statSync(target);
-  return { path: filePath, size: stat.size };
+  return { path: displayPath(filePath), size: stat.size };
 }
 
 /** Write an uploaded file (base64) safely inside the instance volume. */
@@ -45,16 +62,16 @@ export async function writeBinary(instanceId, filePath, base64) {
   if (buf.length > 32 * 1024 * 1024) throw Object.assign(new Error('file_too_large'), { status: 413 });
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, buf);
-  return { path: filePath, size: buf.length };
+  return { path: displayPath(filePath), size: buf.length };
 }
 
 export async function fileOperation(instanceId, op, filePath, payload) {
   const target = resolveSafe(instanceId, filePath);
   switch (op) {
-    case 'mkdir': fs.mkdirSync(target, { recursive: true }); return { ok: true, path: filePath };
+    case 'mkdir': fs.mkdirSync(target, { recursive: true }); return { ok: true, path: displayPath(filePath) };
     case 'rename': {
       const dest = resolveSafe(instanceId, payload.destination);
-      fs.renameSync(target, dest); return { ok: true, path: payload.destination };
+      fs.renameSync(target, dest); return { ok: true, path: displayPath(payload.destination) };
     }
     case 'delete': {
       const stat = fs.lstatSync(target);
@@ -67,7 +84,7 @@ export async function fileOperation(instanceId, op, filePath, payload) {
 }
 
 export async function storageUsage(instanceId) {
-  const root = instanceDir(instanceId);
+  const root = path.resolve(instanceDir(instanceId), 'app');
   let total = 0;
   const walk = (dir) => {
     try {
@@ -87,7 +104,7 @@ export async function createBackup(instanceId, backupId) {
   const safeId = String(backupId || '').replace(/[^A-Za-z0-9_-]/g, '');
   if (!safeId) throw Object.assign(new Error('invalid_backup_id'), { status: 400 });
   const out = path.join((await import('./docker.js')).DATA_ROOT, 'backups', `${safeId}.tar.gz`);
-  const source = instanceDir(instanceId);
+  const source = path.resolve(instanceDir(instanceId), 'app');
   // A service with no declared volumes may have no directory yet — still
   // produce a valid (empty) backup instead of failing with "tar exited 2".
   fs.mkdirSync(source, { recursive: true });

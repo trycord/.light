@@ -7,7 +7,7 @@ const overlays = document.getElementById('overlay-root');
 let session = null, brand = {}, pollTimer = null, currentView = null, currentParam = null;
 let serversState = { search: '', category: 'all', status: 'all', sort: 'name', dir: 1, page: 1, per: 10 };
 
-import { esc, trapFocus } from '/js/shared.js';
+import { esc, trapFocus, sparkline } from '/js/shared.js';
 const fmtNum = (n) => Number(n || 0).toLocaleString();
 const fmtMoney = (c, cur='USD') => new Intl.NumberFormat(undefined, { style:'currency', currency:cur||'USD' }).format(Number(c||0)/100);
 const fmtBytes = (b) => { b = Number(b || 0); if (b > 1073741824) return (b/1073741824).toFixed(1)+' GB'; if (b > 1048576) return (b/1048576).toFixed(1)+' MB'; return b+' B'; };
@@ -313,11 +313,23 @@ async function renderServer(id){
   if(currentServerId!==id){currentServerId=id;currentServerTab='overview';currentFilePath='/';}
   const v=app.querySelector('#view');const [{instance:i},logs,metrics,domainData]=await Promise.all([api.instance(id),api.logs(id,200),api.metrics(id,60),api.domains().catch(()=>({domains:[]}))]);
   const domains=(domainData.domains||[]).filter(d=>d.instance_id===id);
-  const tab=currentServerTab||'overview';const tabs=['overview','console','logs','files','configuration','startup','networking','domains','backups','schedules','monitoring','activity'];
-  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">${esc(i.name)}</h1><p class="lt-page-subtitle">${esc(i.image)} · ${badge(i.status)}</p></div><div class="lt-page-actions">
+  let tab=currentServerTab||'overview';
+  // Tabs adapt to the purchased product — a Minecraft server never sees bot or
+  // website-only controls, and vice versa.
+  const pkg=String(i.packageId||'');
+  const isGame=/minecraft|game|terraria|fivem|rust/.test(pkg+' '+(i.category||''));
+  const isWeb=/website|web|app|node|python|php|go|static/.test(pkg+' '+(i.environmentId||''));
+  const tabs=['overview','console','logs','files','configuration','startup','monitoring','activity',
+    ...(isWeb?['deployments','domains','networking']:[]),
+    ...(isGame?['networking']:[]),
+    'backups','schedules'];
+  if(!tabs.includes(tab))currentServerTab='overview';
+  const activeTab=tabs.includes(tab)?tab:'overview';
+  tab=activeTab;
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">${esc(i.name)}</h1><p class="lt-page-subtitle">${esc(pkg?pkg.replace(/-/g,' '):i.environmentId||i.image)} · ${badge(i.status)}</p></div><div class="lt-page-actions">
     ${i.status==='running'?'<button class="lt-btn lt-btn-secondary" data-a="stop">Stop</button>':'<button class="lt-btn lt-btn-secondary" data-a="start">Start</button>'}
-    <button class="lt-btn lt-btn-secondary" data-a="restart">Restart</button><button class="lt-btn lt-btn-secondary" data-a="deploy">Deploy</button><button class="lt-btn lt-btn-danger" data-a="delete">Delete</button></div></div>
-    <div class="lt-tabs">${tabs.map(t=>`<button class="lt-tab ${t===tab?'active':''}" data-tab="${t}">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join('')}</div>
+    <button class="lt-btn lt-btn-secondary" data-a="restart">Restart</button>${isWeb?'<button class="lt-btn lt-btn-secondary" data-a="deploy">Deploy</button>':''}<button class="lt-btn lt-btn-danger" data-a="delete">Delete</button></div></div>
+    <div class="lt-tabs">${tabs.map(t=>`<button class="lt-tab ${t===activeTab?'active':''}" data-tab="${t}">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join('')}</div>
     <div class="lt-grid lt-grid-2" style="grid-template-columns:minmax(0,2fr) minmax(260px,1fr);align-items:start"><div id="tabView"></div>
       <aside class="lt-card" style="padding:16px"><h3 class="lt-h3" style="margin-bottom:12px">Server info</h3>
         <div class="lt-meta">Service ID</div><div class="lt-td-mono" style="font-size:12px;margin-bottom:10px">${esc(i.id)}</div>
@@ -381,7 +393,17 @@ async function renderServer(id){
       <form id="sf">${field('Startup command','command','text',i.command)}${textarea('Environment (KEY=value)','env',Object.entries(i.env||{}).map(([k,x])=>k+'='+x).join('\n'))}<button class="lt-btn lt-btn-primary" type="submit">Save</button></form>`);
     tv.querySelector('#sf').addEventListener('submit',async(e)=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());const env={};for(const l of String(d.env||'').split('\n')){const m=l.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/);if(m)env[m[1]]=m[2];}try{await api.updateInstance(id,{command:d.command,env});toast('Saved — restart to apply','success');renderServer(id);}catch(err){toast(err.message,'error');}});
   }else if(tab==='monitoring'){
-    tv.innerHTML=section('Resource usage','',metrics.metrics.length?metrics.metrics.slice(-40).map(m=>`<div style="display:flex;gap:12px;padding:6px 0;border-bottom:1px solid var(--lt-border);font-size:12px"><span class="lt-td-mono" style="width:160px">${fmtTime(m.ts)}</span><span>CPU ${m.cpu}%</span><span>NET ${fmtNum(m.net_in)}/${fmtNum(m.net_out)}</span><span>DISK ${m.disk}%</span></div>`).join(''):empty('No metrics yet','Metrics appear once the agent reports.'));
+    const series=metrics.metrics.slice(-60);
+    const cpu=series.map(m=>m.cpu||0), mem=series.map(m=>m.mem||0), disk=series.map(m=>m.disk||0);
+    const net=series.map(m=>(m.net_in||0)+(m.net_out||0));
+    const peakNet=Math.max(1,...net);
+    tv.innerHTML=`<div class="lt-grid lt-grid-2" style="gap:14px">
+      ${section('CPU','live',`<div class="lt-chart">${sparkline(cpu)}</div><div class="lt-chart-meta"><b>${last.cpu||0}%</b><span>of ${i.cpuCores||1} vCPU allocated</span></div>`)}
+      ${section('Memory','live',`<div class="lt-chart">${sparkline(mem,{color:'var(--lt-info, #6FB3A0)'})}</div><div class="lt-chart-meta"><b>${last.mem||0}%</b><span>of ${i.memoryMb||0} MB allocated</span></div>`)}
+      ${section('Disk','live',`<div class="lt-chart">${sparkline(disk,{color:'var(--lt-warning)'})}</div><div class="lt-chart-meta"><b>${last.disk||0}%</b><span>of ${i.diskGb||0} GB allocated</span></div>`)}
+      ${section('Network','live',`<div class="lt-chart">${sparkline(net,{color:'var(--lt-success)',max:peakNet})}</div><div class="lt-chart-meta"><b>${fmtNum(last.net_in||0)} ↓ / ${fmtNum(last.net_out||0)} ↑</b><span>bytes since last sample</span></div>`)}
+    </div>
+    ${section('Recent samples','',series.length?series.slice(-15).reverse().map(m=>`<div class="lt-sample"><span class="lt-td-mono">${fmtTime(m.ts)}</span><span>CPU ${m.cpu}%</span><span>MEM ${m.mem}%</span><span>DISK ${m.disk}%</span><span>NET ${fmtNum(m.net_in)}/${fmtNum(m.net_out)}</span></div>`).join(''):empty('No metrics yet','Metrics appear once the agent reports.'))}`;
     poll(async()=>{if(currentView==='server'&&currentServerTab==='monitoring')await renderServer(id);},10000);
   }else if(tab==='backups'){
     const b=await api.backups(id);
@@ -395,7 +417,9 @@ async function renderServer(id){
     const s=await api.schedules();const own=s.schedules.filter(x=>x.instance_id===id);
     tv.innerHTML=section('Schedules','',own.length?own.map(x=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--lt-border)"><span>${esc(x.name)}</span><span class="lt-td-mono">${esc(x.cron)}</span>${badge(x.enabled?'active':'stopped')}</div>`).join(''):empty('No schedules','Create a schedule from the Schedules page.'));
   }else if(tab==='networking'){
-    tv.innerHTML=section('Networking','',`<div class="lt-grid lt-grid-2"><div><div class="lt-meta">Port mappings</div><div class="lt-td-mono">${(i.ports||[]).map(p=>`${p.container}/${p.protocol} → ${p.host||p.container}`).join('<br>')||'none'}</div></div><div><div class="lt-meta">Project subdomain</div><div class="lt-td-mono">${esc(i.name.toLowerCase().replace(/[^a-z0-9]+/g,'-'))}.${esc(brand.domain||'trycord.dev')}</div></div></div>`);
+    const assigned=domains.filter(d=>d.instance_id===id);
+    tv.innerHTML=section('Networking','',`<div class="lt-grid lt-grid-2"><div><div class="lt-meta">Port mappings</div><div class="lt-td-mono">${(i.ports||[]).map(p=>`${p.container}/${p.protocol} → ${p.host||p.container}`).join('<br>')||'none'}</div></div>
+      <div><div class="lt-meta">Assigned domains</div>${assigned.length?assigned.map(d=>`<div class="lt-td-mono">${esc(d.domain)} ${badge(d.verified?'active':'pending')}</div>`).join(''):'<p class="lt-meta">No domain assigned yet.</p>'}</div></div>`);
   }else if(tab==='activity'){
     tv.innerHTML=section('Activity','',`<p class="lt-meta">Server created ${fmtTime(i.createdAt)} · last updated ${fmtTime(i.updatedAt)}</p>`);
   }
