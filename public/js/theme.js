@@ -9,7 +9,8 @@ function systemPrefersLight() {
 
 function resolve(mode) {
   if (mode === 'light' || mode === 'dark' || mode === 'high-contrast') return mode;
-  return systemPrefersLight() ? 'light' : 'dark';
+  // .light ships with a light-first visual system. Explicit choices still win.
+  return 'light';
 }
 
 export function applyTheme(mode) {

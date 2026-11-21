@@ -132,7 +132,14 @@ function renderShell(){
       <button class="lt-icon-btn" id="notifBtn" title="Notifications" style="position:relative">🔔<span class="lt-badge-count" id="notifCount" style="display:none">0</span></button>
       <a class="lt-icon-btn" href="/docs" title="Help">?</a>
       <div class="lt-user-menu"><button class="lt-btn lt-btn-ghost lt-btn-sm" id="userBtn">${esc(session.user.name||session.user.username||session.user.email)} ▾</button></div>
-    </header><main class="lt-content" id="view">${loading()}</main></div></div>`;
+    </header><main class="lt-content" id="view">${loading()}</main></div>
+    <nav class="lt-mobile-nav" aria-label="Mobile navigation">
+      <a href="#/overview" data-nav="overview" class="active"><i>◈</i>Dashboard</a>
+      <a href="#/servers" data-nav="servers"><i>▤</i>Services</a>
+      <a href="#/market" data-nav="market"><i>◇</i>Market</a>
+      <a href="#/notifications" data-nav="notifications"><i>◔</i>Alerts</a>
+      <a href="#/settings" data-nav="settings"><i>⚙</i>Account</a>
+    </nav></div>`;
   app.querySelector('#navToggle')?.addEventListener('click',()=>{const s=app.querySelector('#sidebar'),sc=app.querySelector('#scrim');const open=s.classList.toggle('is-open');sc.style.display=open?'block':'none';});
   app.querySelector('#scrim')?.addEventListener('click',()=>{app.querySelector('#sidebar').classList.remove('is-open');app.querySelector('#scrim').style.display='none';});
   app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="/admin" ${(session.permissions?.includes('*')||session.permissions?.includes('admin.access'))?'':'style="display:none"'}>Administration</a><a href="/">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});

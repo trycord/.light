@@ -68,7 +68,14 @@ function shell(){
       <div class="lt-global-search admin-search"><input id="aSearch" placeholder="Search records…"></div>
       <button class="lt-icon-btn" id="aNotifBtn" title="Notifications" style="position:relative">🔔<span class="lt-badge-count" id="aNotifCount" style="display:none">0</span></button>
       <div class="lt-user-menu"><button class="lt-btn lt-btn-ghost lt-btn-sm" id="aUser">${esc(admin?.name||admin?.email||'Admin')} ▾</button></div>
-    </header><main class="admin-content" id="aView">${loading()}</main></div></div>`;
+    </header><main class="admin-content" id="aView">${loading()}</main></div>
+    <nav class="lt-mobile-nav" aria-label="Mobile admin navigation">
+      <a href="#/dashboard" data-view="dashboard" class="active"><i>◈</i>Overview</a>
+      <a href="#/services" data-view="services"><i>▤</i>Services</a>
+      <a href="#/orders" data-view="orders"><i>◇</i>Orders</a>
+      <a href="#/customers" data-view="customers"><i>◉</i>Users</a>
+      <a href="#/system" data-view="system"><i>⚙</i>System</a>
+    </nav></div>`;
   root.querySelector('#aToggle')?.addEventListener('click',()=>{const s=root.querySelector('#aSidebar'),sc=root.querySelector('#aScrim');const o=s.classList.toggle('is-open');sc.style.display=o?'block':'none';});
   root.querySelector('#aScrim')?.addEventListener('click',()=>{root.querySelector('#aSidebar').classList.remove('is-open');root.querySelector('#aScrim').style.display='none';});
   root.querySelector('#aUser').addEventListener('click',(e)=>{e.stopPropagation();const ex=root.querySelector('.admin-user-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(admin?.email||'')}</div><a href="/login#/settings">Account settings</a><a href="/">Public site</a><button id="aLogout">Sign out</button>`;root.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#aLogout').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');location.href='/login';});});

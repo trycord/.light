@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="500" viewBox="0 0 1100 500"><defs>
-<linearGradient id="magma" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F2C75C"/><stop offset=".5" stop-color="#FF7847"/><stop offset="1" stop-color="#E34B2F"/></linearGradient>
+<linearGradient id="magma" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0F9E8B"/><stop offset=".5" stop-color="#2DD4BF"/><stop offset="1" stop-color="#E85634"/></linearGradient>
 <filter id="soft"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 </defs><g transform="translate(0,0) scale(.72)">
-<path d="M72 112 250 32 440 126 250 222Z" fill="#D8D0C3"/>
+<path d="M72 112 250 32 440 126 250 222Z" fill="#131A24"/>
 <path d="M72 112 250 222V430L72 326Z" fill="#77766F"/>
 <path d="M250 222 440 126V334L250 430Z" fill="#292E2A"/>
-<path d="M72 326 250 430 440 334" fill="none" stroke="#E34B2F" stroke-width="10"/>
+<path d="M72 326 250 430 440 334" fill="none" stroke="#E85634" stroke-width="10"/>
 <path d="M100 314 250 398 412 310" fill="none" stroke="url(#magma)" stroke-width="17" stroke-linecap="round" filter="url(#soft)"/>
-<path d="M250 222V398" stroke="#F2C75C" stroke-width="5"/>
-<path d="M250 430 330 388" stroke="#4C9B8A" stroke-width="8"/>
-</g><text x="385" y="310" font-family="Manrope,Inter,Arial" font-size="170" font-weight="650" letter-spacing="-10" fill="#D8D0C3">.light</text></svg>
+<path d="M250 222V398" stroke="#0F9E8B" stroke-width="5"/>
+<path d="M250 430 330 388" stroke="#0F9E8B" stroke-width="8"/>
+</g><text x="385" y="310" font-family="Manrope,Inter,Arial" font-size="170" font-weight="650" letter-spacing="-10" fill="#131A24">.light</text></svg>

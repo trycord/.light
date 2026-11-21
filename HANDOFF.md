@@ -173,6 +173,13 @@ start.js            - process supervisor
 - Visual: global `styles/polish.css` loaded on all 18 pages — brand focus rings, selection colors, refined scrollbars, ambient hero glow/grid, gradient-text and glass utilities, shimmer skeletons, status pulses, empty/error states, scroll-progress hairline, and a strict reduced-motion fallback. Dashboard and admin loaders/errors upgraded from bare spinners to skeletons and actionable empty states.
 - No AI indicators exist in any product UI, copy, asset, or code comment (verified by scanning all rendered pages and source files).
 
+**Visual system — NOVA (ground-up remake, replaces all prior styles):**
+- `public/styles/nova.css` is now the single stylesheet on every page (18 HTML pages + the JS-generated site shell). All legacy CSS files are no longer referenced.
+- New visual language: deep ink surfaces, aurora-mint primary, coral signal, clear editorial type, 1px borders, restrained depth. Full dark / light / high-contrast themes; light is the default.
+- All SVG assets recolored to the light palette (mint/teal + coral on light backgrounds).
+- Mobile support: responsive breakpoints at 980/640px, touch-sized controls, iOS zoom prevention, tables collapse to labelled cards, working sidebar drawers, and bottom tab bars in both dashboard and admin.
+- Every class used by the UI is styled and every referenced CSS token is defined (verified programmatically).
+
 **Still outstanding:**
 - ACME certificate issuance delegated to Caddy (not native).
 - Payment methods beyond Stripe not added (PayPal etc listed as possibilities only).
