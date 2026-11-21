@@ -1,0 +1,7 @@
+[Unit]
+Description=.light Watchdog
+After=light-control.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/ultim/.light/scripts/watchdog.sh

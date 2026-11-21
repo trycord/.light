@@ -147,10 +147,18 @@
   --lt-border-stronger: rgba(40, 34, 28, 0.32);
   --lt-border-ember: rgba(255, 77, 36, 0.5);
   --lt-text: #211C17;
-  --lt-text-secondary: #5A5148;
-  --lt-text-muted: #857A6E;
-  --lt-text-faint: #A99E91;
+  --lt-text-secondary: #4A423A;
+  /* WCAG AA (4.5:1+) on the light paper background for muted/ember text. */
+  --lt-text-muted: #655C52;
+  --lt-text-faint: #7E7468;
   --lt-text-inverse: #FFFFFF;
+  /* Darker ember for text on light backgrounds; keeps brand hue, passes AA. */
+  --lt-ember-text: #B53312;
+  /* Brand ember stays vivid for fills; text uses the darker accessible shade. */
+  --lt-ember-500: #B53312;
+  --lt-ember-50: #FDF3EC;
+  --lt-ember-100: #FBE3D6;
+  --lt-ember-600: #9C2A0E;
   --lt-success: #2F7A69;
   --lt-success-dim: rgba(47, 122, 105, 0.10);
   --lt-warning: #9A7412;

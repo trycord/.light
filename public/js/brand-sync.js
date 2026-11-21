@@ -12,8 +12,10 @@
       link.href = favicon;
     }
     const root = document.documentElement;
-    if (b.primaryColor) root.style.setProperty('--lt-ember-500', b.primaryColor);
-    if (b.accentColor) root.style.setProperty('--lt-success', b.accentColor);
+    // Keep configured brand colours for decorative fills, but never override
+    // the theme's accessible text tokens — doing so broke light-theme contrast.
+    if (b.primaryColor) root.style.setProperty('--lt-brand-primary', b.primaryColor);
+    if (b.accentColor) root.style.setProperty('--lt-brand-accent', b.accentColor);
     if (b.product) root.setAttribute('data-product', b.product);
   }).catch(() => { /* static fallback remains */ });
 })();

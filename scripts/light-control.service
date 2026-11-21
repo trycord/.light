@@ -1,0 +1,17 @@
+[Unit]
+Description=.light Control Plane
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ultim/.light
+Environment=PATH=/home/ultim/.nvm/versions/node/v24.21.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ultim/.nvm/versions/node/v24.21.0/bin/node /home/ultim/.light/server/index.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=8
+KillMode=mixed
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target

@@ -63,7 +63,12 @@ app.get('/health', (req, res) => {
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 });
 
-const apiLimiter = rateLimit({ windowMs: 60000, max: 600, standardHeaders: true, legacyHeaders: false });
+// Node agents report results/heartbeats frequently; exempt them from the
+// browser-oriented rate limit so provisioning never times out under load.
+const apiLimiter = rateLimit({
+  windowMs: 60000, max: 600, standardHeaders: true, legacyHeaders: false,
+  skip: (req) => Boolean(req.headers['x-node-token']),
+});
 const api = express.Router();
 api.use(apiLimiter);
 api.use('/auth', authRoutes());
@@ -160,13 +165,30 @@ function start() {
   initDb();
   server.listen(config.port, config.host, () => console.log(`[.light] control plane listening on http://${config.host}:${config.port}`));
   const scheduleTimer = setInterval(() => { try { runSchedules(); } catch (error) { console.error('[schedules]', error); } }, 60000);
+  let stopping = false;
   const shutdown = () => {
+    if (stopping) return; stopping = true;
     console.log('[.light] shutting down');
     clearInterval(scheduleTimer);
     server.close(() => { closeDb(); process.exit(0); });
-    setTimeout(() => process.exit(0), 10000).unref();
+    // Hard floor: close DB even if connections linger, so better-sqlite3
+    // never tears down with live handles (the source of native aborts).
+    setTimeout(() => { try { closeDb(); } catch {} process.exit(0); }, 5000).unref();
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+  process.on('uncaughtException', (error) => { console.error('[.light] uncaught:', error); shutdown(); });
+  process.on('unhandledRejection', (error) => { console.error('[.light] unhandled rejection:', error); });
 }
-start();
+
+// Retry init if the DB is briefly locked during a restart handoff.
+let attempts = 0;
+while (true) {
+  try { start(); break; }
+  catch (error) {
+    if (++attempts >= 5) { console.error('[.light] failed to start:', error); process.exit(1); }
+    console.error(`[.light] init attempt ${attempts} failed: ${error.message}; retrying`);
+    const block = new SharedArrayBuffer(4);
+    Atomics.wait(new Int32Array(block), 0, 0, 1000);
+  }
+}
