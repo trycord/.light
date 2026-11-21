@@ -558,7 +558,7 @@ function seed() {
     // Debian bookworm-slim. Selecting this runtime uses our own image, and the
     // Trycord package auto-selects it (no customer infrastructure choices).
     E('trycord','Trycord','app','Trycord community platform (custom Debian image)','◆',['7.2.0'],'7.2.0',
-      { '7.2.0':'trycord/light-trycord:1.0.0' },'node src/server.js',['9971'],
+      { '7.2.0':'trycd/light-trycord:1.0.0' },'node src/server.js',['9971'],
       { dir:'/app/backend', healthcheck:{ path:'/api/health' },
         env:{ NODE_ENV:'production', PORT:'9971', DB_CLIENT:'sqlite' },
         storage:{ persistent:['/data','/app/uploads'] }, featured:1, order:27 }),

@@ -1,89 +1,149 @@
+# ==============================================================================
+# .light — production Docker Compose
+#
+# Two services, matching the existing architecture:
+#   light  — control plane + public site + customer dashboard + admin dashboard
+#            (auth, database, billing, provisioning orchestration, webhooks)
+#   shade  — infrastructure agent that talks to Docker and executes workloads
+#
+# Customer workloads are NEVER built into these images. Shade launches them at
+# runtime from approved runtime images. Keep the Docker socket mounted ONLY on
+# the shade service.
+# ==============================================================================
+
+x-platform-env: &platform-env
+  NODE_ENV: production
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-trycord.dev}
+  CONTROL_BASE_URL: ${CONTROL_BASE_URL:-https://trycord.dev}
+  ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
+  ALLOW_CUSTOM_PLANS: ${ALLOW_CUSTOM_PLANS:-false}
+  # Shared secret with Shade — set NODE_TOKEN in .env for split deployments.
+  NODE_TOKEN: ${NODE_TOKEN:-}
+  JWT_SECRET: ${JWT_SECRET:-}
+  BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+  BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+  BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-}
+  # Branding
+  BRAND_PRODUCT: ${BRAND_PRODUCT:-.light}
+  BRAND_OWNER: ${BRAND_OWNER:-Trycord}
+  BRAND_ATTRIBUTION: ${BRAND_ATTRIBUTION:-.light is a Trycord product}
+  BRAND_TAGLINE: ${BRAND_TAGLINE:-Universal hosting platform}
+  BRAND_SUPPORT_EMAIL: ${BRAND_SUPPORT_EMAIL:-support@trycord.dev}
+  BRAND_PRIMARY_COLOR: ${BRAND_PRIMARY_COLOR:-#FF4D24}
+  BRAND_ACCENT_COLOR: ${BRAND_ACCENT_COLOR:-#4C9B8A}
+  BRAND_MARK: ${BRAND_MARK:-ΔΓΟ}
+  BRAND_FAVICON: ${BRAND_FAVICON:-/assets/logos/favicon.svg}
+  BRAND_LOGO: ${BRAND_LOGO:-/assets/logos/light-primary.svg}
+  BRAND_WORDMARK: ${BRAND_WORDMARK:-/assets/logos/light-wordmark.svg}
+  BRAND_BACKGROUND: ${BRAND_BACKGROUND:-/assets/backgrounds/volcanic-strata-16x9.svg}
+  BRAND_DOC_TITLE: ${BRAND_DOC_TITLE:-.light — Trycord Hosting}
+  # Cloudflare per-application tunnels
+  CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+  CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+  CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+  CLOUDFLARE_DOMAIN: ${CLOUDFLARE_DOMAIN:-}
+  LIGHT_TUNNEL_IMAGE: ${LIGHT_TUNNEL_IMAGE:-trycord/light-tunnel:1.0.0}
+  # Runtime images Shade provisions customer workloads with
+  LIGHT_RUNTIME_IMAGE_MODE: ${LIGHT_RUNTIME_IMAGE_MODE:-approved}
+  LIGHT_RUNTIME_IMAGE: ${LIGHT_RUNTIME_IMAGE:-trycord/light-runtime}
+  LIGHT_RUNTIME_IMAGE_VERSION: ${LIGHT_RUNTIME_IMAGE_VERSION:-1.0.0}
+  # Payments / deployments / mail / proxy
+  STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+  STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+  GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+  GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+  GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-}
+  GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+  EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+  EMAIL_PROVIDER: ${EMAIL_PROVIDER:-deomail}
+  DEOMAIL_API_KEY: ${DEOMAIL_API_KEY:-}
+  DEOMAIL_FROM_EMAIL: ${DEOMAIL_FROM_EMAIL:-}
+  DEOMAIL_API_URL: ${DEOMAIL_API_URL:-https://api.deomail.com}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  SMTP_SECURE: ${SMTP_SECURE:-true}
+  CADDY_ADMIN_URL: ${CADDY_ADMIN_URL:-}
+  PLATFORM_IP: ${PLATFORM_IP:-}
+  SSO_ENABLED: ${SSO_ENABLED:-false}
+  SSO_URL: ${SSO_URL:-}
+  SSO_LABEL: ${SSO_LABEL:-Continue with SSO}
+
 services:
   light:
     build:
       context: .
       dockerfile: Dockerfile
-    image: trycord/light:latest
-    container_name: trycord-light
+    image: ${LIGHT_IMAGE:-trycd/trycord-light:latest}
+    container_name: ${LIGHT_CONTAINER:-trycord-light}
     restart: unless-stopped
-    ports:
-      - "${CONTROL_PLANE_PORT:-5858}:5858"
+    # Control plane only — Shade is a separate service. No Docker socket here.
     environment:
-      NODE_ENV: production
+      <<: *platform-env
+      LT_MODE: server
       PORT: 5858
-      AGENT_PORT: 5859
       HOST: 0.0.0.0
       DATABASE_PATH: /data/trycord-light.db
-      JWT_SECRET: ${JWT_SECRET:-}
-      NODE_TOKEN: ${NODE_TOKEN:-}
-      NODE_ID: ${LIGHT_NODE_ID:-node-01}
-      CONTROL_URL: http://127.0.0.1:5858
-      AGENT_DATA_DIR: /var/lib/trycord-light
-      LT_MODE: all
-      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
-      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
-      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
-      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-trycord.dev}
-      CONTROL_BASE_URL: ${CONTROL_BASE_URL:-https://trycord.dev}
-      BRAND_PRODUCT: ${BRAND_PRODUCT:-.light}
-      BRAND_OWNER: ${BRAND_OWNER:-Trycord}
-      BRAND_ATTRIBUTION: ${BRAND_ATTRIBUTION:-.light is a Trycord product}
-      BRAND_TAGLINE: ${BRAND_TAGLINE:-Universal hosting platform}
-      BRAND_SUPPORT_EMAIL: ${BRAND_SUPPORT_EMAIL:-support@trycord.dev}
-      BRAND_PRIMARY_COLOR: ${BRAND_PRIMARY_COLOR:-#FF4D24}
-      BRAND_ACCENT_COLOR: ${BRAND_ACCENT_COLOR:-#4C9B8A}
-      BRAND_MARK: ${BRAND_MARK:-ΔΓΟ}
-      BRAND_FAVICON: ${BRAND_FAVICON:-/assets/logos/favicon.svg}
-      BRAND_LOGO: ${BRAND_LOGO:-/assets/logos/light-primary.svg}
-      BRAND_WORDMARK: ${BRAND_WORDMARK:-/assets/logos/light-wordmark.svg}
-      BRAND_BACKGROUND: ${BRAND_BACKGROUND:-/assets/backgrounds/volcanic-strata-16x9.svg}
-      BRAND_DOC_TITLE: ${BRAND_DOC_TITLE:-.light — Trycord Hosting}
-      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
-      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
-      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
-      CLOUDFLARE_DOMAIN: ${CLOUDFLARE_DOMAIN:-}
-      ALLOW_CUSTOM_PLANS: ${ALLOW_CUSTOM_PLANS:-false}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-      GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-}
-      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
-      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-deomail}
-      DEOMAIL_API_KEY: ${DEOMAIL_API_KEY:-}
-      DEOMAIL_FROM_EMAIL: ${DEOMAIL_FROM_EMAIL:-}
-      DEOMAIL_API_URL: ${DEOMAIL_API_URL:-https://api.deomail.com}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM: ${SMTP_FROM:-}
-      SMTP_SECURE: ${SMTP_SECURE:-true}
-      CADDY_ADMIN_URL: ${CADDY_ADMIN_URL:-}
-      PLATFORM_IP: ${PLATFORM_IP:-}
-      LIGHT_RUNTIME_IMAGE_MODE: ${LIGHT_RUNTIME_IMAGE_MODE:-approved}
-      LIGHT_RUNTIME_IMAGE: ${LIGHT_RUNTIME_IMAGE:-trycord/light-runtime}
-      LIGHT_RUNTIME_IMAGE_VERSION: ${LIGHT_RUNTIME_IMAGE_VERSION:-1.0.0}
-      SSO_ENABLED: ${SSO_ENABLED:-false}
-      SSO_URL: ${SSO_URL:-}
-      SSO_LABEL: ${SSO_LABEL:-Continue with SSO}
+    ports:
+      - "${CONTROL_PLANE_PORT:-5858}:5858"
     volumes:
-      - trycord-light-data:/data
-      - trycord-light-node-data:/var/lib/trycord-light
-      - /var/run/docker.sock:/var/run/docker.sock
+      - light-data:/data
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5858/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    stop_grace_period: 15s
+    networks: [light-net]
+
+  shade:
+    build:
+      context: .
+      dockerfile: Dockerfile.shade
+    image: ${SHADE_IMAGE:-light-shade:latest}
+    container_name: ${SHADE_CONTAINER:-light-shade}
+    restart: unless-stopped
+    depends_on:
+      light:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      SHADE_NODE_ID: ${SHADE_NODE_ID:-node-01}
+      SHADE_NODE_NAME: ${SHADE_NODE_NAME:-node-01}
+      # Must match the control plane's NODE_TOKEN.
+      SHADE_NODE_TOKEN: ${NODE_TOKEN:-}
+      SHADE_CONTROL_PLANE_URL: http://light:5858
+      SHADE_DOCKER_HOST: unix:///var/run/docker.sock
+      SHADE_DATA_DIR: /var/lib/light-shade
+      SHADE_HEARTBEAT_INTERVAL: ${SHADE_HEARTBEAT_INTERVAL:-30s}
+      SHADE_METRICS_INTERVAL: ${SHADE_METRICS_INTERVAL:-15s}
+      SHADE_LOG_LEVEL: ${SHADE_LOG_LEVEL:-info}
+    volumes:
+      # Only Shade receives the Docker socket.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - light-shade-data:/var/lib/light-shade
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5859/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 15s
       retries: 3
-      start_interval: 5s
+    stop_grace_period: 15s
+    networks: [light-net]
+
+networks:
+  light-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${LIGHT_NET_SUBNET:-172.31.0.0/16}
 
 volumes:
-  trycord-light-data:
-    name: trycord-light-data
-  trycord-light-node-data:
-    name: trycord-light-node-data
+  light-data:
+    name: ${LIGHT_DATA_VOLUME:-light-data}
+  light-shade-data:
+    name: ${SHADE_DATA_VOLUME:-light-shade-data}

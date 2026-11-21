@@ -39,7 +39,7 @@ const DEBIAN_BASED_REPOS = new Set([
   'eclipse-temurin',
   // .light's own custom Debian-based application images (built from Debian
   // bookworm-slim) are first-class runtimes, not third-party unapproved images.
-  'trycord/light-trycord', 'trycord/light-runtime',
+  'trycd/light-trycord', 'trycord/light-trycord', 'trycord/light-runtime',
 ]);
 
 /** True only for approved Debian-family image references. */
