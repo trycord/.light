@@ -106,6 +106,8 @@ html { scrollbar-width: thin; scrollbar-color: var(--lt-surface-3) var(--lt-bg);
 
 .lt-btn-sm { height: 30px; padding: 0 var(--lt-space-3); font-size: var(--lt-text-xs); border-radius: var(--lt-radius-sm); }
 .lt-btn-lg { height: 44px; padding: 0 var(--lt-space-6); font-size: var(--lt-text-base); border-radius: var(--lt-radius-lg); }
+.lt-icon-btn { width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--lt-border); border-radius:var(--lt-radius-md); background:var(--lt-surface); color:var(--lt-text-muted); cursor:pointer; font-size:15px; padding:0; }
+.lt-icon-btn:hover { color:var(--lt-text); border-color:var(--lt-border-strong); }
 .lt-btn-icon { width: 34px; height: 34px; padding: 0; border-radius: var(--lt-radius-md); }
 
 .lt-btn:focus-visible { box-shadow: var(--lt-focus-ring); }

@@ -9,8 +9,7 @@ function systemPrefersLight() {
 
 function resolve(mode) {
   if (mode === 'light' || mode === 'dark' || mode === 'high-contrast') return mode;
-  // .light ships with a light-first visual system. Explicit choices still win.
-  return 'light';
+  return systemPrefersLight() ? 'light' : 'dark';
 }
 
 export function applyTheme(mode) {
@@ -43,4 +42,47 @@ if (window.matchMedia) {
   });
 }
 
-window.__LT_THEME__ = { get: getThemeMode, set: setTheme, apply: applyTheme };
+/* ---------- Theme toggle ---------- */
+function currentResolved() {
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
+
+function paintToggles() {
+  const next = currentResolved() === 'light' ? 'dark' : 'light';
+  document.querySelectorAll('[data-theme-toggle]').forEach((el) => {
+    el.textContent = currentResolved() === 'light' ? '☾' : '☀';
+    el.setAttribute('aria-label', `Switch to ${next} theme`);
+    el.title = `${next === 'light' ? 'Light' : 'Dark'} theme`;
+  });
+}
+
+function toggleTheme() {
+  setTheme(currentResolved() === 'light' ? 'dark' : 'light');
+  paintToggles();
+}
+
+document.addEventListener('click', (event) => {
+  const el = event.target.closest('[data-theme-toggle]');
+  if (!el) return;
+  event.preventDefault();
+  toggleTheme();
+});
+document.addEventListener('lt:theme', paintToggles);
+window.addEventListener('DOMContentLoaded', paintToggles);
+paintToggles();
+
+// Restrained scroll progress hairline
+if (!document.querySelector('.lt-progress')) {
+  const bar = document.createElement('div');
+  bar.className = 'lt-progress';
+  document.body.appendChild(bar);
+  const update = () => {
+    const h = document.documentElement.scrollHeight - window.innerHeight;
+    bar.style.width = (h > 0 ? Math.min(100, (window.scrollY / h) * 100) : 0) + '%';
+  };
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update, { passive: true });
+  update();
+}
+
+window.__LT_THEME__ = { get: getThemeMode, set: setTheme, apply: applyTheme, toggle: toggleTheme };

@@ -23,7 +23,8 @@ function nav(b, active) {
       ${NAV.map(n => `<a href="${n.href}" ${n.key === active ? 'aria-current="page" class="active"' : ''}>${n.label}</a>`).join('')}
       <a href="/contact">Support</a>
     </div>
-    <div class="mkt-cta"><a class="lt-btn lt-btn-ghost lt-btn-sm" href="/login">Sign in</a>
+    <div class="mkt-cta"><button class="lt-icon-btn" data-theme-toggle title="Toggle theme" aria-label="Toggle theme">☀</button>
+      <a class="lt-btn lt-btn-ghost lt-btn-sm" href="/login">Sign in</a>
       <a class="lt-btn lt-btn-primary lt-btn-sm" href="/hosting">Get started</a></div>
     <button class="mkt-burger" id="burger" aria-label="Open menu" aria-expanded="false">☰</button>
   </div></nav>`;
@@ -51,19 +52,6 @@ export async function page({ title, description, active, eyebrow, heading, lede,
   const product = esc(b.product || '.light');
   const root = document.getElementById('site');
   if (title) document.title = `${title} — ${product}`;
-  // A thin ember hairline tracks scroll progress — quiet, premium feedback.
-  if (!document.querySelector('.mp-progress')) {
-    const bar = document.createElement('div');
-    bar.className = 'mp-progress';
-    document.body.appendChild(bar);
-    const update = () => {
-      const h = document.documentElement.scrollHeight - window.innerHeight;
-      bar.style.width = (h > 0 ? Math.min(100, (window.scrollY / h) * 100) : 0) + '%';
-    };
-    window.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update, { passive: true });
-    update();
-  }
   root.innerHTML = nav(b, active) + `<main id="main">
     <section class="mkt-page-hero"><div class="mkt-hero-grid" style="grid-template-columns:1fr">
       <div><span class="mkt-eyebrow">${esc(eyebrow || product)}</span>

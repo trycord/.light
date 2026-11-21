@@ -48,7 +48,7 @@ function layout(brand, content, active = '') {
     <link rel="icon" href="${esc(brand.favicon || '/assets/logos/favicon.svg')}">
     <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/styles/nova.css">
+    <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css"><link rel="stylesheet" href="/styles/site.css">
   </head><body>
     <header class="site-header"><div class="site-wrap site-nav">
       <a href="/" class="site-brand"><img src="${esc(brand.logo || '/assets/logos/light-primary.svg')}" height="34" alt="${product}"></a>

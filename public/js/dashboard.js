@@ -41,22 +41,9 @@ const confirmDialog=(t,m,confirmText='Confirm')=>modal(t,`<p style="color:var(--
 const field=(l,n,t='text',v='',x='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><input class="lt-input" id="f-${n}" name="${n}" type="${t}" value="${esc(v)}" ${x}></div>`;
 const selectField=(l,n,opts,sel='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><select class="lt-select" id="f-${n}" name="${n}">${opts.map(o=>{const v=Array.isArray(o)?o[0]:(typeof o==='string'?o:o.value);const t=Array.isArray(o)?o[1]:(typeof o==='string'?o:o.label);return `<option value="${esc(v)}" ${String(v)===String(sel)?'selected':''}>${esc(t)}</option>`;}).join('')}</select></div>`;
 const textarea=(l,n,v='')=>`<div class="lt-field"><label for="f-${n}">${esc(l)}</label><textarea class="lt-textarea" id="f-${n}" name="${n}">${esc(v)}</textarea></div>`;
-const loading=()=>`<div class="lt-loading" role="status" aria-live="polite">
-  <div class="mp-skeleton" style="height:34px;width:42%;margin-bottom:18px"></div>
-  <div class="mp-skeleton mp-skeleton-line medium"></div>
-  <div class="mp-skeleton mp-skeleton-line"></div>
-  <div class="mp-skeleton mp-skeleton-line short"></div>
-  <div style="display:flex;align-items:center;gap:10px;margin-top:16px;color:var(--lt-text-muted);font-size:12px">
-    <span class="lt-spinner"></span> Loading…
-  </div>
-</div>`;
+const loading=()=>'<div class="lt-loading"><span class="lt-spinner"></span>Loading…</div>';
 const empty=(t,d,a='')=>`<div class="lt-empty"><div class="lt-empty-icon">◇</div><div class="lt-empty-title">${esc(t)}</div><div class="lt-empty-desc">${esc(d)}</div>${a}</div>`;
-const errState=(e)=>`<div class="mp-empty" role="alert">
-  <div class="mp-empty-ico">⚠</div>
-  <h3>Something went wrong</h3>
-  <p>${esc(e.message||e)}</p>
-  <button class="lt-btn lt-btn-secondary lt-btn-sm" onclick="location.reload()" style="margin-top:10px">Try again</button>
-</div>`;
+const errState=(e)=>`<div class="lt-error">${esc(e.message||e)}</div>`;
 const section=(t,s,c,a='')=>`<div class="lt-card"><div class="lt-card-header"><div><h3 class="lt-h3">${esc(t)}</h3>${s?`<div class="lt-meta">${esc(s)}</div>`:''}</div>${a}</div><div class="lt-card-body">${c}</div></div>`;
 
 /* ---------- auth ---------- */
@@ -129,17 +116,11 @@ function renderShell(){
       <div class="lt-breadcrumb"><span>${esc(brand.product||'.light')}</span><span class="sep">/</span><span class="cur" id="crumb">Dashboard</span></div>
       <div class="lt-topbar-spacer"></div>
       <div class="lt-global-search"><input id="globalSearch" placeholder="Search servers, domains…" aria-label="Search"></div>
+      <button class="lt-icon-btn" data-theme-toggle title="Toggle theme" aria-label="Toggle theme">☀</button>
       <button class="lt-icon-btn" id="notifBtn" title="Notifications" style="position:relative">🔔<span class="lt-badge-count" id="notifCount" style="display:none">0</span></button>
       <a class="lt-icon-btn" href="/docs" title="Help">?</a>
       <div class="lt-user-menu"><button class="lt-btn lt-btn-ghost lt-btn-sm" id="userBtn">${esc(session.user.name||session.user.username||session.user.email)} ▾</button></div>
-    </header><main class="lt-content" id="view">${loading()}</main></div>
-    <nav class="lt-mobile-nav" aria-label="Mobile navigation">
-      <a href="#/overview" data-nav="overview" class="active"><i>◈</i>Dashboard</a>
-      <a href="#/servers" data-nav="servers"><i>▤</i>Services</a>
-      <a href="#/market" data-nav="market"><i>◇</i>Market</a>
-      <a href="#/notifications" data-nav="notifications"><i>◔</i>Alerts</a>
-      <a href="#/settings" data-nav="settings"><i>⚙</i>Account</a>
-    </nav></div>`;
+    </header><main class="lt-content" id="view">${loading()}</main></div></div>`;
   app.querySelector('#navToggle')?.addEventListener('click',()=>{const s=app.querySelector('#sidebar'),sc=app.querySelector('#scrim');const open=s.classList.toggle('is-open');sc.style.display=open?'block':'none';});
   app.querySelector('#scrim')?.addEventListener('click',()=>{app.querySelector('#sidebar').classList.remove('is-open');app.querySelector('#scrim').style.display='none';});
   app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="/admin" ${(session.permissions?.includes('*')||session.permissions?.includes('admin.access'))?'':'style="display:none"'}>Administration</a><a href="/">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});
@@ -196,7 +177,16 @@ async function navigate(){
 window.addEventListener('hashchange',navigate);
 window.addEventListener('lt:unauthorized',()=>{toast('Session expired','error');api.setToken('');session=null;renderAuth('login');});
 
-async function boot(){try{brand=await api.branding();}catch{}document.title=brand.docTitle||'.light';let f=document.querySelector('link[rel=icon]');if(f&&brand.favicon)f.href=brand.favicon;
+async function boot(){
+  // Render the shell immediately with defaults. Branding loads in the background
+  // so a slow/offline API never leaves a blank screen.
+  api.branding().then((b) => {
+    if (!b) return;
+    brand = b;
+    document.title = brand.docTitle || document.title;
+    const f = document.querySelector('link[rel=icon]');
+    if (f && brand.favicon) f.href = brand.favicon;
+  }).catch(() => {});
   const{v}=parseHash();
   if(!api.token()){
     // Email links (#/verify, #/reset) must work even before signing in.
