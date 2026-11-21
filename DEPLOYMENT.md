@@ -88,6 +88,11 @@ npm run link-node     # or: bash scripts/link-node.sh
 The script logs in, registers (or reuses) the node, writes a `0600` env file to
 `/tmp/light-shade.env`, and prints the exact `docker run` command:
 
+> **Use the `:shade` tag on the second machine, not `:latest`.** `:latest` is the
+> platform image — it runs the `start.js` supervisor, not the Shade agent, and
+> fails with `EACCES mkdir /var/lib/light-shade/instances`. The correct image is
+> `trycd/trycord-light:shade` (multi-arch: amd64 + arm64).
+
 ```bash
 docker run -d --name light-shade --restart unless-stopped \
   -v /var/run/docker.sock:/var/run/docker.sock \

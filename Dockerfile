@@ -82,14 +82,17 @@ LABEL org.opencontainers.image.title="light-shade" \
 
 ENV NODE_ENV=production
 WORKDIR /app
-RUN mkdir -p /var/lib/light-shade /var/run && chown -R node:node /var/lib/light-shade
+RUN apt-get update && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /var/lib/light-shade /var/run && chown -R node:node /var/lib/light-shade
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/package.json /app/package-lock.json ./
 COPY --from=deps /app/agent ./agent
 COPY --from=deps /app/shade-entry.js ./shade-entry.js
+COPY shade-entry.sh ./shade-launch.sh
+RUN chmod +x shade-launch.sh
 
-USER node
 EXPOSE 5859
 ENV SHADE_PORT=5859 SHADE_HOST=0.0.0.0 SHADE_DATA_DIR=/var/lib/light-shade \
     SHADE_DOCKER_HOST=unix:///var/run/docker.sock NODE_ENV=production
@@ -97,4 +100,5 @@ ENV SHADE_PORT=5859 SHADE_HOST=0.0.0.0 SHADE_DATA_DIR=/var/lib/light-shade \
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:5859/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 STOPSIGNAL SIGTERM
-CMD ["node", "shade-entry.js"]
+# Launch as root to fix volume ownership, then drop to node via gosu.
+ENTRYPOINT ["./shade-launch.sh"]
