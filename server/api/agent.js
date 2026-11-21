@@ -84,12 +84,14 @@ export function agentRoutes() {
     // Host ports are now known — republish Cloudflare routes for this node so
     // hostname -> 127.0.0.1:<published port> points at the live service.
     if (command.type === 'instance.create' && ok) {
-      const instance = getDb().prepare('SELECT node_id FROM instances WHERE id = ?').get(command.instance_id);
-      if (instance?.node_id) {
-        import('../cloudflare.js').then(({ refreshDomainRoutes, isCloudflareConfigured }) => {
-          if (isCloudflareConfigured()) refreshDomainRoutes(command.instance_id).catch(() => {});
-        }).catch(() => {});
-      }
+      // ports_json was just persisted with Docker's real host port. Republish
+      // every hostname route so cloudflared targets 127.0.0.1:<assigned port>,
+      // never the container port. Retry briefly in case the API is warming up.
+      const refresh = () => import('../cloudflare.js')
+        .then(({ refreshDomainRoutes }) => refreshDomainRoutes(command.instance_id))
+        .catch((error) => console.error('[cloudflare] route refresh failed:', error.message));
+      refresh();
+      setTimeout(refresh, 1500).unref();
     }
     res.json({ ok: true });
   }));

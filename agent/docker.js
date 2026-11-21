@@ -300,7 +300,10 @@ export function buildTunnelConfig({ domainId, token, hostname, tunnelId, image }
   return {
     Image: image || process.env.LIGHT_RUNTIME_IMAGE || 'trycord/light-runtime:1.0.0',
     name: tunnelContainerName(domainId),
-    Cmd: ['/usr/local/bin/cloudflared', 'tunnel', '--no-autoupdate', 'run', '--token', String(token)],
+    // cloudflared requires global flags BEFORE the subcommand. Placing
+    // --no-autoupdate after `tunnel` makes it interpret it as an invalid
+    // subcommand and the connector crash-loops.
+    Cmd: ['/usr/local/bin/cloudflared', '--no-autoupdate', 'tunnel', 'run', '--token', String(token)],
     Env: [`LT_HOSTNAME=${String(hostname || '').slice(0, 200)}`],
     Labels: { 'lt.tunnel': 'cloudflare', 'lt.domain': domainId || '', 'lt.hostname': String(hostname || '').slice(0, 100),
       'lt.tunnel-id': String(tunnelId || '').slice(0, 100) },

@@ -1,0 +1,26 @@
+# .light — dedicated Cloudflare Tunnel connector image.
+# Small Debian bookworm-slim image carrying only cloudflared. Used by Shade for
+# one connector container per hosted application (host network, no app code).
+FROM debian:bookworm-slim
+
+ARG CLOUDFLARED_VERSION=2024.12.2
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN cfarch=$(dpkg --print-architecture) && \
+    case "$cfarch" in \
+      amd64) cf=amd64 ;; \
+      arm64) cf=arm64 ;; \
+      *) echo "unsupported architecture: $cfarch" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${cf}" \
+      -o /usr/local/bin/cloudflared && \
+    chmod 0755 /usr/local/bin/cloudflared && \
+    /usr/local/bin/cloudflared --version
+
+USER 10001:10001
+# No ENTRYPOINT: Shade supplies the complete cloudflared command in Cmd so the
+# image also works when a different connector image is configured.
+CMD ["/usr/local/bin/cloudflared", "--version"]

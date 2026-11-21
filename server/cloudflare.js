@@ -224,10 +224,14 @@ export async function provisionDomainRoute(domainRow, req) {
     getDb().prepare("UPDATE domains SET tunnel_id=?, tunnel_status=?, ssl_status=?, updated_at=? WHERE id=?")
       .run(tunnel.id, dnsStatus === 'ok' ? 'provisioned' : 'dns_required', dnsStatus === 'ok' ? 'active' : 'pending', now(), domainRow.id);
 
-    // Start/reuse the dedicated connector for this application.
+    // Start/reuse the dedicated connector for this application. A dedicated
+    // cloudflared image is used — the universal runtime image is for workloads,
+    // not for connectors. Empty settings must not produce an invalid `":"` ref.
+    const configuredImage = String(get('LIGHT_TUNNEL_IMAGE', '') || '').trim();
+    const connectorImage = configuredImage || 'trycord/light-tunnel:1.0.0';
     queueCommand(instance.node_id || 'node-01', 'tunnel.start', {
       instanceId: instance.id, domainId: domainRow.id, hostname, token: tunnel.token,
-      tunnelId: tunnel.id, image: `${get('LIGHT_RUNTIME_IMAGE', 'trycord/light-runtime')}:${get('LIGHT_RUNTIME_IMAGE_VERSION', '1.0.0')}`,
+      tunnelId: tunnel.id, image: connectorImage,
     }, instance.id);
 
     if (req) audit(req, 'cloudflare.tunnel.provision', 'domain', domainRow.id, { hostname, tunnelId: tunnel.id });
