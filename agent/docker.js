@@ -5,6 +5,7 @@ import path from 'path';
 import config from './config.js';
 import { scaffold, DEFAULT_ENV } from './scaffolds.js';
 import { installPackage } from './packages.js';
+import { detectProject, installDependencies, verifyNodeModules } from './dependencies.js';
 
 let docker;
 export function dockerOptions(host = config.dockerHost) {
@@ -250,6 +251,20 @@ export async function createInstance(payload) {
       installResult = await installPackage(pkg, appDir, payload.memory);
       console.log('[shade] package install:', pkg.name, pkg.version, installResult?.installed ? 'ok' : installResult?.reason);
     } else installResult = { installed: true, reused: true };
+  }
+  // Global dependency stage: inspect the customer's project and install its
+  // declared dependencies before first start. Idempotent — skipped when a
+  // lockfile-defined node_modules already exists. Never runs for image-based
+  // packages (they carry their own dependencies).
+  if (!installResult?.imageBased && process.env.LIGHT_AUTO_DEPS !== 'false') {
+    try {
+      const detected = detectProject(instanceId);
+      if (detected.command && !detected.alreadyInstalled) {
+        console.log('[shade] deps:', detected.runtime, detected.packageManager, detected.command);
+        const result = await installDependencies({ instanceId, image, env: payload.env, command: detected.command, packageManager: detected.packageManager });
+        console.log('[shade] deps result:', result.ok ? 'ok' : 'failed', result.exitCode);
+      }
+    } catch (error) { console.error('[shade] deps error:', error.message); }
   }
   // Customer-visible filesystem boundary. Every service sees /home/container;
   // the runtime's expected directory is bind-mounted from the same source for

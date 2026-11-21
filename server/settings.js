@@ -14,6 +14,7 @@ export const SETTINGS_SCHEMA = Object.freeze({
   CONTROL_BASE_URL: { section: 'general', label: 'Control base URL', type: 'text' },
   ALLOW_SIGNUP: { section: 'general', label: 'Allow public sign-up', type: 'bool' },
   ALLOW_CUSTOM_PLANS: { section: 'general', label: 'Allow Build Your Own Plan', type: 'bool' },
+  AUTO_DEPS_ENABLED: { section: 'runtime', label: 'Automatic dependency installation', type: 'bool', default: true },
   // Payments
   STRIPE_SECRET_KEY: { section: 'payments', label: 'Stripe secret key', type: 'secret' },
   STRIPE_WEBHOOK_SECRET: { section: 'payments', label: 'Stripe webhook secret (thin V2)', type: 'secret' },

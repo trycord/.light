@@ -67,7 +67,16 @@ export function scaffold(environmentId) {
     erlang: { files: { 'main.erl': erlangApp }, command: 'erl -noshell -pa . -s main start' },
     swift: { files: { 'main.swift': swiftApp }, command: 'swift main.swift' },
     'static-site': { files: { 'index.html': staticHtml }, command: '', workdir: '/usr/share/nginx/html' },
-    'discord-bot': { files: { 'package.json': pkg('node index.js'), 'index.js': nodeApp }, command: 'npm start' },
+    // Discord bot scaffold declares discord.js in the manifest so Shade's
+    // dependency installer can install it automatically before startup.
+    'discord-bot': {
+      files: {
+        'package.json': JSON.stringify({ name: 'light-discord-bot', version: '1.0.0', private: true,
+          scripts: { start: 'node index.js' }, dependencies: { 'discord.js': '^14.16.3', dotenv: '^16.4.7' } }, null, 2) + '\n',
+        'index.js': "const { Client, GatewayIntentBits } = require('discord.js');\nconst client = new Client({ intents: [GatewayIntentBits.Guilds] });\nclient.once('ready', () => console.log('Bot online as', client.user?.tag));\nclient.login(process.env.DISCORD_TOKEN || process.env.BOT_TOKEN || '').catch(e => console.error('Set DISCORD_TOKEN:', e.message));\n",
+      },
+      command: 'npm start',
+    },
     // The Trycord app is baked into its custom image; no scaffold files or
     // alternate workdir bind are needed (the customer workspace holds data only).
     trycord: { files: {}, command: '' },

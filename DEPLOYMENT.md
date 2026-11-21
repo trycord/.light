@@ -111,6 +111,31 @@ Notes:
   (idempotent), so it is safe to run again after a machine rebuild.
 - Use distinct names (`big-machine`, `gpu-node`, etc.) for distinct machines.
 
+## Universal infrastructure engine (Shade)
+
+Shade now uses shared subsystems instead of product-specific one-off fixes:
+
+- **Execution backend abstraction** (`agent/backend.js`): all Docker access goes
+  through a single interface with connectivity checks, precise errors
+  (`backend_unavailable`, `backend_permission_denied`), retry/reconnect and a
+  backend health object exposed on `GET :5859/health` and in heartbeats.
+- **Universal dependency manager** (`agent/dependencies.js`): a global
+  `Inspect → Detect → Resolve → Install → Verify → Start` stage. Detects
+  `package.json`/lockfiles (npm, yarn, pnpm), Python (pip, uv, poetry, pipenv),
+  PHP/Ruby/Java/Go/Rust manifests. Installs inside a short-lived isolated
+  container with the customer workspace at `/home/container`, uid 1000,
+  network-isolated from internal services, 2GB RAM / 2 vCPU limits, and
+  verifies declared modules resolve. Never guesses modules from `require()`
+  statements — only the project manifest drives installation.
+- **Lifecycle integration**: dependency install runs automatically before first
+  start for non-image-based packages (disable with `LIGHT_AUTO_DEPS=false`).
+- **API**: `GET /api/instances/:id/dependencies` (detect + history) and
+  `POST /api/instances/:id/dependencies/install` (manual reinstall).
+- **Admin**: `AUTO_DEPS_ENABLED` setting (section `runtime`).
+
+Admin bootstrap env vars: `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`,
+`BOOTSTRAP_ADMIN_NAME`.
+
 ## Verification performed
 
 - Platform image: `/health` ok, `/`, `/login`, `/admin` all 200, `/api/branding` and admin login functional.

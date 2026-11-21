@@ -264,6 +264,10 @@ const TABLES = {
     type TEXT NOT NULL DEFAULT 'info', title TEXT NOT NULL,
     message TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '{}',
     read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
+  dependency_installs: `CREATE TABLE IF NOT EXISTS dependency_installs (
+    id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, team_id TEXT,
+    ok INTEGER NOT NULL DEFAULT 0, command TEXT NOT NULL DEFAULT '',
+    output TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`,
   support_tickets: `CREATE TABLE IF NOT EXISTS support_tickets (
     id TEXT PRIMARY KEY, team_id TEXT NOT NULL, user_id TEXT NOT NULL,
     subject TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'general',
@@ -557,6 +561,11 @@ function seed() {
     // Custom .light application image: the real Trycord platform, built from
     // Debian bookworm-slim. Selecting this runtime uses our own image, and the
     // Trycord package auto-selects it (no customer infrastructure choices).
+    // Baked Node runtime: common package dependencies preinstalled so bot/web
+    // packages start without npm install at boot.
+    E('node-baked','Node.js (baked deps)','runtime','Node.js with Discord.js, Express and common modules preinstalled','◈',['22'],'22',
+      {22:'trycd/trycord-light:baked'},'node index.js',['3000'],
+      {env:{NODE_ENV:'production',NODE_PATH:'/opt/light/prebaked/node_modules'},featured:1,order:27}),
     E('trycord','Trycord','app','Trycord community platform (custom Debian image)','◆',['7.2.0'],'7.2.0',
       { '7.2.0':'trycd/light-trycord:1.0.0' },'node src/server.js',['9971'],
       { dir:'/app/backend', healthcheck:{ path:'/api/health' },
@@ -601,6 +610,17 @@ function seed() {
       db.prepare("INSERT OR IGNORE INTO product_packages (product_id, package_id, required, created_at) VALUES ('trycord', 'trycord', 1, ?)").run(ts);
     }
     db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('trycord_runtime', ?)").run(ts);
+  }
+
+  // Baked dependency runtime + package wiring (upgrades existing installs).
+  if (!db.prepare("SELECT name FROM migrations WHERE name = 'baked_deps_runtime'").get()) {
+    const baked = envs.find((e) => e.id === 'node-baked');
+    if (baked) { insertEnv.run(baked); updateEnv.run(baked); }
+    db.prepare("UPDATE software_packages SET runtime_id='node-baked', startup_template='node index.js', updated_at=? WHERE id='discord'").run(ts);
+    db.prepare('INSERT OR IGNORE INTO package_versions (id, package_id, version, download_url, runtime_version, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id('pver'), 'discord', '1', '', '22', 'published', ts);
+    db.prepare("UPDATE environments SET default_env=?, status='published' WHERE id='discord-bot'").run(JSON.stringify({NODE_ENV:'production',NODE_PATH:'/opt/light/prebaked/node_modules'}));
+    db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('baked_deps_runtime', ?)").run(ts);
   }
 
   // Official Trycord release (only when a real image is configured by the operator).

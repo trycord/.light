@@ -73,6 +73,27 @@ STOPSIGNAL SIGTERM
 ENTRYPOINT ["./docker-entrypoint.sh"]
 
 # ------------------------------------------------------------------------------
+# IMAGE 3: baked — customer runtime image with common dependencies preinstalled.
+# Packages (Discord bot, web app, etc.) use this so no npm install at boot.
+# ------------------------------------------------------------------------------
+FROM node:22-bookworm-slim AS baked
+LABEL org.opencontainers.image.title=".light baked runtime" \
+      org.opencontainers.image.description=".light customer runtime with preinstalled package dependencies — POWERED BY TRYCORD" \
+      org.opencontainers.image.vendor="Trycord"
+ENV NODE_ENV=production NODE_PATH=/opt/light/prebaked/node_modules
+WORKDIR /opt/light/prebaked
+# Pin exact versions so a rebuild is reproducible. These are pure-JS packages
+# (no native compilation), so multi-arch builds work without QEMU node-gyp.
+RUN npm init -y >/dev/null && npm install --no-audit --no-fund --omit=dev \
+      discord.js@14.16.3 express@4.21.2 dotenv@16.4.7 ws@8.18.0 \
+      node-fetch@2.7.0 chalk@4.1.2
+WORKDIR /home/container
+RUN mkdir -p /home/container && chown -R node:node /home/container
+USER node
+EXPOSE 3000
+CMD ["node", "index.js"]
+
+# ------------------------------------------------------------------------------
 # IMAGE 2: shade — the infrastructure agent (Docker socket here only)
 # ------------------------------------------------------------------------------
 FROM node:24-bookworm-slim AS shade

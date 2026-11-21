@@ -197,6 +197,26 @@ export function instancesRoutes() {
     res.json({ ok: true, status: statusMap[action], result });
   }));
 
+  // Dependency management — global Shade capability.
+  router.get('/:id/dependencies', asyncRoute(async (req, res) => {
+    const row = owned(req, req.params.id);
+    if (!row) throw notFound();
+    const result = await dispatch(row.node_id, 'instance.dependencies.inspect', withContainerId(row), row.id);
+    res.json({ ...result, history: getDb().prepare('SELECT * FROM dependency_installs WHERE instance_id = ? ORDER BY created_at DESC LIMIT 20').all(row.id) });
+  }));
+
+  router.post('/:id/dependencies/install', asyncRoute(async (req, res) => {
+    const row = owned(req, req.params.id);
+    if (!row) throw notFound();
+    const result = await dispatch(row.node_id, 'instance.dependencies.install', {
+      ...withContainerId(row), image: row.image, env: json(row.env_json, {}), command: str(req.body?.command, 500),
+    }, row.id);
+    getDb().prepare(`INSERT INTO dependency_installs (id, instance_id, team_id, ok, command, output, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(id('depins'), row.id, row.team_id, result.ok ? 1 : 0, str(result.command, 500), String(result.output || '').slice(0, 20000), now());
+    audit(req, 'instance.dependencies.install', 'instance', row.id, { ok: result.ok, command: result.command });
+    res.json(result);
+  }));
+
   router.post('/:id/reinstall', asyncRoute(async (req, res) => {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();

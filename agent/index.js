@@ -31,6 +31,8 @@ import config from './config.js';
 import { hostMetrics, createInstance, startInstance, stopInstance, restartInstance, suspendInstance, resumeInstance, removeInstance, reinstallInstance, execCommand, deployImage, containerStatus, containerStats, followLogs, ensureDirs, containerName, containerHealth, startTunnelConnector, stopTunnelConnector } from './docker.js';
 import { listFiles, readFile, writeFile, writeBinary, fileOperation, storageUsage, createBackup, restoreBackup } from './files.js';
 import { installSteamGame, isSteamGame, resolveGame } from './games.js';
+import { detectProject, installDependencies, verifyNodeModules } from './dependencies.js';
+import { backendInfo, startBackendMonitor } from './backend.js';
 import { buildSource, cloneRepository, validateBuildSpec } from './build.js';
 
 const CONTROL = config.controlUrl.replace(/\/$/, '');
@@ -121,6 +123,14 @@ async function execute(command) {
       return result;
     }
     case 'instance.game.install': return installSteamGame({ ...payload, instanceId: command.instanceId });
+    case 'instance.dependencies.inspect': return detectProject(command.instanceId);
+    case 'instance.dependencies.install': {
+      const detected = detectProject(command.instanceId);
+      if (!detected.command) return { ok: false, reason: 'no_dependency_manifest', detail: 'No supported dependency manifest found in /home/container' };
+      const result = await installDependencies({ instanceId: command.instanceId, image: payload.image, env: payload.env, command: payload.command || detected.command, packageManager: detected.packageManager });
+      if (result.ok && detected.runtime === 'node') result.verification = verifyNodeModules(command.instanceId, detected.declared);
+      return result;
+    }
     case 'instance.game.info': return resolveGame(payload.game);
     case 'instance.mods.install': {
       const dir = path.join(config.dataRoot, 'instances', String(command.instanceId).replace(/[^A-Za-z0-9_-]/g, ''), 'mods');
@@ -244,13 +254,20 @@ async function startLogStreams() {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
-  if (url.pathname === '/health') return send(res, 200, { status: 'ok', service: 'trycord-light-node-agent', nodeId: config.nodeId, uptime: process.uptime(), timestamp: Date.now() });
+  if (url.pathname === '/health') {
+    const backend = backendInfo();
+    return send(res, backend.connected ? 200 : 503, {
+      status: backend.connected ? 'ok' : 'degraded', service: 'trycord-light-node-agent',
+      nodeId: config.nodeId, uptime: process.uptime(), backend, timestamp: Date.now(),
+    });
+  }
   return send(res, 404, { error: 'not_found' });
 });
 
 let timers = [];
 function start() {
   ensureDirs();
+  timers.push(startBackendMonitor(15000));
   server.listen(config.port, config.host, () => console.log(`[.light node] agent listening on http://${config.host}:${config.port} (node ${config.nodeId})`));
   timers.push(setInterval(heartbeat, 5000));
   timers.push(setInterval(pollCommands, 1000));
