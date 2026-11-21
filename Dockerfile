@@ -17,10 +17,22 @@
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 make g++ ca-certificates \
+      python3 make g++ ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund
+# Skip install scripts here: node-gyp cannot run under QEMU when cross-building
+# amd64 from arm64. The single native dependency (better-sqlite3) is installed
+# below from its official prebuilt binary for the target architecture.
+RUN npm ci --omit=dev --no-audit --no-fund --ignore-scripts
+ARG TARGETARCH
+RUN set -e; \
+    case "$TARGETARCH" in \
+      amd64) A=x64 ;; \
+      arm64) A=arm64 ;; \
+      *) echo "unsupported arch $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/WiseLibs/better-sqlite3/releases/download/v12.11.1/better-sqlite3-v12.11.1-node-v137-linux-${A}.tar.gz" \
+      -o /tmp/bs3.tgz && tar xzf /tmp/bs3.tgz -C /app/node_modules/better-sqlite3
 COPY . .
 
 # ------------------------------------------------------------------------------
