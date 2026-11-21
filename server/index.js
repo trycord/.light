@@ -9,7 +9,7 @@ import http from 'http';
 
 import config from './config.js';
 import { initDb, closeDb, getDb } from './db.js';
-import { requireAuth, requireNode } from './auth.js';
+import { requireAuth, requireAdmin, requireNode } from './auth.js';
 import { asyncRoute, HttpError } from './util.js';
 import { combinedHealth, setAgentHealth } from './health.js';
 import { publicBranding } from './branding.js';
@@ -36,6 +36,7 @@ import { analyticsRoutes } from './api/analytics.js';
 import { checkoutRoutes } from './api/checkout.js';
 import { connectRoutes } from './api/connect.js';
 import { handleProvisionResult } from './provisioning.js';
+import { snapshot as observabilitySnapshot, instrument } from './observability.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(__dirname, '..');
@@ -58,6 +59,8 @@ app.use((req, res, next) => {
 
 app.get('/api/branding', (req, res) => res.json(publicBranding()));
 app.get('/api/identify', (req, res) => res.json(IDENT));
+// Observability — admin only, real data from process + database.
+app.get('/api/observability', requireAuth, requireAdmin, asyncRoute(async (req, res) => res.json(observabilitySnapshot())));
 app.get('/health', (req, res) => {
   const health = combinedHealth();
   res.status(health.status === 'ok' ? 200 : 503).json(health);
@@ -70,6 +73,7 @@ const apiLimiter = rateLimit({
   skip: (req) => Boolean(req.headers['x-node-token']),
 });
 const api = express.Router();
+api.use(instrument);
 api.use(apiLimiter);
 api.use('/auth', authRoutes());
 api.use('/instances', instancesRoutes());
@@ -165,6 +169,10 @@ function start() {
   initDb();
   server.listen(config.port, config.host, () => console.log(`[.light] control plane listening on http://${config.host}:${config.port}`));
   const scheduleTimer = setInterval(() => { try { runSchedules(); } catch (error) { console.error('[schedules]', error); } }, 60000);
+  // Reconcile DB state with reported Docker reality every 2 minutes.
+  import('./reconcile.js').then(({ reconcileWorkloads }) => {
+    setInterval(() => { try { reconcileWorkloads().catch((e) => console.error('[reconcile]', e)); } catch (e) { console.error('[reconcile]', e); } }, 120000);
+  }).catch(() => {});
   let stopping = false;
   const shutdown = () => {
     if (stopping) return; stopping = true;

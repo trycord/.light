@@ -265,43 +265,50 @@ export async function createInstance(payload) {
   return { containerId: container.id, name: containerName(instanceId), ports: assigned };
 }
 
-export function tunnelContainerName(teamId) {
-  return `lt-tunnel-${String(teamId || 'default').replace(/[^A-Za-z0-9_-]/g, '').slice(-16)}`;
+// One connector per hosted application (domain), named by domain id so multiple
+// services on a team never collide. Host networking lets cloudflared reach the
+// workload's published host port at 127.0.0.1:<port> on this node.
+export function tunnelContainerName(domainId) {
+  return `lt-tunnel-${String(domainId || 'default').replace(/[^A-Za-z0-9_-]/g, '').slice(-24)}`;
 }
 
-/** Run the Cloudflare connector inside our approved image on the team network. */
-export function buildTunnelConfig({ teamId, token, hostname, image }) {
+export function buildTunnelConfig({ domainId, token, hostname, tunnelId, image }) {
   if (!token) throw Object.assign(new Error('tunnel_token_required'), { status: 400 });
   return {
     Image: image || process.env.LIGHT_RUNTIME_IMAGE || 'trycord/light-runtime:1.0.0',
-    name: tunnelContainerName(teamId),
+    name: tunnelContainerName(domainId),
     Cmd: ['/usr/local/bin/cloudflared', 'tunnel', '--no-autoupdate', 'run', '--token', String(token)],
     Env: [`LT_HOSTNAME=${String(hostname || '').slice(0, 200)}`],
-    Labels: { 'lt.tunnel': 'cloudflare', 'lt.team': teamId || 'default', 'lt.hostname': String(hostname || '').slice(0, 100) },
+    Labels: { 'lt.tunnel': 'cloudflare', 'lt.domain': domainId || '', 'lt.hostname': String(hostname || '').slice(0, 100),
+      'lt.tunnel-id': String(tunnelId || '').slice(0, 100) },
     HostConfig: {
-      NetworkMode: networkName(teamId || 'default'),
+      NetworkMode: 'host',
       RestartPolicy: { Name: 'unless-stopped', MaximumRetryCount: 0 },
-      Memory: 256 * 1024 * 1024, MemorySwap: -1, NanoCpus: 0.5e9,
-      PidsLimit: 256, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges:true'], Init: true,
+      Memory: 128 * 1024 * 1024, MemorySwap: -1, NanoCpus: 0.25e9,
+      PidsLimit: 128, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges:true'], Init: true,
     },
   };
 }
 
-export async function startTunnelConnector({ teamId, token, hostname, image }) {
+export async function startTunnelConnector({ domainId, token, hostname, tunnelId, image }) {
   const d = getDocker();
-  const config = buildTunnelConfig({ teamId, token, hostname, image });
+  const config = buildTunnelConfig({ domainId, token, hostname, tunnelId, image });
   const name = config.name;
-  await ensureNetwork(teamId || 'default');
+  // Idempotent: if this application's connector already exists, leave it alone.
   const stale = d.getContainer(name);
-  try { await stale.inspect(); try { await stale.remove({ force: true }); } catch { /* ignore */ } } catch { /* none */ }
+  try {
+    const info = await stale.inspect();
+    if (info.State?.Running) return { containerId: info.Id, name, reused: true };
+    await stale.remove({ force: true });
+  } catch { /* none */ }
   const container = await d.createContainer(config);
   await container.start();
-  return { containerId: container.id, name };
+  return { containerId: container.id, name, reused: false };
 }
 
-export async function stopTunnelConnector({ teamId }) {
+export async function stopTunnelConnector({ domainId }) {
   const d = getDocker();
-  const name = tunnelContainerName(teamId);
+  const name = tunnelContainerName(domainId);
   const containers = await d.listContainers({ all: true });
   const found = containers.find((c) => c.Names?.includes(`/${name}`));
   if (!found) return { ok: false, reason: 'not_found' };
@@ -326,28 +333,54 @@ export async function containerHealth(instanceId) {
   } catch (error) { return { status: 'error', health: 'unknown', error: error.message }; }
 }
 
-async function withContainer(instanceId, fn) {
+/**
+ * Resolve a workload container using the authoritative Docker ID persisted by
+ * the Control Plane. Name lookup is only a compatibility fallback for legacy
+ * services created before the ID was stored.
+ *
+ * Errors are structured so the Control Plane can distinguish a missing Docker
+ * container from a daemon failure, without leaking internals to customers.
+ */
+async function withContainer(instanceId, fn, containerId = '') {
   const d = getDocker();
-  const containers = await d.listContainers({ all: true });
-  const name = containerName(instanceId);
-  const found = containers.find((c) => c.Names?.includes(`/${name}`));
-  if (!found) throw Object.assign(new Error('container_not_found'), { status: 404 });
-  return fn(d.getContainer(found.Id));
+  let container = null;
+  if (containerId) {
+    try {
+      container = d.getContainer(containerId);
+      await container.inspect();
+    } catch (error) {
+      const code = error?.statusCode === 404 ? 'docker_container_missing' : 'docker_unavailable';
+      const err = new Error(code);
+      err.code = code; err.status = code === 'docker_container_missing' ? 404 : 503;
+      throw err;
+    }
+  } else {
+    // Legacy fallback: resolve by canonical name only (never arbitrary matching).
+    const containers = await d.listContainers({ all: true });
+    const name = containerName(instanceId);
+    const found = containers.find((c) => c.Names?.includes(`/${name}`));
+    if (!found) {
+      const err = new Error('docker_container_missing');
+      err.code = 'docker_container_missing'; err.status = 404; throw err;
+    }
+    container = d.getContainer(found.Id);
+  }
+  return fn(container);
 }
 
-export async function startInstance(instanceId) { return withContainer(instanceId, (c) => c.start().then(() => ({ ok: true }))); }
-export async function stopInstance(instanceId) { return withContainer(instanceId, (c) => c.stop({ t: 10 }).then(() => ({ ok: true }))); }
-export async function restartInstance(instanceId) { return withContainer(instanceId, (c) => c.restart({ t: 10 }).then(() => ({ ok: true }))); }
-export async function suspendInstance(instanceId) { return withContainer(instanceId, (c) => c.pause().then(() => ({ ok: true }))); }
-export async function resumeInstance(instanceId) { return withContainer(instanceId, (c) => c.unpause().then(() => ({ ok: true }))); }
+export async function startInstance(instanceId, containerId = '') { return withContainer(instanceId, (c) => c.start().then(() => ({ ok: true })), containerId); }
+export async function stopInstance(instanceId, containerId = '') { return withContainer(instanceId, (c) => c.stop({ t: 10 }).then(() => ({ ok: true })), containerId); }
+export async function restartInstance(instanceId, containerId = '') { return withContainer(instanceId, (c) => c.restart({ t: 10 }).then(() => ({ ok: true })), containerId); }
+export async function suspendInstance(instanceId, containerId = '') { return withContainer(instanceId, (c) => c.pause().then(() => ({ ok: true })), containerId); }
+export async function resumeInstance(instanceId, containerId = '') { return withContainer(instanceId, (c) => c.unpause().then(() => ({ ok: true })), containerId); }
 
-export async function removeInstance(instanceId) {
+export async function removeInstance(instanceId, containerId = '') {
   return withContainer(instanceId, async (c) => {
     const info = await c.inspect().catch(() => ({}));
     if (info.State?.Running) await c.stop({ t: 5 }).catch(() => {});
     await c.remove({ force: true });
     return { ok: true };
-  }).catch(() => ({ ok: true }));
+  }, containerId).catch(() => ({ ok: true }));
 }
 
 export async function reinstallInstance(instanceId, payload) {
@@ -355,7 +388,7 @@ export async function reinstallInstance(instanceId, payload) {
   return createInstance({ ...payload, instanceId });
 }
 
-export async function execCommand(instanceId, command) {
+export async function execCommand(instanceId, command, containerId = '') {
   return withContainer(instanceId, async (c) => {
     const exec = await c.exec({ Cmd: ['/bin/sh', '-c', command], AttachStdout: true, AttachStderr: true, Tty: false });
     const stream = await exec.start({ hijack: true, stdin: false });
@@ -365,7 +398,7 @@ export async function execCommand(instanceId, command) {
       stream.on('end', resolve); stream.on('error', reject);
     });
     return { output: Buffer.concat(chunks).toString('utf8').slice(0, 20000) };
-  });
+  }, containerId);
 }
 
 export async function containerStatus(instanceId) {
@@ -388,7 +421,7 @@ export async function deployImage(instanceId, config = {}) {
   return createInstance({ ...config, instanceId, image });
 }
 
-export async function containerStats(instanceId) {
+export async function containerStats(instanceId, containerId = '') {
   return withContainer(instanceId, async (c) => {
     const info = await c.inspect();
     if (!info.State?.Running) return null;
@@ -398,10 +431,10 @@ export async function containerStats(instanceId) {
     const cpu = systemDelta > 0 ? Math.round((cpuDelta / systemDelta) * 100 * (stats.cpu_stats.online_cpus || 1)) : 0;
     const mem = stats.memory_stats.usage ? Math.round((stats.memory_stats.usage / (stats.memory_stats.limit || 1)) * 100) : 0;
     return { cpu, mem };
-  }).catch(() => null);
+  }, containerId).catch(() => null);
 }
 
-export function followLogs(instanceId, onLine) {
+export function followLogs(instanceId, onLine, containerId = '') {
   return withContainer(instanceId, (c) => c.logs({ follow: true, stdout: true, stderr: true, timestamps: true, tail: 'all' }).then((stream) => {
     const sink = (streamName) => ({
       write(chunk) {

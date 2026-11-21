@@ -129,7 +129,7 @@ export function instancesRoutes() {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
     if (row.node_id) {
-      try { await dispatch(row.node_id, 'instance.remove', { instanceId: row.id }, row.id); } catch { /* best effort */ }
+      try { await dispatch(row.node_id, 'instance.remove', withContainerId(row), row.id); } catch { /* best effort */ }
     }
     const db = getDb();
     db.transaction(() => {
@@ -187,7 +187,8 @@ export function instancesRoutes() {
     if (!type) throw badRequest('invalid_action');
     if (row.status === 'suspended' && action !== 'resume') throw conflict('instance_suspended');
     const statusMap = { start: 'running', stop: 'stopped', restart: 'running', suspend: 'suspended', resume: 'running' };
-    const result = await dispatch(row.node_id, type, { instanceId: row.id }, row.id);
+    // Pass the authoritative Docker identity so Shade never has to guess by name.
+    const result = await dispatch(row.node_id, type, withContainerId(row), row.id);
     getDb().prepare('UPDATE instances SET status = ?, started_at = ?, finished_at = ?, updated_at = ? WHERE id = ?').run(
       statusMap[action], action === 'start' || action === 'restart' || action === 'resume' ? now() : row.started_at,
       action === 'stop' ? now() : null, now(), row.id
@@ -200,7 +201,7 @@ export function instancesRoutes() {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
     await dispatch(row.node_id, 'instance.reinstall', {
-      instanceId: row.id, teamId: row.team_id, name: row.name, image: row.image, command: row.command,
+      ...withContainerId(row), teamId: row.team_id, name: row.name, image: row.image, command: row.command,
       env: json(row.env_json, {}), ports: json(row.ports_json, []), volumes: json(row.volumes_json, []),
       cpu: row.cpu_cores, memory: row.memory_mb, disk: row.disk_gb, version: row.version,
     }, row.id);
@@ -221,7 +222,7 @@ export function instancesRoutes() {
     let result;
     try {
       result = await dispatch(row.node_id, 'instance.deploy', {
-        instanceId: row.id, teamId: row.team_id, name: row.name, image: row.image,
+        ...withContainerId(row), teamId: row.team_id, name: row.name, image: row.image,
         env: json(row.env_json, {}), ports: json(row.ports_json, []), volumes: json(row.volumes_json, []),
         cpu: row.cpu_cores, memory: row.memory_mb, disk: row.disk_gb,
         version: b.version || row.version, source: b.source || 'image',
@@ -254,7 +255,7 @@ export function instancesRoutes() {
     getDb().prepare("UPDATE instances SET status='deploying', updated_at=? WHERE id=?").run(ts, row.id);
     try {
       const result = await dispatch(row.node_id, 'instance.deploy', {
-        instanceId: row.id, teamId: row.team_id, name: row.name, image: row.image,
+        ...withContainerId(row), teamId: row.team_id, name: row.name, image: row.image,
         env: json(row.env_json, {}), ports: json(row.ports_json, []), volumes: json(row.volumes_json, []),
         cpu: row.cpu_cores, memory: row.memory_mb, disk: row.disk_gb,
         version: target.version, source: target.source, repoUrl: target.repo_url,
@@ -305,7 +306,7 @@ export function instancesRoutes() {
     const command = str(req.body?.command, 1000);
     if (!command) throw badRequest('command_required');
     if (row.status !== 'running') throw conflict('instance_not_running');
-    const result = await dispatch(row.node_id, 'instance.exec', { instanceId: row.id, command }, row.id);
+    const result = await dispatch(row.node_id, 'instance.exec', withContainerId(row, { command }), row.id);
     audit(req, 'instance.console', 'instance', row.id, { command });
     res.json(result);
   }));
@@ -313,7 +314,7 @@ export function instancesRoutes() {
   router.get('/:id/files', asyncRoute(async (req, res) => {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
-    const result = await dispatch(row.node_id, 'instance.files.list', { instanceId: row.id, path: str(req.query.path || '/', 500) }, row.id);
+    const result = await dispatch(row.node_id, 'instance.files.list', withContainerId(row, { path: str(req.query.path || '/', 500) }), row.id);
     res.json(result);
   }));
 
@@ -321,7 +322,7 @@ export function instancesRoutes() {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
     const b = req.body || {};
-    const result = await dispatch(row.node_id, 'instance.files.write', { instanceId: row.id, path: str(b.path, 500), content: str(b.content, 2 * 1024 * 1024), op: str(b.op || 'write', 20), destination: str(b.destination, 500), mode: str(b.mode, 10) }, row.id);
+    const result = await dispatch(row.node_id, 'instance.files.write', withContainerId(row, { path: str(b.path, 500), content: str(b.content, 2 * 1024 * 1024), op: str(b.op || 'write', 20), destination: str(b.destination, 500), mode: str(b.mode, 10) }), row.id);
     audit(req, 'instance.file.write', 'instance', row.id, { path: b.path, op: b.op });
     res.json(result);
   }));
@@ -341,7 +342,7 @@ export function instancesRoutes() {
   router.get('/:id/files/download', asyncRoute(async (req, res) => {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
-    const result = await dispatch(row.node_id, 'instance.files.read', { instanceId: row.id, path: str(req.query.path, 500) }, row.id);
+    const result = await dispatch(row.node_id, 'instance.files.read', withContainerId(row, { path: str(req.query.path, 500) }), row.id);
     res.json(result);
   }));
 
@@ -352,7 +353,7 @@ export function instancesRoutes() {
     getDb().prepare('INSERT INTO backups (id, instance_id, team_id, name, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(bid, row.id, req.teamId, str(req.body?.name || 'manual backup', 100), 'running', now());
     try {
-      const result = await dispatch(row.node_id, 'instance.backup', { instanceId: row.id, backupId: bid }, row.id);
+      const result = await dispatch(row.node_id, 'instance.backup', withContainerId(row, { backupId: bid }), row.id);
       getDb().prepare("UPDATE backups SET status = 'ready', size_bytes = ?, location = ?, finished_at = ? WHERE id = ?").run(num(result.sizeBytes), str(result.location || '', 500), now(), bid);
       res.status(201).json({ backup: viewBackup(getDb().prepare('SELECT * FROM backups WHERE id = ?').get(bid)) });
     } catch (error) {
@@ -445,6 +446,11 @@ function viewBackup(b) {
   if (!b) return null;
   return { id: b.id, instanceId: b.instance_id, name: b.name, status: b.status,
     sizeBytes: b.size_bytes, createdAt: b.created_at, finishedAt: b.finished_at };
+}
+
+/** Every workload command carries the persisted Docker identity when available. */
+function withContainerId(row, extra = {}) {
+  return { instanceId: row.id, containerId: row.container_id || '', ...extra };
 }
 
 export function view(row) {

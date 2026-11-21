@@ -128,14 +128,14 @@ async function execute(command) {
     }
 
 
-    case 'instance.start': return startInstance(command.instanceId);
-    case 'instance.stop': return stopInstance(command.instanceId);
-    case 'instance.restart': return restartInstance(command.instanceId);
-    case 'instance.suspend': return suspendInstance(command.instanceId);
-    case 'instance.resume': return resumeInstance(command.instanceId);
-    case 'instance.remove': return removeInstance(command.instanceId);
+    case 'instance.start': return startInstance(command.instanceId, payload.containerId);
+    case 'instance.stop': return stopInstance(command.instanceId, payload.containerId);
+    case 'instance.restart': return restartInstance(command.instanceId, payload.containerId);
+    case 'instance.suspend': return suspendInstance(command.instanceId, payload.containerId);
+    case 'instance.resume': return resumeInstance(command.instanceId, payload.containerId);
+    case 'instance.remove': return removeInstance(command.instanceId, payload.containerId);
     case 'instance.reinstall': return reinstallInstance(command.instanceId, payload);
-    case 'instance.exec': return execCommand(command.instanceId, payload.command);
+    case 'instance.exec': return execCommand(command.instanceId, payload.command, payload.containerId);
     case 'instance.deploy': {
       if (payload.source === 'git' && payload.repoUrl) {
         const clone = await cloneRepository({ instanceId: command.instanceId, repoUrl: payload.repoUrl, ref: payload.ref, token: payload.token || '' });
@@ -148,7 +148,7 @@ async function execute(command) {
       return deployImage(command.instanceId, payload);
     }
     case 'instance.status': return containerStatus(command.instanceId);
-    case 'instance.stats': return (await containerStats(command.instanceId)) || {};
+    case 'instance.stats': return (await containerStats(command.instanceId, payload.containerId)) || {};
     case 'instance.files.list': return listFiles(command.instanceId, payload.path || '/');
     case 'instance.files.read': return readFile(command.instanceId, payload.path);
     case 'instance.files.write': return payload.op && payload.op !== 'write'

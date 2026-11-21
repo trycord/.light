@@ -340,6 +340,14 @@ async function system(){
   if(sessionStorage.getItem('lt_restarted')){sessionStorage.removeItem('lt_restarted');toast('Server restarted successfully','success');}
   try{s=(await api.adminSystem()).system||{};}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;return;}
   const uptime=s.uptime||0;const days=Math.floor(uptime/86400),hours=Math.floor((uptime%86400)/3600),mins=Math.floor((uptime%3600)/60);
+  let tunnelRows='<p class="lt-meta">Loading…</p>';
+  try{
+    const t=await fetch('/api/features/cloudflare/tunnels',{headers:{Authorization:'Bearer '+api.token()}}).then(r=>r.json());
+    const cap=t.capabilities||{};
+    tunnelRows=`<p class="lt-meta">${esc(cap.hint||'')}</p>`+
+      (t.tunnels||[]).length?table(['Hostname','Tunnel ID','Status','Service'],t.tunnels.map(x=>`<tr><td class="lt-td-strong">${esc(x.hostname)}</td><td class="lt-td-mono">${esc((x.tunnelId||'').slice(0,12))}</td><td>${badge(x.status)}</td><td class="lt-td-mono">${esc(x.domainId||'')}</td></tr>`)):
+      '<p class="lt-meta">No application tunnels yet.</p>';
+  }catch(e){tunnelRows=`<p class="lt-meta">${esc(e.message)}</p>`;}
   view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Platform status</h1>
     <p class="lt-page-subtitle">Control plane runtime and safe restart</p></div>
     <div class="lt-page-actions"><button class="lt-btn lt-btn-danger" id="restartPlatform">Restart platform</button></div></div>
@@ -348,7 +356,8 @@ async function system(){
         .map(([l,v,c])=>`<div class="lt-card"><div class="lt-label">${l}</div><div class="admin-stat-value" style="margin-top:8px">${esc(v)}</div></div>`).join('')}
     </div><p class="lt-meta" style="margin-top:14px">PID ${esc(s.pid||'—')} · ${esc(s.platform||'')} · version ${esc(s.version||'1.0.0')}</p>`)}
     ${panel('Restart','',`<p class="lt-meta">Restarting reloads environment variables, settings and configuration changes. Active requests are dropped; Shade workloads keep running and reconnect automatically.</p>
-      <p class="lt-meta" style="margin-top:8px">The panel will go offline for a few seconds and return automatically.</p>`)}`;
+      <p class="lt-meta" style="margin-top:8px">The panel will go offline for a few seconds and return automatically.</p>`)}
+    ${panel('Cloudflare tunnels','',tunnelRows)}`;
   view.querySelector('#restartPlatform').addEventListener('click',async()=>{
     if(!await confirmDialog('Restart platform','The control plane will restart. Services continue running. Confirm?'))return;
     try{

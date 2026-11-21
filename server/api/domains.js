@@ -4,7 +4,7 @@ import { getDb } from '../db.js';
 import { requireAuth, requireAdmin } from '../auth.js';
 import { audit } from '../audit.js';
 import { asyncRoute, badRequest, notFound, conflict, id, now, str } from '../util.js';
-import { provisionDomainRoute, removeDomainRoute, isCloudflareConfigured, publishIngress } from '../cloudflare.js';
+import { provisionDomainRoute, removeDomainRoute, isCloudflareConfigured } from '../cloudflare.js';
 
 // Route provisioning happens in the background so DNS/API latency never blocks
 // a customer action. Failures are recorded on the domain row.

@@ -22,7 +22,22 @@ export async function dispatch(nodeId, type, payload = {}, instanceId = null) {
     if (row.status === 'done' || row.status === 'failed') {
       let result = {};
       try { result = JSON.parse(row.result || '{}'); } catch { result = { error: row.result }; }
-      if (row.status === 'failed') throw Object.assign(new Error(result.error || 'command_failed'), { status: 502, result });
+      if (row.status === 'failed') {
+        // Translate infrastructure error codes into honest, customer-safe errors.
+        const code = result?.code || result?.error || 'command_failed';
+        const map = {
+          docker_container_missing: ['container_missing', 503, 'The workload container is missing. Contact support.'],
+          docker_unavailable: ['node_unavailable', 503, 'The infrastructure node is temporarily unavailable.'],
+          container_not_found: ['container_missing', 503, 'The workload container is missing. Contact support.'],
+          node_offline: ['node_unavailable', 503, 'The infrastructure node is temporarily unavailable.'],
+          instance_not_running: ['instance_not_running', 409, 'The service is not running.'],
+        };
+        const [errorCode, status, message] = map[code] || ['operation_failed', 502, 'The operation could not be completed.'];
+        const err = new Error(message);
+        err.code = errorCode; err.status = status; err.result = result;
+        console.error('[command] failed', cid, code, JSON.stringify(result || {}).slice(0, 500));
+        throw err;
+      }
       return result;
     }
     await new Promise((resolve) => setTimeout(resolve, 150));

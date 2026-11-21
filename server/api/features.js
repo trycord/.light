@@ -11,16 +11,16 @@ export function featuresRoutes() {
   const router = Router();
 
   router.get('/cloudflare/tunnels', requireAdmin, asyncRoute(async (req, res) => {
-    const { allNodeTunnels } = await import('../cloudflare.js');
-    const tunnels = allNodeTunnels().map(t => ({ nodeId: t.node_id, tunnelId: t.tunnel_id,
-      status: t.status, lastHeartbeat: t.last_heartbeat, updatedAt: t.updated_at }));
-    res.json({ tunnels });
+    const { allTunnels, tokenCapabilities } = await import('../cloudflare.js');
+    res.json({ tunnels: allTunnels(), capabilities: await tokenCapabilities() });
   }));
 
   router.get('/cloudflare', requireAuth, asyncRoute(async (req, res) => {
     const c = cloudflareConfig();
-    res.json({ configured: isCloudflareConfigured(), domain: c.domain,
-      detail: isCloudflareConfigured() ? 'tunnels are provisioned for project subdomains' : 'configuration_required' });
+    const { tokenCapabilities } = await import('../cloudflare.js');
+    const caps = await tokenCapabilities();
+    res.json({ configured: isCloudflareConfigured(), domain: c.domain, capabilities: caps,
+      detail: caps.ready ? 'tunnels are provisioned per application' : caps.hint });
   }));
 
   /* ---------- Two-factor authentication ---------- */

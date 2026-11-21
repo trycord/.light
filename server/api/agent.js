@@ -86,8 +86,8 @@ export function agentRoutes() {
     if (command.type === 'instance.create' && ok) {
       const instance = getDb().prepare('SELECT node_id FROM instances WHERE id = ?').get(command.instance_id);
       if (instance?.node_id) {
-        import('../cloudflare.js').then(({ publishIngress, isCloudflareConfigured }) => {
-          if (isCloudflareConfigured()) publishIngress(instance.node_id).catch(() => {});
+        import('../cloudflare.js').then(({ refreshDomainRoutes, isCloudflareConfigured }) => {
+          if (isCloudflareConfigured()) refreshDomainRoutes(command.instance_id).catch(() => {});
         }).catch(() => {});
       }
     }

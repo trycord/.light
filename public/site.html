@@ -8,19 +8,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles/tokens.css"><link rel="stylesheet" href="/styles/components.css">
 <link rel="stylesheet" href="/styles/utilities.css"><link rel="stylesheet" href="/styles/site.css">
-<link rel="stylesheet" href="/styles/marketing.css">
+<link rel="stylesheet" href="/styles/marketing.css"><link rel="stylesheet" href="/styles/masterpiece.css">
 <script type="module" src="/js/theme.js"></script>
 <script src="/js/brand-sync.js"></script>
 </head><body>
 <div id="site"><div style="padding:100px 22px;text-align:center;color:var(--lt-text-muted)">Loading .light…</div></div>
 <script type="module">
-import { layout, esc, loadBranding, FEATURES, FAQS } from '/js/site.js';
+import { esc, loadBranding, FAQS } from '/js/site.js';
 import api from '/js/api.js';
 
 const b = await loadBranding();
 const product = esc(b.product || '.light');
-
-// All catalogue content comes from the backend — never duplicated here.
 let products = [], plans = [];
 try { products = (await api.products()).products || []; } catch {}
 try { plans = (await api.plans()).plans || []; } catch {}
@@ -33,80 +31,91 @@ const nav = `<a class="mkt-skip" href="#main">Skip to content</a><nav class="mkt
   </div>
   <div class="mkt-cta"><a class="lt-btn lt-btn-ghost lt-btn-sm" href="/login">Sign in</a>
     <a class="lt-btn lt-btn-primary lt-btn-sm" href="/hosting">Get started</a></div>
-  <button class="mkt-burger" id="burger" aria-label="Menu">☰</button>
+  <button class="mkt-burger" id="burger" aria-label="Open menu" aria-expanded="false">☰</button>
 </div></nav>`;
 
-const hero = `<section class="mkt-hero"><div class="mkt-hero-grid">
-  <div>
-    <span class="mkt-eyebrow">◆ Universal hosting · Powered by Shade</span>
-    <h1>Infrastructure,<br><span>without the weight.</span></h1>
-    <p class="mkt-lede">Deploy game servers, applications, websites, bots and databases in one place. You choose what to host — ${product} and Shade handle the Debian runtime, resources, networking and health checks underneath.</p>
-    <div class="mkt-actions"><a class="lt-btn lt-btn-primary" href="/hosting">Explore hosting</a>
-      <a class="lt-btn lt-btn-secondary" href="/pricing">Compare plans</a></div>
-    <div class="mkt-trust"><span><b>Debian</b> based runtimes</span><span><b>Isolated</b> containers</span><span><b>Real</b> resource limits</span><span><b>Your</b> domain, SSL included</span></div>
+const services = [
+  { name:'web-gateway', sub:'node:22-bookworm · 2 vCPU · running', meter:'72%' },
+  { name:'survival-mc', sub:'paper 1.21.4 · 4 GB · running', meter:'58%' },
+  { name:'gateway-bot', sub:'python 3.12 · 512 MB · running', meter:'34%' },
+];
+
+const hero = `<section class="mp-hero"><div class="mp-hero-grid">
+  <div class="mp-reveal in">
+    <span class="mp-badge"><span class="pulse"></span> Universal hosting · Powered by Shade</span>
+    <h1 class="mp-title">Infrastructure,<br><span class="accent">without the weight.</span></h1>
+    <p class="mp-lede">Deploy game servers, applications, websites, bots and databases in one place. You choose what to host — ${product} and Shade handle the Debian runtime, resources, networking and health checks underneath.</p>
+    <div class="mp-actions"><a class="mp-btn mp-btn-primary" href="/hosting">Explore hosting <span>→</span></a>
+      <a class="mp-btn mp-btn-ghost" href="/pricing">Compare plans</a></div>
+    <div class="mp-proof">
+      <div><b>Debian</b><span>base images</span></div>
+      <div><b>Isolated</b><span>containers</span></div>
+      <div><b>Real</b><span>resource limits</span></div>
+      <div><b>Your</b><span>domain & SSL</span></div>
+    </div>
   </div>
-  <div class="mkt-visual" aria-hidden="true">
-    <div class="mkt-visual-head"><span>Shade · node-01</span><span>● all systems nominal</span></div>
-    <div class="mkt-node"><span class="dot"></span><div><b>iface-web-01</b><div class="meta">node:22-bookworm · 2 vCPU · running</div></div><div class="bars"><i></i><i></i><i></i><i></i></div></div>
-    <div class="mkt-node"><span class="dot"></span><div><b>minecraft-survival</b><div class="meta">minecraft-java 1.21.4 · 4 GB · running</div></div><div class="bars"><i></i><i></i><i></i><i></i></div></div>
-    <div class="mkt-node"><span class="dot"></span><div><b>bot-gateway</b><div class="meta">python 3.12 · 512 MB · running</div></div><div class="bars"><i></i><i></i><i></i><i></i></div></div>
-    <div class="mkt-ring">99.9%<br>uptime<br>target</div>
+  <div class="mp-console mp-reveal in" aria-hidden="true">
+    <div class="mp-console-bar"><div class="dots"><i></i><i></i><i></i></div><span class="title">shade · node-01</span><span class="live">● all systems nominal</span></div>
+    <div class="mp-console-body">
+      ${services.map(s=>`<div class="mp-svc"><span class="led"></span><div><div class="name">${esc(s.name)}</div><div class="sub">${esc(s.sub)}</div></div><div class="meter"><i style="width:${s.meter}"></i></div></div>`).join('')}
+    </div>
+    <div class="mp-console-foot"><span>3 workloads · 1 node</span><span>health checks passing</span></div>
   </div>
 </div></section>`;
 
-const catalogue = `<section class="mkt-section" id="products"><div class="mkt-head">
-  <span class="mkt-tag">Hosting marketplace</span>
-  <h2>Find the right place for your workload.</h2>
-  <p>Every product is a real hosted service with predefined plans. Pick one and ${product} provisions it automatically.</p>
+const catalogue = `<section class="mkt-section mp-reveal" id="products"><div class="mp-section-head">
+  <span class="mp-kicker">Hosting marketplace</span>
+  <h2 class="mp-h2">Find the right place for your workload.</h2>
+  <p class="mp-p">Every product is a real hosted service with predefined plans. Pick one and ${product} provisions it automatically.</p>
 </div><div class="mkt-grid">${(products.length ? products : [
   { name:'Web applications', slug:'webapp', shortDescription:'Node, Python, Go and more', icon:'◈' },
   { name:'Game servers', slug:'minecraft', shortDescription:'Minecraft and community favourites', icon:'◆' },
   { name:'Databases', slug:'database', shortDescription:'Managed PostgreSQL, MySQL and Redis', icon:'▤' },
-]).map(p=>`<a class="mkt-card" href="/product?id=${esc(p.slug||p.id)}" style="text-decoration:none;color:inherit">
-  <div class="ico">${esc(p.icon||'◈')}</div><h3>${esc(p.name)}</h3><p>${esc(p.shortDescription||'')}</p>
-  <span>Explore plans →</span></a>`).join('')}</div></section>`;
+]).map(p=>`<a class="mp-card" href="/product?id=${esc(p.slug||p.id)}" style="text-decoration:none;color:inherit">
+  <div class="mp-ico">${esc(p.icon||'◈')}</div><h3>${esc(p.name)}</h3><p>${esc(p.shortDescription||'')}</p>
+  <span class="mp-link">Explore plans →</span></a>`).join('')}</div></section>`;
 
-const features = `<section class="mkt-band"><div class="mkt-band-in">
-  ${[['Real containers','Every service runs in its own isolated Debian container.','◆'],
-     ['Your runtime, your version','Explicit versions — never silently substituted.','◈'],
-     ['Built-in operations','Console, logs, files, domains, backups and monitoring.','▤']].map(f=>
-     `<div class="mkt-stat" style="max-width:300px"><div class="ico" style="color:var(--lt-ember-500);font-size:22px;margin-bottom:8px">${f[2]}</div><b style="font-size:17px">${f[0]}</b><span>${f[1]}</span></div>`).join('')}
+const strip = `<section class="mp-strip"><div class="mp-strip-grid">
+  <div><span>Debian</span><b>Every workload</b></div>
+  <div><span>Isolation</span><b>Per service</b></div>
+  <div><span>Provisioning</span><b>Automatic</b></div>
+  <div><span>Attribution</span><b>Trycord</b></div>
 </div></section>`;
 
-const capability = `<section class="mkt-section"><div class="mkt-split">
-  <div><span class="mkt-tag">How it works</span><h2 style="font-size:clamp(1.8rem,3.4vw,2.6rem);letter-spacing:-.035em;line-height:1.12;margin:10px 0 22px">From purchase to running service, automatically.</h2>
-    <div class="mkt-steps">
-      <div class="mkt-step"><div><b>Choose a plan</b><span>Products and prices come from the live catalogue. No infrastructure decisions.</span></div></div>
-      <div class="mkt-step"><div><b>Checkout securely</b><span>Server-side pricing, verified payment webhooks, idempotent orders.</span></div></div>
-      <div class="mkt-step"><div><b>Shade provisions</b><span>Approved Debian image, exact runtime version, limits, storage and network.</span></div></div>
-      <div class="mkt-step"><div><b>Manage in the dashboard</b><span>Console, files, domains, backups and real-time metrics on the actual container.</span></div></div>
-    </div></div>
-  <div class="mkt-visual" style="min-height:320px">
-    <div class="mkt-visual-head"><span>Provisioning pipeline</span><span>purchase → workload</span></div>
-    ${['Order confirmed','Plan snapshot frozen','Node selected','Container created','Health check passed'].map((s,i)=>`<div class="mkt-node" style="margin-left:${i*8}px"><span class="dot" style="background:${i===4?'var(--lt-success)':'var(--lt-ember-500)'}"></span><div><b>${s}</b><div class="meta">step ${String(i+1).padStart(2,'0')}</div></div></div>`).join('')}
-  </div>
+const steps = [
+  ['Choose a product','Browse real hosting products and pick a plan that fits.'],
+  ['Configure','Select only the software options your product supports.'],
+  ['Checkout','Server-side pricing and verified payment confirmation.'],
+  ['Go live','Shade provisions the container, installs software and health-checks it.'],
+];
+const flow = `<section class="mkt-section mp-reveal"><div class="mkt-split">
+  <div><span class="mp-kicker">How it works</span><h2 class="mp-h2">From purchase to running service, automatically.</h2>
+    <div class="mkt-steps">${steps.map((s,i)=>`<div class="mkt-step"><div><b>${s[0]}</b><span>${s[1]}</span></div></div>`).join('')}</div></div>
+  <div class="mp-console"><div class="mp-console-bar"><div class="dots"><i></i><i></i><i></i></div><span class="title">provisioning pipeline</span><span class="live">→ workload</span></div>
+    <div class="mp-console-body">${steps.map((s,i)=>`<div class="mp-svc"><span class="led" style="background:${i===3?'var(--lt-success)':'var(--lt-ember-500)'};box-shadow:none"></span><div><div class="name">${s[0]}</div><div class="sub">step ${String(i+1).padStart(2,'0')}</div></div></div>`).join('')}</div></div>
 </div></section>`;
 
-const pricing = `<section class="mkt-section" id="pricing"><div class="mkt-head">
-  <span class="mkt-tag">Plans</span><h2>Simple plans. Real allocations.</h2>
-  <p>Resources are granted by your plan — not configured in a browser.</p></div>
-  <div class="mkt-grid">${(plans.length?plans:[{name:'Free',memoryMb:512,cpuCores:1,diskGb:4,priceMonthly:0,id:'free'}]).slice(0,4).map(p=>`<div class="mkt-card" style="${p.featured?'border-color:var(--lt-border-ember)':''}">
-    <h3>${esc(p.name)}</h3><div class="price" style="font-size:26px;font-weight:800;color:var(--lt-ember-500);margin:10px 0">${p.priceMonthly?'$'+(p.priceMonthly/100).toFixed(0)+'/mo':'Free'}</div>
+const pricing = `<section class="mkt-section mp-reveal" id="pricing"><div class="mp-section-head">
+  <span class="mp-kicker">Plans</span><h2 class="mp-h2">Simple plans. Real allocations.</h2>
+  <p class="mp-p">Resources are granted by your plan — not configured in a browser.</p></div>
+  <div class="mkt-grid">${(plans.length?plans:[{name:'Free',memoryMb:512,cpuCores:1,diskGb:4,priceMonthly:0,id:'free'}]).slice(0,4).map(p=>`<div class="mp-card" style="${p.featured?'border-color:var(--lt-border-ember)':''}">
+    ${p.featured?'<span class="mp-kicker">Featured</span>':''}
+    <h3 style="margin-top:10px">${esc(p.name)}</h3><div style="font-size:28px;font-weight:800;color:var(--lt-ember-500);margin:10px 0;letter-spacing:-.04em">${p.priceMonthly?'$'+(p.priceMonthly/100).toFixed(0)+'<small style="font-size:13px;font-weight:500;color:var(--lt-text-muted)">/mo</small>':'Free'}</div>
     <p>${esc(p.memoryMb)} MB RAM · ${esc(p.cpuCores)} vCPU · ${esc(p.diskGb)} GB storage</p>
-    <a href="/checkout?plan=${encodeURIComponent(p.id)}">Choose ${esc(p.name)} →</a></div>`).join('')}</div>
-  <p style="margin-top:18px"><a class="lt-btn lt-btn-secondary" href="/configure">Build your own plan</a></p>
+    <a class="mp-link" href="/checkout?plan=${encodeURIComponent(p.id)}">Choose ${esc(p.name)} →</a></div>`).join('')}</div>
+  <p style="margin-top:18px"><a class="mp-btn mp-btn-ghost" href="/configure">Build your own plan</a></p>
 </section>`;
 
-const faq = `<section class="mkt-section mkt-faq"><div class="mkt-head"><span class="mkt-tag">Questions</span><h2>Good to know.</h2></div>
+const faq = `<section class="mkt-section mkt-faq mp-reveal"><div class="mp-section-head"><span class="mp-kicker">Questions</span><h2 class="mp-h2">Good to know.</h2></div>
   ${FAQS.map(f=>`<details><summary>${esc(f[0])}</summary><p>${esc(f[1])}</p></details>`).join('')}
 </section>`;
 
-const foot = `<section class="mkt-final"><h2>Ready when you are.</h2><p>Choose a plan and let ${product} handle the infrastructure.</p>
-  <div class="mkt-actions" style="justify-content:center"><a class="lt-btn lt-btn-primary" href="/hosting">Browse hosting</a><a class="lt-btn lt-btn-secondary" href="/docs">Read the docs</a></div></section>
+const foot = `<section class="mp-cta"><h2>Ready when you are.</h2><p>Choose a plan and let ${product} handle the infrastructure.</p>
+  <div class="mp-actions" style="justify-content:center"><a class="mp-btn mp-btn-primary" href="/hosting">Browse hosting</a><a class="mp-btn mp-btn-ghost" href="/docs">Read the docs</a></div></section>
 <footer class="mkt-foot"><div class="mkt-foot-in">
   <div><a href="/" class="mkt-logo" style="margin-bottom:12px"><span style="color:var(--lt-ember-500)">◆</span>${product}</a>
     <p class="muted" style="max-width:280px">${esc(b.tagline||'Universal hosting platform')}. Built by Trycord, powered by Shade.</p>
-    <div class="mkt-trust"><span>Theme: <a href="#" data-theme-set="system">System</a> · <a href="#" data-theme-set="light">Light</a> · <a href="#" data-theme-set="dark">Dark</a></span></div></div>
+    <div style="font-size:11px;color:var(--lt-text-muted);margin-top:12px">Theme: <a href="#" data-theme-set="system">System</a> · <a href="#" data-theme-set="light">Light</a> · <a href="#" data-theme-set="dark">Dark</a></div></div>
   <div><h4>Platform</h4><a href="/hosting">Hosting</a><a href="/pricing">Plans</a><a href="/features">Features</a><a href="/docs">Documentation</a></div>
   <div><h4>Company</h4><a href="/about">About</a><a href="/contact">Contact</a><a href="/legal">Legal</a></div>
   <div><h4>Account</h4><a href="/login">Dashboard</a><a href="/login#register">Create account</a><a href="/connect">Sell with Connect</a></div>
@@ -115,12 +124,22 @@ const foot = `<section class="mkt-final"><h2>Ready when you are.</h2><p>Choose a
   <span><a href="https://trycord.dev" target="_blank">POWERED BY TRYCORD</a> · <span class="lt-wm-mark">ΔΓΟ</span></span>
 </div></footer>`;
 
-document.getElementById('site').innerHTML = nav + hero + catalogue + features + capability + pricing + faq + foot;
+document.getElementById('site').innerHTML = nav + hero + catalogue + strip + flow + pricing + faq + foot;
+document.getElementById('main')?.setAttribute('id','main');
 document.querySelector('.mkt-section')?.setAttribute('id','main');
-// Homepage burger uses the same aria-expanded contract as the shared shell.
-const burger=document.getElementById('burger');
-burger?.addEventListener('click',()=>burger.setAttribute('aria-expanded',document.getElementById('mktLinks')?.classList.contains('open')?'true':'false'));
-document.getElementById('burger')?.addEventListener('click', () => document.getElementById('mktLinks')?.classList.toggle('open'));
-document.querySelectorAll('[data-theme-set]').forEach(el => el.addEventListener('click', (e) => { e.preventDefault(); window.__LT_THEME__?.set(el.dataset.themeSet); }));
+
+// Mobile nav
+const burger = document.getElementById('burger');
+burger?.addEventListener('click',()=>{
+  const open = document.getElementById('mktLinks')?.classList.toggle('open');
+  burger.setAttribute('aria-expanded', open ? 'true':'false');
+});
+document.querySelectorAll('[data-theme-set]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();window.__LT_THEME__?.set(el.dataset.themeSet);}));
+
+// Scroll reveal (respects reduced motion via CSS)
+if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  const io = new IntersectionObserver((entries)=>{for(const en of entries) if(en.isIntersecting){en.target.classList.add('in');io.unobserve(en.target);}},{threshold:.12});
+  document.querySelectorAll('.mp-reveal').forEach(el=>io.observe(el));
+}
 </script>
 </body></html>

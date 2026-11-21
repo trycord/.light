@@ -1,10 +1,9 @@
-// .light — Cloudflare Tunnel integration.
-// Architecture: ONE persistent tunnel per hosting node, with published-application
-// routes (hostname -> internal address:port) managed through Cloudflare's remote
-// configuration API. A single connector per node serves every website on it.
+// .light — Cloudflare Tunnel integration: ONE tunnel per hosted application.
+// Each service gets its own named tunnel, connector, DNS record and ingress route
+// mapping its public hostname to the internal address:port of its workload.
 import { getDb } from './db.js';
 import { encrypt, decrypt } from './crypto.js';
-import { id, now, str, json, conflict } from './util.js';
+import { id, now, str, json } from './util.js';
 import { audit } from './audit.js';
 import { queueCommand } from './commands.js';
 import { get } from './settings.js';
@@ -39,60 +38,50 @@ async function cf(path, options = {}) {
   return body.result;
 }
 
-// Serialize per-node route reconciliation so concurrent domain adds cannot
-// clobber each other's ingress rules.
 const locks = new Map();
-async function withNodeLock(nodeId, fn) {
-  const prev = locks.get(nodeId) || Promise.resolve();
+async function withLock(key, fn) {
+  const prev = locks.get(key) || Promise.resolve();
   let release;
   const next = new Promise((r) => { release = r; });
-  locks.set(nodeId, prev.then(() => next));
+  locks.set(key, prev.then(() => next));
   await prev;
-  try { return await fn(); } finally { release(); if (locks.get(nodeId) === next) locks.delete(nodeId); }
+  try { return await fn(); } finally { release(); if (locks.get(key) === next) locks.delete(key); }
 }
 
-function nodeTunnelName(nodeId) { return `light-node-${String(nodeId).replace(/[^a-z0-9-]/gi, '').slice(-24)}`; }
+function tunnelName(hostname) { return `light-${String(hostname).toLowerCase().replace(/[^a-z0-9-]+/g, '-').slice(0, 48)}`; }
 
-/** Get (or create) the persistent tunnel for a node. Idempotent. */
-export async function ensureNodeTunnel(nodeId) {
-  if (!isCloudflareConfigured()) throw new Error('cloudflare_not_configured');
-  const db = getDb();
-  const c = cloudflareConfig();
-  let row = db.prepare('SELECT * FROM node_tunnels WHERE node_id = ?').get(nodeId);
-  if (row?.tunnel_id && row.tunnel_token) return row;
+/** Internal service address cloudflared can reach. Connector uses host networking. */
+function serviceTarget(instance) {
+  let ports = [];
+  try { ports = json(instance?.ports_json, []); } catch { ports = []; }
+  const published = ports.find((p) => p.host)?.host;
+  const containerPort = ports[0]?.container || 80;
+  return `http://127.0.0.1:${published || containerPort}`;
+}
 
-  return withNodeLock(nodeId, async () => {
-    // Re-check inside the lock.
-    row = db.prepare('SELECT * FROM node_tunnels WHERE node_id = ?').get(nodeId);
-    if (row?.tunnel_id && row.tunnel_token) return row;
-    let tunnelId = row?.tunnel_id || '';
-    let token = row?.tunnel_token ? decrypt(row.tunnel_token) : '';
-    if (!tunnelId) {
-      const tunnel = await cf(`/accounts/${c.accountId}/cfd_tunnel`, {
-        method: 'POST', body: { name: nodeTunnelName(nodeId), config_src: 'cloudflare' },
-      });
-      tunnelId = tunnel.id;
+/** Ensure a dedicated tunnel exists for this domain (per-application). */
+async function ensureTunnel(domainRow, instance) {
+  const db = getDb(); const c = cloudflareConfig();
+  if (domainRow.tunnel_id && domainRow.tunnel_token) {
+    return { id: domainRow.tunnel_id, token: decrypt(domainRow.tunnel_token), reused: true };
+  }
+  return withLock(domainRow.id, async () => {
+    // Re-read inside lock.
+    const fresh = db.prepare('SELECT * FROM domains WHERE id = ?').get(domainRow.id);
+    if (fresh?.tunnel_id && fresh?.tunnel_token) {
+      return { id: fresh.tunnel_id, token: decrypt(fresh.tunnel_token), reused: true };
     }
-    if (!token) {
-      const result = await cf(`/accounts/${c.accountId}/cfd_tunnel/${tunnelId}/token`);
-      token = String(result || '');
-    }
-    if (!row) {
-      db.prepare('INSERT INTO node_tunnels (node_id, tunnel_id, tunnel_token, status, created_at, updated_at) VALUES (?,?,?,?,?,?)')
-        .run(nodeId, tunnelId, encrypt(token), 'provisioned', now(), now());
-    } else {
-      db.prepare('UPDATE node_tunnels SET tunnel_id=?, tunnel_token=?, status=?, updated_at=? WHERE node_id=?')
-        .run(tunnelId, encrypt(token), 'provisioned', now(), nodeId);
-    }
-    // Start (or reuse) the single connector for this node.
-    queueCommand(nodeId, 'tunnel.start', {
-      nodeId, token, image: `${get('LIGHT_RUNTIME_IMAGE', 'trycord/light-runtime')}:${get('LIGHT_RUNTIME_IMAGE_VERSION', '1.0.0')}`,
+    const tunnel = await cf(`/accounts/${c.accountId}/cfd_tunnel`, {
+      method: 'POST', body: { name: tunnelName(domainRow.domain), config_src: 'cloudflare' },
     });
-    return db.prepare('SELECT * FROM node_tunnels WHERE node_id = ?').get(nodeId);
+    const tokenResult = await cf(`/accounts/${c.accountId}/cfd_tunnel/${tunnel.id}/token`);
+    const token = String(tokenResult || '');
+    db.prepare('UPDATE domains SET tunnel_id = ?, tunnel_token = ?, updated_at = ? WHERE id = ?')
+      .run(tunnel.id, encrypt(token), now(), domainRow.id);
+    return { id: tunnel.id, token, reused: false };
   });
 }
 
-/** Ensure the DNS CNAME for a hostname points at the node tunnel. */
 async function ensureDns(hostname, tunnelId) {
   const c = cloudflareConfig();
   const records = await cf(`/zones/${c.zoneId}/dns_records?name=${encodeURIComponent(hostname)}&type=CNAME`);
@@ -108,34 +97,21 @@ async function ensureDns(hostname, tunnelId) {
   }
 }
 
-/** Rebuild the full published-application ingress for a node. */
-export async function publishIngress(nodeId) {
-  const db = getDb(); const c = cloudflareConfig();
-  const tunnel = db.prepare('SELECT * FROM node_tunnels WHERE node_id = ?').get(nodeId);
-  if (!tunnel?.tunnel_id) throw new Error('node_tunnel_missing');
-  const rows = db.prepare(`SELECT d.domain, d.instance_id, i.ports_json, i.status AS service_status
-    FROM domains d JOIN instances i ON i.id = d.instance_id
-    WHERE i.node_id = ? AND d.verified = 1 AND d.status = 'active'`).all(nodeId);
-  const ingress = [];
-  for (const row of rows) {
-    let ports = []; try { ports = json(row.ports_json, []); } catch { ports = []; }
-    const hostPort = ports.find(p => p.host)?.host;
-    const containerPort = ports[0]?.container || 80;
-    // The connector runs with host networking on the node, so the published
-    // host port is directly reachable at 127.0.0.1 on that node.
-    const service = `http://127.0.0.1:${hostPort || containerPort}`;
-    ingress.push({ hostname: row.domain, service });
-  }
-  ingress.push({ service: 'http_status:404' }); // required catch-all
-  await cf(`/accounts/${c.accountId}/cfd_tunnel/${tunnel.tunnel_id}/configurations`, {
+/** Publish the hostname -> internal service route into the tunnel's ingress. */
+async function publishIngress(tunnelId, hostname, instance) {
+  const c = cloudflareConfig();
+  const service = serviceTarget(instance);
+  const ingress = [
+    { hostname, service },
+    { service: 'http_status:404' },
+  ];
+  await cf(`/accounts/${c.accountId}/cfd_tunnel/${tunnelId}/configurations`, {
     method: 'PUT', body: { config: { ingress } },
   });
-  db.prepare('UPDATE node_tunnels SET status=?, last_heartbeat=?, updated_at=? WHERE node_id=?')
-    .run('synced', now(), now(), nodeId);
-  return { routes: ingress.length - 1, ingress };
+  return { hostname, service };
 }
 
-/** Provision routing for a domain on its service's node. */
+/** Full provisioning of an application's public route. Idempotent + retryable. */
 export async function provisionDomainRoute(domainRow, req) {
   if (!isCloudflareConfigured()) {
     getDb().prepare("UPDATE domains SET tunnel_status='configuration_required' WHERE id=?").run(domainRow.id);
@@ -147,18 +123,24 @@ export async function provisionDomainRoute(domainRow, req) {
     getDb().prepare("UPDATE domains SET tunnel_status='outside_zone' WHERE id=?").run(domainRow.id);
     return { status: 'outside_zone' };
   }
-  const instance = getDb().prepare('SELECT node_id FROM instances WHERE id = ?').get(domainRow.instance_id);
-  const nodeId = instance?.node_id;
-  if (!nodeId) { getDb().prepare("UPDATE domains SET tunnel_status='no_node' WHERE id=?").run(domainRow.id); return { status: 'no_node' }; }
+  const instance = getDb().prepare('SELECT * FROM instances WHERE id = ?').get(domainRow.instance_id);
+  if (!instance) { getDb().prepare("UPDATE domains SET tunnel_status='no_service' WHERE id=?").run(domainRow.id); return { status: 'no_service' }; }
 
   try {
-    const tunnel = await ensureNodeTunnel(nodeId);
-    await ensureDns(hostname, tunnel.tunnel_id);
-    await publishIngress(nodeId);
+    const tunnel = await ensureTunnel(domainRow, instance);
+    await ensureDns(hostname, tunnel.id);
+    const route = await publishIngress(tunnel.id, hostname, instance);
     getDb().prepare("UPDATE domains SET tunnel_id=?, tunnel_status='provisioned', ssl_status='active', updated_at=? WHERE id=?")
-      .run(tunnel.tunnel_id, now(), domainRow.id);
-    if (req) audit(req, 'cloudflare.route.provision', 'domain', domainRow.id, { hostname, nodeId });
-    return { status: 'provisioned', tunnelId: tunnel.tunnel_id, nodeId };
+      .run(tunnel.id, now(), domainRow.id);
+
+    // Start/reuse the dedicated connector for this application.
+    queueCommand(instance.node_id || 'node-01', 'tunnel.start', {
+      instanceId: instance.id, domainId: domainRow.id, hostname, token: tunnel.token,
+      tunnelId: tunnel.id, image: `${get('LIGHT_RUNTIME_IMAGE', 'trycord/light-runtime')}:${get('LIGHT_RUNTIME_IMAGE_VERSION', '1.0.0')}`,
+    }, instance.id);
+
+    if (req) audit(req, 'cloudflare.tunnel.provision', 'domain', domainRow.id, { hostname, tunnelId: tunnel.id });
+    return { status: 'provisioned', tunnelId: tunnel.id, hostname, service: route.service };
   } catch (error) {
     getDb().prepare("UPDATE domains SET tunnel_status=?, updated_at=? WHERE id=?")
       .run(`failed: ${error.message.slice(0, 120)}`, now(), domainRow.id);
@@ -166,22 +148,61 @@ export async function provisionDomainRoute(domainRow, req) {
   }
 }
 
-/** Remove a hostname's route; the shared tunnel/connector stay up. */
-export async function removeDomainRoute(domainRow) {
-  if (!isCloudflareConfigured()) return { ok: false, reason: 'not_configured' };
-  const instance = getDb().prepare('SELECT node_id FROM instances WHERE id = ?').get(domainRow.instance_id);
-  const nodeId = instance?.node_id;
-  getDb().prepare("UPDATE domains SET tunnel_status='removed', updated_at=? WHERE id=?").run(now(), domainRow.id);
-  if (nodeId) {
-    try { await publishIngress(nodeId); } catch { /* best effort; reconciled later */ }
+/** Re-publish routes when an application's host port changes after provisioning. */
+export async function refreshDomainRoutes(instanceId) {
+  if (!isCloudflareConfigured()) return;
+  const instance = getDb().prepare('SELECT * FROM instances WHERE id = ?').get(instanceId);
+  if (!instance) return;
+  const domains = getDb().prepare("SELECT * FROM domains WHERE instance_id = ? AND tunnel_status = 'provisioned'").all(instanceId);
+  for (const d of domains) {
+    try { await publishIngress(d.tunnel_id, d.domain, instance); } catch { /* reconcile later */ }
   }
-  return { ok: true, nodeId };
 }
 
-export function nodeTunnelStatus(nodeId) {
-  const row = getDb().prepare('SELECT node_id, tunnel_id, status, last_heartbeat, updated_at FROM node_tunnels WHERE node_id = ?').get(nodeId);
-  return row || { node_id: nodeId, status: 'none' };
+/** Delete the tunnel, DNS record and connector for an application. */
+export async function removeDomainRoute(domainRow) {
+  if (!isCloudflareConfigured()) return { ok: false, reason: 'not_configured' };
+  const c = cloudflareConfig();
+  const instance = getDb().prepare('SELECT node_id FROM instances WHERE id = ?').get(domainRow.instance_id);
+  try {
+    if (domainRow.tunnel_id) {
+      await cf(`/accounts/${c.accountId}/cfd_tunnel/${domainRow.tunnel_id}`, { method: 'DELETE' }).catch(() => {});
+    }
+    const records = await cf(`/zones/${c.zoneId}/dns_records?name=${encodeURIComponent(domainRow.domain)}&type=CNAME`).catch(() => []);
+    for (const r of (Array.isArray(records) ? records : [])) {
+      await cf(`/zones/${c.zoneId}/dns_records/${r.id}`, { method: 'DELETE' }).catch(() => {});
+    }
+    if (instance?.node_id) queueCommand(instance.node_id, 'tunnel.stop', { instanceId: domainRow.instance_id, domainId: domainRow.id }, domainRow.instance_id);
+    getDb().prepare("UPDATE domains SET tunnel_status='removed', tunnel_token='', tunnel_id=NULL, updated_at=? WHERE id=?").run(now(), domainRow.id);
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error.message }; }
 }
-export function allNodeTunnels() {
-  return getDb().prepare('SELECT node_id, tunnel_id, status, last_heartbeat, updated_at FROM node_tunnels ORDER BY updated_at DESC').all();
+
+/** Check whether the configured token actually has the required permissions. */
+export async function tokenCapabilities() {
+  if (!isCloudflareConfigured()) return { configured: false, canTunnel: false, canDns: false, hint: 'Set CLOUDFLARE_API_TOKEN, ACCOUNT_ID and ZONE_ID' };
+  const c = cloudflareConfig();
+  const check = async (path) => {
+    try {
+      const r = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${c.token}` } });
+      const j = await r.json().catch(() => ({}));
+      return r.ok && j.success !== false;
+    } catch { return false; }
+  };
+  const [canTunnel, canDns] = await Promise.all([
+    check(`/accounts/${c.accountId}/cfd_tunnel`),
+    check(`/zones/${c.zoneId}/dns_records?per_page=1`),
+  ]);
+  return {
+    configured: true, canTunnel, canDns,
+    ready: canTunnel && canDns,
+    hint: canTunnel && canDns ? 'Ready' :
+      'Token needs Cloudflare Tunnel:Edit + DNS:Edit + Zone:Read permissions',
+  };
+}
+
+export function allTunnels() {
+  return getDb().prepare("SELECT id, domain, instance_id, tunnel_id, tunnel_status, ssl_status, updated_at FROM domains WHERE tunnel_id IS NOT NULL OR tunnel_status != 'pending' ORDER BY updated_at DESC").all()
+    .map(d => ({ domainId: d.id, hostname: d.domain, instanceId: d.instance_id, tunnelId: d.tunnel_id,
+      status: d.tunnel_status, sslStatus: d.ssl_status, updatedAt: d.updated_at }));
 }

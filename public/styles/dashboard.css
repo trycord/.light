@@ -44,6 +44,7 @@ html, body { min-height:100svh; margin:0; }
 .lt-global-search input { background:none; border:none; outline:none; color:var(--lt-text); font:inherit; font-size:12px; width:100%; }
 .lt-icon-btn { width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--lt-border); border-radius:var(--lt-radius-md); background:var(--lt-surface); color:var(--lt-text-muted); cursor:pointer; font-size:15px; }
 .lt-icon-btn:hover { color:var(--lt-text); border-color:var(--lt-border-strong); }
+@import url('/styles/masterpiece.css');
 .lt-code-block{background:var(--lt-obsidian);border:1px solid var(--lt-border);border-radius:8px;padding:14px;max-height:400px;overflow:auto;font-family:var(--lt-font-mono);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--lt-text-secondary)}
 .lt-chart{height:72px;width:100%;overflow:hidden}
 .lt-spark{width:100%;height:100%;display:block}
