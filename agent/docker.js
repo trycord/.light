@@ -236,11 +236,19 @@ export async function createInstance(payload) {
   // Product-aware install: downloads the purchased software into the same
   // persistent directory. Never overwrite installed artifacts on retry.
   let installResult = null;
-  if (payload.package) {
+  // Self-contained images (Trycord) carry the app in the image. If an order was
+  // created with the runtime selected but no package attached, still prepare
+  // its persistent data + runtime env, otherwise it boots the wrong command
+  // from /home/container and crash-loops.
+  const imageBased = payload.environmentId === 'trycord' || /light-trycord/i.test(String(image || ''));
+  const pkg = payload.package || (imageBased
+    ? { id: 'trycord', name: 'Trycord', version: '7.2.0', installKind: 'trycord', config: payload.env || {} }
+    : null);
+  if (pkg) {
     const jarExists = fs.existsSync(path.join(appDir, 'server.jar'));
     if (!jarExists) {
-      installResult = await installPackage(payload.package, appDir, payload.memory);
-      console.log('[shade] package install:', payload.package.name, payload.package.version, installResult?.installed ? 'ok' : installResult?.reason);
+      installResult = await installPackage(pkg, appDir, payload.memory);
+      console.log('[shade] package install:', pkg.name, pkg.version, installResult?.installed ? 'ok' : installResult?.reason);
     } else installResult = { installed: true, reused: true };
   }
   // Customer-visible filesystem boundary. Every service sees /home/container;
@@ -249,7 +257,10 @@ export async function createInstance(payload) {
   const appTarget = '/home/container';
   const enriched = {
     ...payload,
-    command: payload.command || (installResult?.startup) || tpl.command || payload.defaultCommand || '',
+    // Image-based packages must run their absolute startup command; a stale
+    // relative command from the order would execute from /home/container.
+    command: installResult?.imageBased ? installResult.startup
+      : (payload.command || installResult?.startup || tpl.command || payload.defaultCommand || ''),
     workingDir: appTarget,
     env: { ...(DEFAULT_ENV[payload.environmentId] || {}), ...(payload.env || {}),
       ...(installResult?.env && !Array.isArray(installResult.env) ? installResult.env : {}),

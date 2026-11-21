@@ -225,10 +225,19 @@ function start() {
     if (stopping) return; stopping = true;
     console.log('[.light] shutting down');
     clearInterval(scheduleTimer);
-    server.close(() => { closeDb(); process.exit(0); });
-    // Hard floor: close DB even if connections linger, so better-sqlite3
-    // never tears down with live handles (the source of native aborts).
-    setTimeout(() => { try { closeDb(); } catch {} process.exit(0); }, 5000).unref();
+    // Close the DB exactly once. better-sqlite3 aborts natively if close() is
+    // called twice or with live statements, so clear the safety timer as soon
+    // as the graceful path completes.
+    let closed = false;
+    const finish = () => {
+      if (closed) return; closed = true;
+      clearTimeout(floor);
+      try { closeDb(); } catch {}
+      process.exit(0);
+    };
+    server.close(finish);
+    const floor = setTimeout(finish, 5000);
+    floor.unref();
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

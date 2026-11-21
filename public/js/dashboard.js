@@ -194,6 +194,10 @@ async function boot(){
     renderAuth(['register','signup'].includes(v)?'register':'login');return;
   }
   try{
+    // Paint the shell immediately with a placeholder so navigation is visible
+    // while the session request is in flight; replace it once it resolves.
+    if(!session) session={user:{email:'…',name:'Loading…'},permissions:[],teamId:''};
+    renderShell();
     session=await api.me();renderShell();
     const selectedPlan=new URLSearchParams(location.search).get('plan');
     if(selectedPlan&&await checkoutPlan(selectedPlan)){await loadUnread();return;}

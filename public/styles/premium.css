@@ -119,6 +119,27 @@ body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; 
   border-color: var(--lt-ember-500); box-shadow: var(--lt-focus); outline: none;
 }
 
+/* ---------- Dashboard stats + cards ---------- */
+.lt-stat-card { padding:18px; position:relative; overflow:hidden; }
+.lt-stat-card::before {
+  content:""; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg,var(--lt-ember-500),transparent 78%); opacity:.85;
+}
+.lt-stat-card .num { font-size:30px; font-weight:800; letter-spacing:-.05em; line-height:1.15; margin:6px 0 2px; }
+.lt-label { font-size:10px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; color:var(--lt-text-muted); }
+.lt-kpi-sub { color:var(--lt-text-muted); font-size:11px; }
+.lt-card a { color:inherit; }
+.lt-card .lt-meta { color:var(--lt-text-muted); }
+.lt-grid > .lt-card { min-height:0; }
+
+/* ---------- Plans / choices ---------- */
+.lt-picker { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px; }
+.lt-pick { display:flex; align-items:center; gap:11px; padding:12px; border:1px solid var(--lt-border); border-radius:10px; cursor:pointer; background:var(--lt-surface); transition:border-color .16s, background .16s; }
+.lt-pick:hover { border-color:var(--lt-border-ember); }
+.lt-pick.is-on { border-color:var(--lt-ember-500); background:rgba(255,77,36,.05); }
+.lt-pick-ico { color:var(--lt-ember-500); font-size:18px; }
+.lt-row { display:flex; align-items:center; gap:10px; }
+
 /* ---------- Status + badges ---------- */
 .lt-badge { font-weight: 700; letter-spacing: .01em; }
 .lt-notif-item.is-unread { background: rgba(255, 77, 36, .06); }
