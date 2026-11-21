@@ -1,0 +1,625 @@
+// /api/channels/:channelId/messages — history + post (members with SEND_MESSAGES),
+// delete (author or MANAGE_MESSAGES).
+const express = require('express');
+const db = require('../db');
+const auth = require('../middleware/auth');
+const rateLimit = require('../middleware/ratelimit');
+const { fail, serviceError } = require('../errors');
+// A message body is capped rather than truncated. Slicing to the limit loses
+// whatever the writer typed past it with no indication at all, so a long paste
+// comes back looking like a successful send of something they did not write.
+const MAX_CONTENT = 2000;
+function readContent(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (text.length > MAX_CONTENT) {
+    const e = new Error('message must be ' + MAX_CONTENT + ' characters or fewer');
+    e.code = 'VALIDATION_ERROR';
+    throw e;
+  }
+  return text;
+}
+
+const { now, uuid, visibleChannel } = require('../util');
+const { hasChannelPermission } = require('../services/permissions');
+const memberships = require('../services/memberships');
+const uploads = require('../services/uploads');
+const reactions = require('../services/reactions');
+const threads = require('../services/threads');
+const replies = require('../services/replies');
+const embeds = require('../services/embeds');
+const webhooks = require('../services/webhooks');
+const bots = require('../services/bots');
+const mentions = require('../services/mentions');
+const { EVENTS } = require('../ws/events.js');
+const continuum = require('../services/continuum');
+const e2ee = require('../services/e2ee');
+
+let broadcast = () => {};
+let sendToUser = () => {};
+// Full gateway wiring (broadcast + per-user push for mention delivery).
+function setGateway(gw) {
+  if (gw && typeof gw.broadcast === 'function') broadcast = gw.broadcast;
+  if (gw && typeof gw.sendToUser === 'function') sendToUser = gw.sendToUser;
+}
+
+const router = express.Router({ mergeParams: true });
+router.use(auth);
+
+// Engagement enrichment: per-message reaction summaries (with the
+// reader's own state) and pin flags, batched to two queries per read.
+async function attachEngagement(rows, meId) {
+  if (!rows.length) return;
+  const ids = rows.map((r) => r.id);
+  const [summaries, pins] = await Promise.all([
+    reactions.summary(ids, meId),
+    db.all(
+      `SELECT message_id FROM pinned_messages WHERE message_id IN (${ids.map(() => '?').join(',')})`,
+      ids
+    ),
+  ]);
+  const pinnedSet = new Set(pins.map((p) => String(p.message_id)));
+  for (const r of rows) {
+    r.reactions = (summaries[r.id] || []);
+    r.pinned = pinnedSet.has(String(r.id));
+  }
+}
+
+// The two questions every write in this file asks, answered once.
+//
+// Five write routes each opened with the same lines - see the channel, check a permission,
+// check the timeout - and because the refusal was written out longhand every time they had
+// drifted into five wordings for one rule. A guard that is copied is a guard that stops
+// being one, so the caller now says which permission it is asking about and what to call
+// the refusal.
+//
+// They are two functions rather than one because a route has to work between them:
+// editing fetches the message and checks the author first, and deleting exempts a moderator
+// from the timeout. Merging them would have changed which refusal each caller sees.
+
+/** The channel the request names, or null once the refusal has been sent. */
+async function theChannel(req, res) {
+  const ch = await visibleChannel(req.params.channelId, req.user.id);
+  if (!ch) fail(res, 'NOT_A_MEMBER', 'channel not found or not a member');
+  return ch;
+}
+
+/** Whether this person may write in this channel right now. Sends the refusal if not. */
+async function mayAct(req, res, ch, permission, refused) {
+  if (!(await hasChannelPermission(req.user.id, ch.server_id, ch.id, permission))) {
+    fail(res, 'PERMISSION_DENIED', refused);
+    return false;
+  }
+  // A timeout means the member cannot act in this community at all, so it applies to
+  // everything a write can be.
+  if (await memberships.isTimedOut(ch.server_id, req.user.id)) {
+    fail(res, 'TIMED_OUT', 'you are timed out in this community');
+    return false;
+  }
+  if (permission === 'SEND_MESSAGES'
+    && await require('../services/enforcement').isRestricted(req.user.id, 'SEND_MESSAGES')) {
+    fail(res, 'FEATURE_RESTRICTED', 'messaging is restricted on your account', 403,
+      { feature: 'SEND_MESSAGES' });
+    return false;
+  }
+  return true;
+}
+
+router.get('/', async (req, res, next) => {
+  try {
+    const ch = await visibleChannel(req.params.channelId, req.user.id);
+    if (!ch) return fail(res, 'NOT_A_MEMBER', 'channel not found or not a member');
+    // Integer embedded after validation (keeps LIMIT working on every database).
+    const limit = Math.min(Math.max(parseInt(req.query.limit || '50', 10) || 50, 1), 200);
+    const select = `SELECT m.*, u.username AS author_name, u.display_name AS author_display, u.avatar_url AS author_avatar, u.banner_url AS author_banner, u.is_bot AS author_is_bot
+         FROM messages m JOIN users u ON u.id = m.author_id`;
+    let rows;
+    if (req.query.after !== undefined && req.query.after !== '') {
+      // Forward cursor: everything strictly newer than the anchor, oldest
+      // first. This is what a reconnecting client uses to fill the hole
+      // between its last known message and now. Previously there was no
+      // forward cursor at all, so anything missed while offline was simply
+      // unrecoverable in the UI.
+      const after = Math.max(parseInt(req.query.after, 10) || 0, 0);
+      rows = await db.all(
+        `${select} WHERE m.channel_id = ? AND m.seq > ? ORDER BY m.seq ASC LIMIT ${limit}`,
+        [ch.id, after]
+      );
+    } else if (req.query.before) {
+      // Backward cursor: older than the anchor, newest first.
+      //
+      // The anchor may be a seq (preferred: a single indexed integer) or a
+      // message id (the original contract). Supporting both matters because
+      // changing this parameter's meaning would silently break any existing
+      // client: an id parsed as an integer is NaN, which would quietly turn
+      // "page backwards" into "return nothing".
+      const raw = String(req.query.before);
+      const anchorSeq = /^\d+$/.test(raw)
+        ? Number(raw)
+        : await resolveSeq('messages', 'channel_id', ch.id, raw);
+      if (anchorSeq === null) return fail(res, 'NOT_FOUND', 'message not found');
+      rows = await db.all(
+        `${select} WHERE m.channel_id = ? AND m.seq < ? ORDER BY m.seq DESC LIMIT ${limit}`,
+        [ch.id, anchorSeq]
+      );
+    } else {
+      rows = await db.all(
+        `${select} WHERE m.channel_id = ? ORDER BY m.seq DESC LIMIT ${limit}`,
+        [req.params.channelId]
+      );
+    }
+    const byId = await uploads.getForMessages(rows.map((r) => r.id));
+    // Normalise to oldest-first for the client. The default and forward
+    // reads are already ascending, so reverse() is only meaningful for the
+    // backward page.
+    if (req.query.after === undefined || req.query.after === '') rows.reverse();
+    rows.forEach((r) => { r.attachments = byId[r.id] || []; });
+    // A message in an encrypted conversation is an envelope, and the row says
+    // so: the ciphertext is never handed back as if it were the text of the
+    // message.
+    rows.forEach((r) => { e2ee.shapeMessage(r); });
+    // One grouped query for the whole page, so a history read costs the same
+    // whether or not anything has been replied to.
+    const counts = await threads.replyCounts('channel', ch.id, rows.map((r) => r.id));
+    rows.forEach((r) => { r.reply_count = counts[r.id] || 0; });
+    // Previews are resolved after the fact, so a reload is the other way the
+    // reader gets them.
+    const cards = await embeds.listForMessages(rows.map((r) => r.id));
+    rows.forEach((r) => { r.embeds = cards[r.id] || []; });
+    await attachEngagement(rows, req.user.id);
+    res.json(rows);
+  } catch (e) { next(e); }
+});
+
+// A thread: the message it hangs from, then its replies. The channel is
+// permission-checked exactly as the history read is, so a thread cannot be used
+// to read a channel the reader cannot otherwise see.
+router.get('/:messageId/thread', async (req, res, next) => {
+  try {
+    const ch = await visibleChannel(req.params.channelId, req.user.id);
+    if (!ch) return fail(res, 'NOT_A_MEMBER', 'channel not found or not a member');
+    const rootId = await threads.resolveRoot('channel', ch.id, req.params.messageId);
+    const thread = await threads.fetch('channel', ch.id, rootId);
+    // The thread carries the same rows the history does, so the same rule
+    // applies: an envelope row says it is one.
+    e2ee.shapeMessage(thread.root);
+    for (const reply of thread.replies) e2ee.shapeMessage(reply);
+    res.json(thread);
+  } catch (e) {
+    if (e && e.code === 'NOT_FOUND') return fail(res, 'NOT_FOUND', 'message not found');
+    next(e);
+  }
+});
+
+// Assign the next seq for a channel. The unique index on (channel_id, seq)
+// is the authority: if two writers race and pick the same value, one insert
+// fails with a constraint violation and retries against the new maximum.
+// Without the index this read-then-write would silently produce two rows
+// with the same order.
+async function nextSeq(channelId) {
+  const row = await db.get('SELECT COALESCE(MAX(seq), 0) AS m FROM messages WHERE channel_id = ?', [channelId]);
+  return (row ? Number(row.m) : 0) + 1;
+}
+
+// Resolve a legacy cursor (message id) to its seq, scoped so an id from
+// another channel cannot be used as an anchor here.
+async function resolveSeq(table, scope, scopeId, id) {
+  const row = await db.get(
+    `SELECT seq FROM ${table} WHERE id = ? AND ${scope} = ?`,
+    [id, scopeId]
+  );
+  if (!row || row.seq === null || row.seq === undefined) return null;
+  return Number(row.seq);
+}
+
+router.post('/', auth.requireVerified, rateLimit({ windowMs: 60000, max: 60 }), async (req, res, next) => {
+  try {
+    const ch = await theChannel(req, res);
+    if (!ch || !(await mayAct(req, res, ch, 'SEND_MESSAGES',
+      'you cannot post in this community'))) return;
+    const body = req.body || {};
+
+    // A message in an encrypted conversation is an envelope, not text. The
+    // text is not read and not stored: the body has to carry the envelope,
+    // and the server never holds the key that opens it.
+    const carriesEnvelopes = body.envelopes !== undefined && body.envelopes !== null;
+    const content = carriesEnvelopes ? '' : readContent(body.content);
+
+    // Opt-out from link previews for this one message. Read here rather than
+    // trusted from the client: a flag the server ignores is a toggle that only
+    // looks like it works.
+    const suppressEmbeds = body.suppressEmbeds === true;
+    // Attachments and text are independent: a message may carry files
+    // alone, text alone, or both — but must carry at least one.
+    const ids = uploads.sanitizeIds(body.attachmentIds);
+    if (!content && !ids.length && !carriesEnvelopes) {
+      return fail(res, 'VALIDATION_ERROR', 'content or an attachment is required');
+    }
+
+    // What the community refuses.
+    //
+    // Slow mode and the blocked words are the community's own rules, and the
+    // server applies them: a rule the client applies is a rule a reader can
+    // turn off. Both refuse with a sentence that says what happened.
+    const rules = require('../services/communityRules');
+    // A moderator is not held by slow mode. Slow mode is there to slow a
+    // conversation down, not to slow the people who keep it in order.
+    const moderates = await hasChannelPermission(req.user.id, ch.server_id, ch.id, 'MANAGE_MESSAGES');
+    const slow = moderates ? { ok: true } : await rules.checkSlowMode(ch, req.user.id);
+    if (!slow.ok) {
+      return fail(res, 'SLOW_MODE', slow.reason, 429, { waitSeconds: slow.waitSeconds });
+    }
+    if (!carriesEnvelopes) {
+      // An encrypted message is an envelope, so its words are not here to be
+      // read - the community's words cannot be checked against it, and the
+      // server says so rather than pretending it checked.
+      const terms = await rules.checkTerms(ch.server_id, content);
+      if (!terms.ok) {
+        return fail(res, 'BLOCKED_TERM', terms.reason, 400, { term: terms.term });
+      }
+    }
+
+    // A reply to something that is not in this channel is refused rather than
+    // quietly posted flat, which would look like the app had lost the message.
+    let threadRootId = null;
+    try {
+      threadRootId = await threads.resolveRoot('channel', ch.id, body.replyToId);
+    } catch (e) {
+      return fail(res, e.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'VALIDATION_ERROR',
+        e.code === 'NOT_FOUND' ? 'the message being replied to does not exist here' : 'cannot reply to that message');
+    }
+
+    // Idempotency. A caller that retries the same submission (because the
+    // response was lost, not because the write failed) sends the same
+    // clientNonce and gets the already-persisted message back instead of a
+    // second copy. The nonce is scoped to the channel and is never compared
+    // against message text or timestamps, so two genuinely different
+    // messages that happen to be identical are still two messages.
+    const nonce = String(body.clientNonce || '').trim().slice(0, 64) || null;
+    if (nonce) {
+      const existing = await db.get(
+        `SELECT m.*, u.username AS author_name, u.display_name AS author_display, u.avatar_url AS author_avatar, u.banner_url AS author_banner, u.is_bot AS author_is_bot
+         FROM messages m JOIN users u ON u.id = m.author_id
+         WHERE m.channel_id = ? AND m.client_nonce = ? AND m.author_id = ?`,
+        [ch.id, nonce, req.user.id]
+      );
+      if (existing) {
+        const byId = await uploads.getForMessages([existing.id]);
+        existing.attachments = byId[existing.id] || [];
+        e2ee.shapeMessage(existing);
+        await attachEngagement([existing], req.user.id);
+        // 200, not 201: nothing new was created.
+        return res.json({ ...existing, server_id: ch.server_id, deduped: true });
+      }
+    }
+
+    // Whether this conversation is encrypted is the status service's answer,
+    // not the client's. In an encrypted conversation the body has to be an
+    // envelope, and a body the server cannot validate - a bad version, a
+    // malformed envelope, an envelope for another conversation - is refused
+    // with nothing stored. There is no plaintext path into an encrypted
+    // conversation and no "store it as a link" path out of one.
+    let accepted;
+    try {
+      accepted = await e2ee.acceptMessageBody(req.user.id, ch.id, {
+        content,
+        envelopes: body.envelopes,
+        attachmentIds: ids,
+      });
+    } catch (e) {
+      if (e && e.code && e.status) return fail(res, e.code, e.message, e.status);
+      throw e;
+    }
+
+    const msg = {
+      id: uuid(), channel_id: ch.id, server_id: ch.server_id,
+      author_id: req.user.id, user: req.user.username,
+      // The text of a message that is not encrypted, and nothing at all for
+      // one that is: the client reads the envelope.
+      content: accepted.content,
+      encrypted: accepted.encrypted,
+      envelopes: accepted.envelopes,
+      created_at: now(),
+      edited_at: null, thread_root_id: threadRootId,
+      // What is true about this conversation's encryption, so that a client
+      // can say it rather than guess.
+      encryption: accepted.encryption,
+      // Present and empty rather than absent: the client stores previews per
+      // message id, and a missing key is indistinguishable from a message whose
+      // preview simply never arrived.
+      embeds: [],
+    };
+
+    // Insert with the canonical sequence, retrying on the (rare) race.
+    let inserted = false;
+    for (let attempt = 0; attempt < 5 && !inserted; attempt++) {
+      const seq = await nextSeq(ch.id);
+      try {
+        await db.run(
+          'INSERT INTO messages (id, channel_id, author_id, content, created_at, seq, client_nonce, thread_root_id)' +
+          ' VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [msg.id, msg.channel_id, msg.author_id, accepted.stored, msg.created_at, seq, nonce, threadRootId]
+        );
+        msg.seq = seq;
+        inserted = true;
+      } catch (e) {
+        // A unique violation on (channel_id, seq) means another writer took
+        // this value between our read and our write. Re-read and retry.
+        const dupSeq = /unique/i.test(String(e && e.message)) || e && e.code === 'SQLITE_CONSTRAINT';
+        if (!dupSeq || attempt === 4) throw e;
+        // A unique violation on the nonce means a concurrent duplicate won.
+        if (nonce) {
+          const again = await db.get('SELECT id FROM messages WHERE channel_id = ? AND client_nonce = ?', [ch.id, nonce]);
+          if (again) { msg.id = again.id; inserted = true; break; }
+        }
+      }
+    }
+    if (!inserted) return fail(res, 'CONFLICT', 'could not assign a message position, please retry');
+    // The search index follows the message. A failure here must not lose the
+    // message - it is already written, and the backfill will pick it up.
+    //
+    // An encrypted message is not indexed: the words of it are ciphertext,
+    // and indexing that would put the ciphertext in the index and answer a
+    // search with noise. A message nobody can read is not searchable.
+    if (!accepted.encrypted) {
+      require('../services/search-index')
+        .indexMessage({
+          id: msg.id, channelId: msg.channel_id, authorId: msg.author_id,
+          content, createdAt: msg.created_at, serverId: ch.server_id,
+        })
+        .catch(() => {});
+    }
+    msg.attachments = ids.length
+      ? await uploads.attachToMessage(ids, msg.id, req.user.id, { channelId: ch.id })
+      : [];
+    // The live event has to describe its author the way the history read
+    // does - the SELECT at the top of this file aliases the same columns -
+    // because a row drawn as it arrives gets no second fetch. An event
+    // without the author's profile rendered initials instead of a face
+    // until the next reload.
+    const author = await db.get(
+      'SELECT username AS author_name, display_name AS author_display,' +
+      ' avatar_url AS author_avatar, banner_url AS author_banner, is_bot AS author_is_bot' +
+      ' FROM users WHERE id = ?',
+      [req.user.id]
+    );
+    if (author) Object.assign(msg, author);
+    await attachEngagement([msg], req.user.id);
+    broadcast(ch.server_id, ch.id, { type: EVENTS.MESSAGE, ...msg });
+
+    // Fan out to federated instances: a message posted to a community becomes a
+    // durable outbox event that the job system delivers to trusted remote
+    // instances. Never fails the post.
+    //
+    // An encrypted message is not federated. The peer instance holds no key
+    // for this conversation, so all it could receive is ciphertext it cannot
+    // read - and the ciphertext of a message is not something to hand to
+    // another instance.
+    if (!accepted.encrypted) {
+      try {
+        await continuum.enqueueEvent('message.posted', {
+          serverId: ch.server_id, channelId: ch.id, messageId: msg.id,
+          authorId: msg.author_id, content,
+        }, { actorId: req.user.id, targetId: msg.id });
+      } catch { /* continuum disabled or misconfigured: post still succeeded */ }
+    }
+
+    // Everything below is extra information about a message that has already
+    // been accepted. None of it is allowed to fail the post: a slow link, a dead
+    // webhook endpoint and a command that answers nothing are all reasons the
+    // reader gets a slightly less rich view, not a lost message.
+    //
+    // Link previews resolve after the broadcast so the reader sees the message
+    // immediately and the card arrives when it is ready.
+    //
+    // An encrypted message has no text for any of this to work on. The
+    // server cannot read its own message, so there is no preview to build, no
+    // command to run and no mention to find: the client does those with the
+    // text it holds.
+    if (!accepted.encrypted && content && !suppressEmbeds && /https?:\/\//i.test(content)) {
+      embeds.queue({ kind: 'channel', messageId: msg.id }, content).then((cards) => {
+        if (!cards.length) return;
+        broadcast(ch.server_id, ch.id, { type: EVENTS.MESSAGE_EMBEDS, channel_id: ch.id, server_id: ch.server_id, messageId: msg.id, embeds: cards });
+      }).catch(() => {});
+    }
+    // A slash command answered by an application in this community.
+    if (!accepted.encrypted && content && content.charAt(0) === '/') {
+      bots.respond(ch.server_id, ch, content).then((reply) => {
+        if (!reply) return;
+        webhooks.emit(ch.server_id, 'command.created', {
+          serverId: ch.server_id, channelId: ch.id,
+          command: content.split(/\s+/)[0], messageId: reply.id,
+        }).catch(() => {});
+      }).catch(() => {});
+    }
+    // The webhook carries the text of the message when there is one. An
+    // encrypted message has none, so the event says the message is encrypted
+    // rather than shipping ciphertext to a third party.
+    webhooks.emit(ch.server_id, 'message.created', {
+      serverId: ch.server_id, channelId: ch.id,
+      message: accepted.encrypted
+        ? { id: msg.id, authorId: msg.author_id, encrypted: true }
+        : { id: msg.id, authorId: msg.author_id, content },
+    }).catch(() => {});
+    // @username mentions become durable notifications (+ realtime push),
+    // skipped for muted channels inside the helper. Never fails the post.
+    if (!accepted.encrypted) {
+      try {
+        const found = await mentions.notifyMentions({
+          serverId: ch.server_id, channelId: ch.id, messageId: msg.id,
+          authorId: req.user.id, content,
+        });
+        for (const f of found) {
+          if (f.held || !f.notification) continue;
+          try { sendToUser(f.userId, { type: EVENTS.NOTIFICATION, notification: f.notification }); } catch { /* ignore */ }
+        }
+      } catch { /* ignore */ }
+    }
+    // A reply tells the author of the message it hangs from. Null unless this
+    // was a reply, and null for your own message.
+    try {
+      const r = await replies.notifyReply({
+        kind: 'channel', scopeId: ch.id, rootId: threadRootId,
+        replyId: msg.id, authorId: req.user.id,
+      });
+      if (r && r.notification && !r.held) sendToUser(r.userId, { type: EVENTS.NOTIFICATION, notification: r.notification });
+    } catch { /* a missing notification must not fail the post */ }
+    res.json(msg);
+  } catch (e) { next(e); }
+});
+
+router.delete('/:messageId', auth.requireVerified, async (req, res, next) => {
+  try {
+    const ch = await theChannel(req, res);
+    if (!ch) return;
+    const msg = await db.get('SELECT * FROM messages WHERE id = ? AND channel_id = ?', [req.params.messageId, ch.id]);
+    if (!msg) return fail(res, 'NOT_FOUND', 'message not found');
+    const isAuthor = msg.author_id === req.user.id;
+    if (!isAuthor && !(await hasChannelPermission(req.user.id, ch.server_id, ch.id, 'MANAGE_MESSAGES'))) {
+      return fail(res, 'PERMISSION_DENIED', 'cannot delete this message');
+    }
+    // A timeout means the member cannot act in this community, not merely that
+    // they cannot post. A moderator with MANAGE_MESSAGES is exempt, so a
+    // moderation action is still possible while someone is timed out.
+    if (isAuthor && (await memberships.isTimedOut(ch.server_id, req.user.id))) {
+      return fail(res, 'TIMED_OUT', 'you are timed out in this community');
+    }
+    const fileRows = await db.all('SELECT id FROM attachments WHERE message_id = ?', [msg.id]);
+    // Replies outlive the message they hang from: they are other people's
+    // messages, and one person deleting their own message must not take a
+    // conversation with it. Clearing the link turns each reply back into an
+    // ordinary message rather than leaving it pointing at nothing, which would
+    // make the thread permanently unreachable.
+    await db.run('UPDATE messages SET thread_root_id = NULL WHERE thread_root_id = ?', [msg.id]);
+    await db.run('DELETE FROM messages WHERE id = ?', [msg.id]);
+    // The search index loses the message with it. A deleted message that still
+    // answered a search would be a message nobody can open.
+    require('../services/search-index').removeMessage(msg.id).catch(() => {});
+    // A card converted from this message keeps a link back to it. The message
+    // is gone, so the link is too - a card pointing at a message that does not
+    // exist is a broken reference in the interface.
+    //
+    // The card's own source_message_id is cleared by the foreign key's ON
+    // DELETE SET NULL. The link table is polymorphic and has no foreign key,
+    // so it is cleaned here.
+    try {
+      await db.run("DELETE FROM card_links WHERE kind = 'message' AND target_id = ?", [msg.id]);
+    } catch { /* an instance without the workspace has no card links */ }
+    uploads.removeFiles(fileRows.map((r) => r.id));
+    broadcast(ch.server_id, ch.id, { type: EVENTS.MESSAGE_DELETED, id: msg.id, channel_id: ch.id });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// PATCH /:messageId — author-only edit. Moderators can delete but never
+// rewrite someone else's words. Broadcasts message_updated.
+router.patch('/:messageId', auth.requireVerified, rateLimit({ windowMs: 60000, max: 40 }), async (req, res, next) => {
+  try {
+    const ch = await theChannel(req, res);
+    if (!ch) return;
+    const msg = await db.get('SELECT * FROM messages WHERE id = ? AND channel_id = ?', [req.params.messageId, ch.id]);
+    if (!msg) return fail(res, 'NOT_FOUND', 'message not found');
+    if (msg.author_id !== req.user.id) return fail(res, 'PERMISSION_DENIED', 'only the author can edit');
+    // Editing is a write, so it is gated the same way posting is.
+    if (!(await mayAct(req, res, ch, 'SEND_MESSAGES',
+      'you cannot edit a message here'))) return;
+    const body = req.body || {};
+    // An edit of an encrypted message is an envelope too. Editing one with
+    // text would put the text in the row, which is the one thing an
+    // encrypted conversation may never hold.
+    const carriesEnvelopes = body.envelopes !== undefined && body.envelopes !== null;
+    const content = carriesEnvelopes ? '' : readContent(body.content);
+    if (!content && !carriesEnvelopes) return fail(res, 'VALIDATION_ERROR', 'content required');
+    let accepted;
+    try {
+      accepted = await e2ee.acceptMessageBody(req.user.id, ch.id, {
+        content,
+        envelopes: body.envelopes,
+      });
+    } catch (e) {
+      if (e && e.code && e.status) return fail(res, e.code, e.message, e.status);
+      throw e;
+    }
+    const editedAt = now();
+    await db.run('UPDATE messages SET content = ?, edited_at = ? WHERE id = ?', [accepted.stored, editedAt, msg.id]);
+    // The index follows the new words. The old ones are removed first, so an
+    // edit cannot leave a word behind that the message no longer contains.
+    // An encrypted message has no words to index.
+    if (!accepted.encrypted) {
+      require('../services/search-index').indexMessage({
+        id: msg.id, channelId: msg.channel_id, authorId: msg.author_id,
+        content, createdAt: msg.created_at, serverId: ch.server_id,
+      }).catch(() => {});
+    }
+    const author = await db.get(
+      'SELECT username, display_name, avatar_url, banner_url, is_bot FROM users WHERE id = ?',
+      [msg.author_id]
+    );
+    const out = {
+      id: msg.id, channel_id: ch.id, server_id: ch.server_id,
+      author_id: msg.author_id, user: req.user.username,
+      content: accepted.content,
+      encrypted: accepted.encrypted,
+      envelopes: accepted.envelopes,
+      created_at: msg.created_at, edited_at: editedAt,
+      encryption: accepted.encryption,
+      // The same author block the create event and the history read carry:
+      // an edit that arrived without the profile would blank the row's face.
+      author_name: (author && author.username) || req.user.username,
+      author_display: (author && author.display_name) || req.user.username,
+      author_avatar: (author && author.avatar_url) || null,
+      author_banner: (author && author.banner_url) || null,
+      author_is_bot: !!(author && author.is_bot),
+    };
+    await attachEngagement([out], req.user.id);
+    broadcast(ch.server_id, ch.id, { type: EVENTS.MESSAGE_UPDATED, ...out });
+    res.json(out);
+  } catch (e) { next(e); }
+});
+
+// ---- reactions ------------------------------------------------------
+// POST /api/channels/:channelId/messages/:messageId/reactions { emoji }
+router.post('/:messageId/reactions', auth.requireVerified, rateLimit({ windowMs: 60000, max: 120 }), async (req, res, next) => {
+  try {
+    const ch = await theChannel(req, res);
+    if (!ch || !(await mayAct(req, res, ch, 'SEND_MESSAGES',
+      'you cannot react in this channel'))) return;
+    const msg = await db.get('SELECT id FROM messages WHERE id = ? AND channel_id = ?', [req.params.messageId, ch.id]);
+    if (!msg) return fail(res, 'NOT_FOUND', 'message not found in this channel');
+    let emoji;
+    try {
+      emoji = await reactions.add(req.user.id, msg.id, (req.body || {}).emoji);
+    } catch (e) {
+      if (e && e.code) return fail(res, e.code, e.message);
+      throw e;
+    }
+    const summaries = await reactions.summary([msg.id], req.user.id);
+    broadcast(ch.server_id, ch.id, { type: EVENTS.MESSAGE_REACTION, id: msg.id, channel_id: ch.id, reactions: summaries[msg.id] || [] });
+    res.json({ ok: true, emoji, reactions: summaries[msg.id] || [] });
+  } catch (e) { next(e); }
+});
+
+// DELETE .../reactions/:emoji — removes only the caller's own reaction.
+router.delete('/:messageId/reactions/:emoji', auth.requireVerified, async (req, res, next) => {
+  try {
+    const ch = await theChannel(req, res);
+    if (!ch) return;
+    const msg = await db.get('SELECT id FROM messages WHERE id = ? AND channel_id = ?', [req.params.messageId, ch.id]);
+    if (!msg) return fail(res, 'NOT_FOUND', 'message not found in this channel');
+    if (!(await mayAct(req, res, ch, 'SEND_MESSAGES',
+      'you cannot change your reactions here'))) return;
+    let emoji;
+    try {
+      emoji = await reactions.remove(req.user.id, msg.id, req.params.emoji);
+    } catch (e) {
+      if (e && e.code) return fail(res, e.code, e.message);
+      throw e;
+    }
+    const summaries = await reactions.summary([msg.id], req.user.id);
+    broadcast(ch.server_id, ch.id, { type: EVENTS.MESSAGE_REACTION, id: msg.id, channel_id: ch.id, reactions: summaries[msg.id] || [] });
+    res.json({ ok: true, emoji, reactions: summaries[msg.id] || [] });
+  } catch (e) { next(e); }
+});
+
+module.exports = router;
+module.exports.setGateway = setGateway;
+module.exports.nextSeq = nextSeq;

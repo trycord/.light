@@ -1,0 +1,361 @@
+// The router.
+//
+// One place turns an address into a page. It reads the registry for what a URL
+// means, resolves whatever that page needs from the store before rendering,
+// fills the shell regions from the renderer's answer, and runs the mount
+// lifecycle. It owns exactly one cleanup, so a page that subscribes to anything
+// has somewhere to unsubscribe.
+
+import { matchRoute, renderPage } from '../packages/registry.js';
+import { currentRoute, currentQuery, navigate, path, publicPath } from '../packages/nav.js';
+import { el } from '../packages/dom.js';
+import {
+  State, serverById, channelById, refreshServer, refreshServers, refreshServerTree,
+  signedIn,
+} from '../packages/store.js';
+import {
+  shellRoot, setStage, setStageHead, setComposer, setInspector, setContextPage,
+  setTitle, refreshChrome, focusStage,
+} from './shell.js';
+import { fault, blank } from './ui/page.js';
+import { renderNotFound } from './features/documents.js';
+
+let activeCleanup = null;
+let rawNode = null;
+let generation = 0;
+
+// Where the sign-in door is.
+//
+// A served instance usually has the public site at the origin root, and that
+// site owns the door at /login. A session route reached without a session leaves
+// the application for it, with the route remembered. A document opened off disk
+// - the desktop shell - has no origin root to leave for, so the application's
+// own gate remains the answer. The gate at /app/login still exists for a
+// deployment that serves the client alone; this is the canonical way in.
+function leaveForSignIn(route) {
+  const target = route && route !== '/'
+    ? '/login?next=' + encodeURIComponent(route)
+    : '/login';
+  const protocol = window.location && window.location.protocol;
+  if (protocol === 'http:' || protocol === 'https:') {
+    window.location.assign(publicPath(target));
+    return;
+  }
+  navigate(target, { replace: true });
+}
+
+// The first paint is the document the reader asked for; the browser has already
+// put them there. Every paint after it is a move inside the client, and a move
+// has to be announced or a screen-reader reader is left on the link they used
+// while the page under them changed.
+let paintedOnce = false;
+
+function announceRoute() {
+  if (paintedOnce) focusStage();
+  paintedOnce = true;
+}
+
+function host() {
+  return document.getElementById('app');
+}
+
+// --- raw surfaces -----------------------------------------------------------
+//
+// The sign-in screens and the public documents are not part of the workspace:
+// they are the whole page, so the shell is hidden rather than filled. The page
+// itself is a direct child of <body>, beside the app host - and the root carries
+// data-raw so the stylesheet can let the now-empty app host stop holding the
+// first viewport, which would otherwise push the whole page below the fold.
+
+function showRaw(node) {
+  const root = shellRoot();
+  if (root) root.hidden = true;
+  if (rawNode) rawNode.remove();
+  rawNode = node || null;
+  if (rawNode) document.body.appendChild(rawNode);
+  try { document.documentElement.dataset.raw = 'true'; } catch { /* no document */ }
+}
+
+function clearRaw() {
+  if (rawNode) { rawNode.remove(); rawNode = null; }
+  const root = shellRoot();
+  if (root) root.hidden = false;
+  try { delete document.documentElement.dataset.raw; } catch { /* no document */ }
+}
+
+// --- region painting --------------------------------------------------------
+
+function headChildren(head) {
+  if (!head) return [];
+  return Array.isArray(head) ? head.filter(Boolean) : [head];
+}
+
+function setRoute(route) {
+  try { document.documentElement.dataset.route = route; } catch { /* no document */ }
+}
+
+function paintNotFound(route) {
+  clearRaw();
+  // An unknown address is still inside the reader's own scope: the spine stays
+  // live and says so, instead of leaving an empty column next to the message.
+  setContextPage('home', null, null);
+  const result = renderNotFound();
+  setStageHead();
+  setStage(result.node);
+  setComposer(null);
+  setInspector(null);
+  setTitle('Not found');
+  setRoute(route);
+  refreshChrome();
+  announceRoute();
+}
+
+// A fault is never allowed to blank the place column: the reader is still
+// somewhere, and the spine still has to say where. The column is repainted from
+// the page that was being opened, falling back to the reader's own scope.
+// A route-level failure, answered in the shape of what went wrong rather than
+// one fault for every cause. The shapes are the API's own distinctions - no
+// guessing at a cause the server did not name:
+//
+//   - no connection is not a fault at all: the page is fine, the wire is not,
+//   - a session that ended mid-flight asks for a sign-in, not a retry,
+//   - a 403 is a refusal the reader can sometimes fix by leaving (never by
+//     retrying the same address),
+//   - a server error is the one case where trying again is the honest move.
+function errorState(error, retry) {
+  const status = error && error.status;
+  const code = error && error.code;
+  if (code === 'NETWORK') {
+    return blank({
+      glyph: 'wifi-off',
+      title: 'No connection',
+      text: 'Trycord cannot reach the instance right now. Check your connection and try again.',
+      action: el('button', { class: 'btn btn--default btn--sm', type: 'button', onClick: retry }, 'Try again'),
+    });
+  }
+  if (status === 401) {
+    return blank({
+      glyph: 'shield-alert',
+      title: 'Your session has ended',
+      text: 'The instance asked you to sign in again. Nothing was changed; sign in to continue.',
+      action: el('a', { class: 'btn btn--default btn--sm', href: path('/login') }, 'Sign in'),
+    });
+  }
+  if (status === 403) {
+    return blank({
+      glyph: 'shield',
+      title: 'This page is closed to you',
+      text: (error && error.message) || 'The instance refused this page for your account.',
+      action: el('a', { class: 'btn btn--default btn--sm', href: path('/home') }, 'Back to your places'),
+    });
+  }
+  if (status >= 500) {
+    return blank({
+      glyph: 'alert',
+      title: 'This page broke on the server',
+      text: 'The instance answered with an error rather than the page. It may be mid-restart; try again in a moment.',
+      action: el('button', { class: 'btn btn--default btn--sm', type: 'button', onClick: retry }, 'Try again'),
+    });
+  }
+  return fault(error, retry);
+}
+
+function paintError(route, error, ctx, page) {
+  clearRaw();
+  setContextPage(page && page.sidebar ? page.sidebar : 'home', ctx, page);
+  const box = errorState(error, () => run());
+  box.setAttribute('data-fault-origin', 'router');
+  setStageHead();
+  setStage(box);
+  setComposer(null);
+  setInspector(null);
+  setTitle('This page did not open');
+  setRoute(route);
+  announceRoute();
+}
+
+function paint(result, page, route) {
+  if (result && result.raw) {
+    setStageHead();
+    setStage(null);
+    setComposer(null);
+    setInspector(null);
+    setContextPage(null, null, null);
+    setTitle(result.title || page.label || '');
+    showRaw(result.node);
+    setRoute(route);
+    return false;
+  }
+
+  clearRaw();
+  if (result && typeof result.head !== 'undefined') setStageHead(...headChildren(result.head));
+  else setStageHead();
+  setStage(result && result.node);
+  setComposer(result && result.composer);
+  setInspector(result && result.inspector);
+  setTitle(page.label || page.nav && page.nav.label || '');
+  setRoute(route);
+  return true;
+}
+
+// --- community resolution ---------------------------------------------------
+
+async function resolveServerId(page, params) {
+  if (params.id) return params.id;
+  if (!params.slug) return null;
+  const local = State.servers.find((server) => server.slug === params.slug);
+  if (local) return local.id;
+  try { await refreshServers(); } catch { /* the failure is reported below */ }
+  const again = State.servers.find((server) => server.slug === params.slug);
+  return again ? again.id : null;
+}
+
+function firstChannel(serverId) {
+  const channels = (State.serverTree.get(serverId) || {}).channels || [];
+  // Voice and stage channels have no feed to land on, so the default is the first
+  // channel that does. A community of nothing but voice channels still opens one.
+  const text = channels.filter((channel) => {
+    const type = String(channel.type || 'text');
+    return type !== 'voice' && type !== 'stage';
+  });
+  const ordered = (text.length ? text : channels).slice()
+    .sort((a, b) => (a.position || 0) - (b.position || 0));
+  return ordered[0] || null;
+}
+
+// --- the dispatch -----------------------------------------------------------
+
+export async function run() {
+  const seq = ++generation;
+  const route = currentRoute();
+  const match = matchRoute(route);
+
+  if (activeCleanup) {
+    try { activeCleanup(); } catch { /* a cleanup that throws must not stop the route */ }
+    activeCleanup = null;
+  }
+
+  if (!match) {
+    paintNotFound(route);
+    return;
+  }
+
+  const page = match.page;
+  const params = match.params;
+  const rest = match.rest;
+
+  // The instance requires a second factor this account has not enrolled. Every
+  // workspace screen would be refused with the same answer, so send the reader
+  // straight to the one screen that can fix it. Public documents (legal, support)
+  // still open, and the enrolment screen itself is public so this cannot loop.
+  if (State.mfaRequired && page.access !== 'public') {
+    navigate('/two-step', { replace: true });
+    return;
+  }
+
+  // The enrolment screen is only meaningful with a token to enrol against.
+  if (page.id === 'twoStep' && !signedIn()) {
+    leaveForSignIn('/');
+    return;
+  }
+
+  if (page.access === 'guest' && signedIn()) {
+    navigate(page.guestTo || '/home', { replace: true });
+    return;
+  }
+  if (page.access === 'session' && !signedIn()) {
+    leaveForSignIn(route);
+    return;
+  }
+
+  const ctx = {
+    page,
+    params,
+    rest,
+    route,
+    query: currentQuery(),
+    serverId: null,
+    channel: null,
+    conversationId: params.id || null,
+  };
+
+  if (page.sidebar === 'community') {
+    const serverId = await resolveServerId(page, params);
+    if (seq !== generation) return;
+    if (!serverId) { paintError(route, new Error('That community does not exist.'), ctx, page); return; }
+    ctx.serverId = serverId;
+    if (!serverById(serverId)) {
+      try { await refreshServer(serverId); } catch { /* the view reports a missing community */ }
+      if (seq !== generation) return;
+    }
+
+    // Only the bare community root lands on its first channel. The rest of the
+    // id-form URLs - /members, /settings/... - are pages of their own, and a
+    // redirect here would swallow them.
+    if ((page.id === 'community' || page.id === 'community.legacy') && match.rest.length === 0) {
+      try { await refreshServerTree(serverId); } catch { /* handled below */ }
+      if (seq !== generation) return;
+      const channel = firstChannel(serverId);
+      if (channel) {
+        navigate('/server/' + serverId + '/channel/' + channel.id, { replace: true });
+        return;
+      }
+      if (seq !== generation) return;
+    } else if (page.id === 'community.channel' || page.id === 'community.channelPins') {
+      try { await refreshServerTree(serverId); } catch { /* the view reports it */ }
+      if (seq !== generation) return;
+      ctx.channel = channelById(serverId, params.channel) || null;
+    }
+  }
+
+  // Every page in the shell has the place column.
+  //
+  // The column is the reader's own spine - the places they can go - and a
+  // page without one has a command bar whose navigation button opens
+  // nothing. So the pages that do not name a column of their own get the
+  // reader's own places, and the button is honest on every page.
+  setContextPage(page.sidebar || 'home', ctx, page);
+
+  let result;
+  try {
+    // A renderer may be a lazy import resolving to the page; the await here is
+    // free for the eager ones, which answer synchronously.
+    result = await renderPage(page, ctx);
+  } catch (error) {
+    if (seq === generation) paintError(route, error, ctx, page);
+    return;
+  }
+  if (seq !== generation) return;
+
+  let mounted;
+  try {
+    mounted = paint(result, page, route);
+  } catch (error) {
+    if (seq === generation) paintError(route, error, ctx, page);
+    return;
+  }
+  refreshChrome();
+
+  if (result && typeof result.cleanup === 'function') activeCleanup = result.cleanup;
+
+  if (mounted && result && typeof result.onMount === 'function') {
+    try {
+      await result.onMount();
+    } catch (error) {
+      if (seq === generation) {
+        const box = fault(error, () => run());
+        box.setAttribute('data-fault-origin', 'mount');
+        setStage(box);
+      }
+    }
+  }
+  if (seq !== generation) return;
+
+  // A raw page (a gate or a public document) owns its own focus: the sign-in
+  // screen puts it in the first field. A page in the shell is announced here,
+  // after its mount has finished adding anything it adds.
+  if (mounted) announceRoute();
+  else paintedOnce = true;
+}
+
+export default { run };

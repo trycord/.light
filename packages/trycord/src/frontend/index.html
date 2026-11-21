@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" data-theme="trycord">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Trycord - communities that own their communication, identity and data.">
+  <title>Trycord</title>
+
+  <!-- The hosted mount. The server rewrites this per request, because only it
+       knows where the client is mounted. -->
+  <base href="/app/">
+
+  <link rel="icon" href="./assets/trycord-assets/app/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./assets/trycord-assets/app/trycord-app-icon.svg">
+  <link rel="manifest" href="./assets/trycord-assets/app/site.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Trycord">
+  <meta name="theme-color" content="#141519">
+
+  <link rel="stylesheet" href="./css/app.css?v=3">
+
+  <!-- The stored theme, applied before the first paint. A file rather than an
+       inline script, because the served policy refuses inline script. -->
+  <script src="./js/theme-bootstrap.js"></script>
+</head>
+<body>
+  <!-- One mount point. The whole interface is built by js/main.js, so there is
+       no second tree in this document that could disagree with it. -->
+  <div id="app" class="app-root"></div>
+
+  <!-- Loaded before the application, and as a plain script: it has to be able to
+       report a module graph that failed to load, so it cannot depend on that graph. -->
+  <script src="./packages/crash.js"></script>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>

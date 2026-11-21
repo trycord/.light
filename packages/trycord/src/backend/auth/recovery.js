@@ -1,0 +1,186 @@
+// Account recovery + email verification, backed by single-use hashed
+// tokens. Raw tokens never touch the database (SHA-256 hashes only) and
+// never appear in logs. Every response to anonymous callers is generic so
+// neither flow reveals whether an account or email exists.
+const crypto = require('crypto');
+const bcrypt = require('bcrypt');
+const db = require('../db');
+const { now, uuid, sign } = require('../util');
+const { checkPassword, BCRYPT_COST } = require('./passwords');
+const mail = require('./mail');
+const templates = require('./emailTemplates');
+
+function ttlMinutes() {
+  const n = parseInt(process.env.RESET_TOKEN_TTL_MIN || '60', 10);
+  return Number.isFinite(n) && n > 0 ? n : 60;
+}
+
+function newToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function tokenHash(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+function normalizeEmail(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s || s.length > 254) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return null;
+  return s;
+}
+
+async function purgeUser(table, userId) {
+  await db.run(`DELETE FROM ${table} WHERE user_id = ? AND (used_at IS NOT NULL OR expires_at < ?)`, [userId, now()]);
+}
+
+// --- password reset ---
+
+async function requestPasswordReset(email) {
+  const normalized = normalizeEmail(email);
+  // Generic outcome either way: never reveal account existence.
+  const generic = { ok: true };
+  if (!normalized) return generic;
+  const user = await db.get('SELECT id FROM users WHERE email = ? AND email_verified_at IS NOT NULL', [normalized]);
+  if (!user) return generic;
+  // One live token at a time: new requests invalidate older ones.
+  await db.run('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL', [user.id]);
+  await purgeUser('password_resets', user.id);
+  const token = newToken();
+  const expires = new Date(Date.now() + ttlMinutes() * 60000).toISOString();
+  await db.run(
+    'INSERT INTO password_resets (id, user_id, token_hash, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [uuid(), user.id, tokenHash(token), expires, null, now()]
+  );
+  console.log(`[security] password_reset_requested user=${user.id}`);
+  try {
+    const tpl = templates.passwordReset({
+      link: mail.clientLink('reset-password', token),
+      minutes: ttlMinutes(),
+    });
+    await mail.sendMail({ to: normalized, ...tpl, kind: 'password-reset' });
+  } catch (e) {
+    console.log(`[security] password_reset_email_failed user=${user.id}: ${(e && e.message) || e}`);
+  }
+  return generic;
+}
+
+async function resetPassword(token, newPassword) {
+  const pwErr = checkPassword(newPassword);
+  if (pwErr) throw { code: 'VALIDATION_ERROR', message: pwErr };
+  if (!token) throw { code: 'VALIDATION_ERROR', message: 'Reset token required' };
+  const row = await db.get('SELECT * FROM password_resets WHERE token_hash = ?', [tokenHash(token)]);
+  if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) {
+    throw { code: 'AUTH_REQUIRED', message: 'This reset link is no longer valid. Request a new one.' };
+  }
+  const user = await db.get('SELECT * FROM users WHERE id = ?', [row.user_id]);
+  if (!user) throw { code: 'AUTH_REQUIRED', message: 'This reset link is no longer valid. Request a new one.' };
+  const reuse = await bcrypt.compare(String(newPassword), user.password_hash);
+  if (reuse) throw { code: 'VALIDATION_ERROR', message: 'Your new password must be different from the current one.' };
+  const hash = await bcrypt.hash(String(newPassword), BCRYPT_COST);
+  const ts = now();
+  // A reset terminates every existing session. Without this, whoever prompted
+  // the reset keeps their session: the account holder changes the password
+  // precisely because they believe the old credential is gone, and the token
+  // the attacker already holds is not. The version bump also makes the token
+  // returned below valid, where stamping a timestamp alone left the same-second
+  // hole open and signed the replacement with a stale version.
+  const version = await db.transaction(async (t) => {
+    await t.run('UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?', [hash, ts, user.id]);
+    await t.run(
+      'UPDATE users SET session_version = session_version + 1, sessions_invalidated_at = ? WHERE id = ?',
+      [ts, user.id]
+    );
+    await t.run('UPDATE password_resets SET used_at = ? WHERE id = ?', [ts, row.id]);
+    await t.run('DELETE FROM password_resets WHERE user_id = ? AND id != ?', [user.id, row.id]);
+    const after = await t.get('SELECT session_version FROM users WHERE id = ?', [user.id]);
+    return after ? Number(after.session_version || 0) : 0;
+  });
+  console.log(`[security] password_reset_completed user=${user.id} sessions_revoked=1`);
+  // A reset proves control of the mailbox, not of the authenticator. On an
+  // account with a second factor, hand back the same challenge login returns
+  // rather than a session: otherwise whoever can read the recovery email takes
+  // the account outright, skipping the factor that is supposed to survive a
+  // compromised credential. The password change stands; only the session waits.
+  if (user.totp_enabled_at) {
+    const challenge = require('../routes/auth/challenge');
+    return {
+      mfaRequired: true,
+      challengeToken: challenge.signChallenge(user.id),
+      expiresInSeconds: challenge.CHALLENGE_TTL_SECONDS,
+    };
+  }
+  return {
+    token: sign({ id: user.id, username: user.username, session_version: version }),
+    user: { id: user.id, username: user.username, displayName: user.display_name, createdAt: user.created_at },
+  };
+}
+
+// --- email verification ---
+
+async function requestVerification(userId, email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) throw { code: 'VALIDATION_ERROR', message: 'Enter a valid email address.' };
+  const taken = await db.get('SELECT id FROM users WHERE email = ? AND id != ?', [normalized, userId]);
+  if (taken) throw { code: 'CONFLICT', message: 'That email is already in use.' };
+  await db.run('DELETE FROM email_verifications WHERE user_id = ? AND used_at IS NULL', [userId]);
+  await purgeUser('email_verifications', userId);
+  const token = newToken();
+  const expires = new Date(Date.now() + 24 * 3600000).toISOString();
+  await db.run(
+    'INSERT INTO email_verifications (id, user_id, email, token_hash, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [uuid(), userId, normalized, tokenHash(token), expires, null, now()]
+  );
+  try {
+    const tpl = templates.verification({
+      link: mail.clientLink('verify-email', token),
+      hours: 24,
+    });
+    await mail.sendMail({ to: normalized, ...tpl, kind: 'verification' });
+  } catch (e) {
+    console.log(`[security] verification_email_failed user=${userId}: ${(e && e.message) || e}`);
+  }
+  return { ok: true };
+}
+
+async function verifyEmail(token) {
+  if (!token) throw { code: 'VALIDATION_ERROR', message: 'Verification token required.' };
+  const row = await db.get('SELECT * FROM email_verifications WHERE token_hash = ?', [tokenHash(token)]);
+  if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) {
+    throw { code: 'AUTH_REQUIRED', message: 'This verification link is no longer valid. Request a new one.' };
+  }
+  const ts = now();
+  const taken = await db.get('SELECT id FROM users WHERE email = ? AND id != ?', [row.email, row.user_id]);
+  if (taken) throw { code: 'CONFLICT', message: 'That email is already in use by another account.' };
+  await db.transaction(async (t) => {
+    await t.run('UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?', [row.email, ts, row.user_id]);
+    await t.run('UPDATE email_verifications SET used_at = ? WHERE id = ?', [ts, row.id]);
+    await t.run('DELETE FROM email_verifications WHERE user_id = ? AND id != ?', [row.user_id, row.id]);
+  });
+  console.log(`[security] email_verified user=${row.user_id}`);
+  return { ok: true };
+}
+
+// Change recovery email: password-confirmed, new address verified first.
+// The old address (if any) is only replaced on confirmation.
+async function requestEmailChange(userId, currentPassword, newEmail) {
+  const normalized = normalizeEmail(newEmail);
+  if (!normalized) throw { code: 'VALIDATION_ERROR', message: 'Enter a valid email address.' };
+  if (!currentPassword) throw { code: 'VALIDATION_ERROR', message: 'Current password required.' };
+  const user = await db.get('SELECT * FROM users WHERE id = ?', [userId]);
+  if (!user) throw { code: 'NOT_FOUND', message: 'User not found' };
+  const ok = await bcrypt.compare(String(currentPassword), user.password_hash);
+  if (!ok) throw { code: 'BAD_PASSWORD', message: 'Current password is incorrect.' };
+  if (user.email === normalized) throw { code: 'VALIDATION_ERROR', message: 'That is already your recovery email.' };
+  return requestVerification(userId, normalized);
+}
+
+module.exports = {
+  ttlMinutes,
+  normalizeEmail,
+  requestPasswordReset,
+  resetPassword,
+  requestVerification,
+  verifyEmail,
+  requestEmailChange,
+};

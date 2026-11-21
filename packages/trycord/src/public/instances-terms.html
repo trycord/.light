@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#18191D" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Trycord">
+  <link rel="apple-touch-icon" href="/assets/trycord-assets/app/trycord-app-icon.svg">
+  <title>Terms for Official Instances — Trycord</title>
+  <meta name="description" content="The extra terms that apply on official hosted Trycord instances, where the project is the operator rather than a community.">
+  <link rel="icon" href="/assets/trycord-assets/app/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/design-tokens.css">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="wrap masthead">
+      <a class="brand" href="/">
+        <svg class="mark" viewBox="0 0 100 100" role="img" aria-hidden="true" focusable="false">
+          <path d="M50 9 L88 78 Q90 82 85 82 L65 82 L50 56 L35 82 L15 82 Q10 82 12 78 Z" fill="currentColor"/>
+          <path d="M39 70 L50 51 L61 70 Z" fill="var(--cutout)"/>
+          <path d="M49 31 L67 31 L67 40 L58 40 L58 49 L49 49 Z" fill="var(--cutout)"/>
+          <circle cx="72" cy="58" r="7" fill="var(--cutout)"/>
+        </svg>
+        <span class="brand-word">Trycord</span>
+      </a>
+
+      <button class="menu-toggle" type="button" data-menu-toggle aria-controls="site-nav" aria-expanded="false" aria-label="Open menu">
+        <svg class="icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></g></svg>
+      </button>
+
+      <nav class="site-nav" id="site-nav" aria-label="Primary">
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Product
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu nav-menu--wide">
+            <div class="nav-menu-grid">
+              <a href="/features"><strong>Features</strong><span>Channels, roles, moderation and more.</span></a>
+              <a href="/download"><strong>Download</strong><span>Get the desktop app for your computer.</span></a>
+              <a href="/status"><strong>Status</strong><span>Live health for this instance.</span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Docs
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu nav-menu--wide">
+            <div class="nav-menu-grid">
+              <a href="/docs"><strong>Documentation</strong><span>Run and configure your own instance.</span></a>
+              <a href="/install"><strong>Install</strong><span>The short version of the install.</span></a>
+              <a href="/faq"><strong>FAQ</strong><span>The questions people ask most.</span></a>
+              <a href="/support"><strong>Support</strong><span>Get help and reach the project.</span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Developers
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu">
+            <a href="/developers"><strong>Developer guide</strong><span>Build a bot with the API and the SDK.</span></a>
+            <a href="/developers#the-api-reference"><strong>API reference</strong><span>The routes a bot uses.</span></a>
+            <a href="/developers#the-sdk-trycord-botjs"><strong>SDK</strong><span>The client for those routes.</span></a>
+            <a href="https://github.com/trycord/.trycord" target="_blank" rel="noopener"><strong>Source code</strong><span>The whole repository.</span></a>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Community
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu nav-menu--wide">
+            <div class="nav-menu-grid">
+              <a href="/communities"><strong>Communities</strong><span>Browse public communities.</span></a>
+              <a href="/instances"><strong>Instances</strong><span>Find an instance to join.</span></a>
+              <a href="https://discord.gg/dSF7eqsJuP" target="_blank" rel="noopener"><strong>Discord</strong><span>Join the community chat.</span></a>
+              <a href="/trust-and-safety"><strong>Trust and safety</strong><span>Rules, reporting, and appeals.</span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            About
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu">
+            <a href="/about"><strong>About Trycord</strong><span>Why Trycord exists and how it's built.</span></a>
+            <a href="/changelog"><strong>Changelog</strong><span>What's shipped recently.</span></a>
+            <a href="/roadmap"><strong>Roadmap</strong><span>Where the project is going.</span></a>
+            <a href="/security"><strong>Security</strong><span>How to report a vulnerability.</span></a>
+          </div>
+        </div>
+
+        <div class="nav-mobile-actions">
+          <a class="btn btn-ghost btn-sm" href="/app/" data-app-link>Open the app</a>
+          <a class="btn btn-ghost btn-sm" href="/register">Create account</a>
+          <a class="btn btn-primary btn-sm" href="/login" data-signin>Sign in</a>
+        </div>
+      </nav>
+
+      <div class="masthead-actions">
+        <button class="theme-toggle" type="button" data-theme-toggle hidden aria-pressed="false" aria-label="Switch between the light and dark theme">
+          <svg class="icon icon-sun" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg>
+          <svg class="icon icon-moon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></g></svg>
+        </button>
+        <a class="btn btn-ghost btn-sm" href="/register">Create account</a>
+        <a class="btn btn-primary btn-sm" href="/login" data-signin>Sign in</a>
+      </div>
+    </div>
+  </header>
+
+
+  <main id="main" class="page" data-crumbs="Legal">
+    <div class="wrap">
+      <div class="page-head">
+        <p class="kicker">Legal</p>
+        <h1>Terms for Official Instances</h1>
+        <p class="lede">
+          On most Trycord instances, the people you deal with are the people
+          who run that instance. On an official instance, that is the same
+          party everywhere, and these terms describe what is different about
+          that.
+        </p>
+      </div>
+      <div class="prose-layout">
+        <article class="prose">
+          <!-- page:begin -->
+          <div class="draft-note" role="note">
+            <strong>Legal review required before publication.</strong> This
+            document comes from the Trycord project as a starting point. It is
+            not legal advice, and nobody has reviewed it for the party actually
+            operating the instance. The fields marked <code>OPERATOR</code> are
+            facts only the operator can supply: the legal identity behind the
+            instance, its address, its subprocessors, where data is stored, its
+            retention periods, and where formal notices must be sent. Fill them
+            in, and have a qualified lawyer read the result, before presenting
+            this document as binding.
+            The contact points in these documents are the project's own. If you run your own
+            instance, replace them with yours before you publish them.
+          </div>
+          <p class="small muted">
+            <strong>Version:</strong> <code>1.0</code> &middot;
+            <strong>Template last revised:</strong> <code>2026-09-20</code> &middot;
+            <strong>Effective on this instance:</strong>
+            <span class="op-field" data-op="effective-date">OPERATOR: the date these terms take effect on this instance</span>
+          </p>
+
+          <h2>1. What an official instance is</h2>
+          <p>
+            An official instance is a hosted Trycord instance operated by the
+            Trycord project, or by a partner the project has appointed and
+            published. Being listed in the app is the whole of the
+            designation: there is no other certification, no badge, and no
+            other instance may present itself as official.
+          </p>
+          <p>
+            Everything else &mdash; a community's own server, a friend's
+            instance, a copy you host &mdash; is not official, even if it runs
+            unmodified software.
+          </p>
+
+          <h2>2. How these terms relate to the main terms</h2>
+          <p>
+            The <a href="/terms">Terms of Service</a> apply on official
+            instances too, and this page adds to them. Where the two conflict,
+            these terms win. Nothing here removes a right you have under the
+            main terms.
+          </p>
+
+          <h2>3. Who runs it, and who you can contact</h2>
+          <p>
+            One party operates every official instance:
+            <span class="op-field" data-op="official-operator">OPERATOR: the legal name of the party that operates the official instances</span>,
+            contactable at
+            <span class="op-contact" data-op="official-contact">the project's Discord, discord.gg/dSF7eqsJuP</span>.
+            Because the same party runs all of them, you do not have to work
+            out who operates the one you joined, and there is one place to
+            raise a problem.
+          </p>
+          <p>
+            This is the practical difference from a self-hosted instance. On
+            one of those, your only route for anything serious is that
+            instance's operator. Here, you can reach the operator directly.
+          </p>
+
+          <h2>4. Your data on an official instance</h2>
+          <p>
+            The operator is the data controller. The retention rules are set
+            once and apply across every official instance, so your data is
+            not handled differently depending on which one you happened to
+            join.
+          </p>
+          <ul>
+            <li><strong>Retention:</strong> <span class="op-field" data-op="official-retention">OPERATOR: the retention periods that apply on the official instances</span></li>
+            <li><strong>Backups:</strong> <span class="op-field" data-op="official-backups">OPERATOR: the backup schedule and how long backups are kept</span></li>
+            <li><strong>Hosting and subprocessors:</strong> <span class="op-field" data-op="official-processors">OPERATOR: the hosting provider and the subprocessors used on the official instances</span></li>
+            <li><strong>Where data is stored:</strong> <span class="op-field" data-op="official-location">OPERATOR: the country or region where data on the official instances is stored</span></li>
+            <li><strong>Your rights:</strong> access, correction, export and erasure, as set out in the <a href="/privacy">Privacy Policy</a></li>
+          </ul>
+          <p>
+            Export is the one the operator holds itself to most firmly. You
+            should always be able to get your data out, in a usable format,
+            without asking a favour. If that is ever hard on an official
+            instance, treat it as a defect and report it as one.
+          </p>
+
+          <h2>5. Moderation on official instances</h2>
+          <p>
+            Official instances carry platform-wide rules, because one party
+            operates them. Beyond those, communities on an official instance
+            set their own rules and their own moderators enforce them, in the
+            same way as anywhere else.
+          </p>
+          <p>
+            Because one party operates every official instance, a report about
+            enforcement can be raised centrally rather than only with a
+            community you may already have been removed from. The
+            <a href="/support">Support</a> page describes how to appeal.
+          </p>
+          <p>
+            The rules in section 5 of the <a href="/terms">Terms of Service</a>
+            apply unchanged, including the prohibition on child sexual abuse
+            material and on asking for, offering or facilitating it. An
+            official instance is no exception, and no appeal route overrides
+            that prohibition.
+          </p>
+
+          <h2>6. Availability</h2>
+          <p>
+            Official instances are provided free of charge and on an
+            as-available basis. The <a href="/status">status page</a>
+            describes an instance at a moment rather than committing to the
+            future. The operator publishes incidents rather than staying quiet
+            about them. There is no uptime guarantee, and no paid tier changes
+            that unless it is written down here.
+          </p>
+
+          <h2>7. Suspension on official instances</h2>
+          <p>
+            Accounts that break the <a href="/terms">Terms of Service</a> or
+            the platform-wide rules may be suspended. Because the operator
+            runs the instance, it can see the context of a decision, including
+            whether a community moderator acted correctly, and appeals are
+            reviewed centrally.
+          </p>
+          <p>
+            Personal data is not sold, and messages are not used to train
+            models. If that ever changes, it will be disclosed in this
+            document and in the <a href="/privacy">Privacy Policy</a> before it
+            happens rather than afterwards.
+          </p>
+
+          <h2>8. Ending an official instance</h2>
+          <p>
+            If an official instance is closed, the operator publishes notice
+            on the <a href="/status">status page</a>, gives a reasonable
+            period to export, and keeps the export available afterwards for
+            <span class="op-field" data-op="official-export-window">OPERATOR: how long an export stays available after an instance closes</span>.
+            Communities that people are still using are not deleted silently.
+          </p>
+
+          <h2>9. Liability</h2>
+          <p>
+            The limitations in section 15 of the
+            <a href="/terms">Terms of Service</a> apply here. Nothing in these
+            terms limits liability that cannot lawfully be limited, and where
+            you are a consumer, the protections your local law gives you are
+            unaffected.
+          </p>
+
+          <h2>10. Notices</h2>
+          <p>
+            Formal notices are sent to
+            <span class="op-contact" data-op="official-notice-address">the project's Discord, discord.gg/dSF7eqsJuP</span>.
+            For anything that is not a formal notice, start on the
+            <a href="/support">Support</a> page.
+          </p>
+          <!-- page:end -->
+        </article>
+        <aside class="toc" aria-label="On this page">
+          <p class="toc-title">On this page</p>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div class="footer-col footer-brand">
+        <a class="brand" href="/">
+          <svg class="mark" viewBox="0 0 100 100" role="img" aria-hidden="true" focusable="false">
+          <path d="M50 9 L88 78 Q90 82 85 82 L65 82 L50 56 L35 82 L15 82 Q10 82 12 78 Z" fill="currentColor"/>
+          <path d="M39 70 L50 51 L61 70 Z" fill="var(--cutout)"/>
+          <path d="M49 31 L67 31 L67 40 L58 40 L58 49 L49 49 Z" fill="var(--cutout)"/>
+          <circle cx="72" cy="58" r="7" fill="var(--cutout)"/>
+        </svg>
+          <span class="brand-word">Trycord</span>
+        </a>
+        <p>Private, self-hostable community messaging. One client, browser and desktop.</p>
+        <div class="footer-actions">
+          <a class="btn btn-primary btn-sm" href="/register">Create account</a>
+          <a class="btn btn-ghost btn-sm" href="/login" data-signin>Sign in</a>
+        </div>
+      </div>
+      <nav class="footer-col" aria-label="Product">
+        <h2 class="footer-heading">Product</h2>
+        <a href="/features">Features</a>
+        <a href="/download">Desktop app</a>
+        <a href="/status">Status</a>
+      </nav>
+      <nav class="footer-col" aria-label="Docs">
+        <h2 class="footer-heading">Docs</h2>
+        <a href="/docs">Self-hosting guide</a>
+        <a href="/install">Install</a>
+        <a href="/faq">FAQ</a>
+        <a href="/support">Support</a>
+      </nav>
+      <nav class="footer-col" aria-label="Developers">
+        <h2 class="footer-heading">Developers</h2>
+        <a href="/developers">Developer guide</a>
+        <a href="/developers#the-api-reference">API reference</a>
+        <a href="/developers#the-sdk-trycord-botjs">SDK</a>
+        <a href="https://github.com/trycord/.trycord" rel="noopener">Source code</a>
+      </nav>
+      <nav class="footer-col" aria-label="Community">
+        <h2 class="footer-heading">Community</h2>
+        <a href="/communities">Communities</a>
+        <a href="/instances">Instances</a>
+        <a href="https://discord.gg/dSF7eqsJuP" rel="noopener">Discord</a>
+        <a href="/trust-and-safety">Trust and safety</a>
+      </nav>
+      <nav class="footer-col" aria-label="About">
+        <h2 class="footer-heading">About</h2>
+        <a href="/about">About the project</a>
+        <a href="/changelog">Changelog</a>
+        <a href="/roadmap">Roadmap</a>
+        <a href="/licenses">Licences</a>
+      </nav>
+      <nav class="footer-col" aria-label="Legal">
+        <h2 class="footer-heading">Legal</h2>
+        <a href="/terms">Terms of service</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/cookies">Cookies</a>
+        <a href="/instances-terms">Instance terms</a>
+        <a href="/community-guidelines">Community rules</a>
+        <a href="/guidelines">Acceptable use</a>
+        <a href="/federation-policy">Federation policy</a>
+        <a href="/security">Security</a>
+      </nav>
+    </div>
+    <div class="wrap footer-bottom">
+      <span>&copy; <span data-year>2026</span> Trycord</span>
+      <span class="muted">Your instance, your conversations, your rules.</span>
+    </div>
+  </footer>
+
+
+  <script src="/js/public-api.js"></script>
+  <script src="/js/site.js"></script>
+</body>
+</html>

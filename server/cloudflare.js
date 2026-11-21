@@ -82,19 +82,60 @@ async function ensureTunnel(domainRow, instance) {
   });
 }
 
-async function ensureDns(hostname, tunnelId) {
+/**
+ * DNS strategy: one CNAME per hostname is precise but consumes the zone's
+ * 200-record budget. When a zone is running low, fall back to a single wildcard
+ * CNAME pointing at a SHARED routing tunnel, with per-hostname ingress rules.
+ * `provisionDomainRoute` picks the strategy based on available records.
+ */
+async function ensureDns(hostname, tunnelId, opts = {}) {
   const c = cloudflareConfig();
   const records = await cf(`/zones/${c.zoneId}/dns_records?name=${encodeURIComponent(hostname)}&type=CNAME`);
   const target = `${tunnelId}.cfargotunnel.com`;
+  if (opts.wildcard) {
+    // One wildcard record for the whole platform domain, pointed at the shared
+    // tunnel. Hostname routing is handled by that tunnel's ingress config.
+    const base = String(c.domain).toLowerCase();
+    const wildcard = `*.${base}`;
+    const wr = await cf(`/zones/${c.zoneId}/dns_records?name=${encodeURIComponent(wildcard)}&type=CNAME`);
+    if (Array.isArray(wr) && wr.length) {
+      if (wr[0].content !== `${opts.sharedTunnelId}.cfargotunnel.com`) {
+        await cf(`/zones/${c.zoneId}/dns_records/${wr[0].id}`, {
+          method: 'PATCH', body: { name: wildcard, type: 'CNAME', content: `${opts.sharedTunnelId}.cfargotunnel.com`, proxied: true, ttl: 1 },
+        });
+      }
+    } else {
+      await cf(`/zones/${c.zoneId}/dns_records`, {
+        method: 'POST', body: { name: wildcard, type: 'CNAME', content: `${opts.sharedTunnelId}.cfargotunnel.com`, proxied: true, ttl: 1 },
+      });
+    }
+    return { mode: 'wildcard', wildcard };
+  }
   if (Array.isArray(records) && records.length) {
-    await cf(`/zones/${c.zoneId}/dns_records/${records[0].id}`, {
-      method: 'PATCH', body: { name: hostname, type: 'CNAME', content: target, proxied: true, ttl: 1 },
-    });
+    if (records[0].content !== target) {
+      await cf(`/zones/${c.zoneId}/dns_records/${records[0].id}`, {
+        method: 'PATCH', body: { name: hostname, type: 'CNAME', content: target, proxied: true, ttl: 1 },
+      });
+    }
   } else {
     await cf(`/zones/${c.zoneId}/dns_records`, {
       method: 'POST', body: { name: hostname, type: 'CNAME', content: target, proxied: true, ttl: 1 },
     });
   }
+  return { mode: 'per-host' };
+}
+
+/** Count DNS records in the zone so we can switch to wildcard mode early. */
+export async function dnsUsage() {
+  if (!isCloudflareConfigured()) return { used: 0, limit: 200 };
+  const c = cloudflareConfig();
+  const response = await fetch(`${API}/zones/${c.zoneId}/dns_records?per_page=1`, {
+    headers: { Authorization: `Bearer ${c.token}` },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.success === false) throw new Error('cloudflare_dns_usage_failed');
+  const used = Number(body.result_info?.total ?? (Array.isArray(body.result) ? body.result.length : 0));
+  return { used, limit: 200, remaining: 200 - used };
 }
 
 /** Publish the hostname -> internal service route into the tunnel's ingress. */
@@ -109,6 +150,40 @@ async function publishIngress(tunnelId, hostname, instance) {
     method: 'PUT', body: { config: { ingress } },
   });
   return { hostname, service };
+}
+
+/** One shared tunnel used only when wildcard DNS mode is active. */
+async function ensureSharedTunnel() {
+  const db = getDb(); const c = cloudflareConfig();
+  const row = db.prepare("SELECT value FROM meta WHERE key = 'cloudflare_shared_tunnel'").get();
+  if (row?.value) {
+    const tokenRow = db.prepare("SELECT value FROM meta WHERE key = 'cloudflare_shared_token'").get();
+    return { id: row.value, token: tokenRow?.value ? decrypt(tokenRow.value) : '' };
+  }
+  const tunnel = await cf(`/accounts/${c.accountId}/cfd_tunnel`, {
+    method: 'POST', body: { name: 'light-shared-wildcard', config_src: 'cloudflare' },
+  });
+  const token = String(await cf(`/accounts/${c.accountId}/cfd_tunnel/${tunnel.id}/token`) || '');
+  db.prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('cloudflare_shared_tunnel',?)").run(tunnel.id);
+  db.prepare("INSERT OR REPLACE INTO meta (key,value) VALUES ('cloudflare_shared_token',?)").run(encrypt(token));
+  return { id: tunnel.id, token };
+}
+
+/** Add/replace one hostname route in the shared tunnel's ingress. */
+async function publishSharedIngress(tunnelId, hostname, instance) {
+  const c = cloudflareConfig();
+  const response = await fetch(`${API}/accounts/${c.accountId}/cfd_tunnel/${tunnelId}/configurations`, {
+    headers: { Authorization: `Bearer ${c.token}` },
+  });
+  const body = await response.json().catch(() => ({}));
+  const current = body.result?.config?.ingress || [];
+  const rules = current.filter((r) => r.service !== 'http_status:404' && r.hostname !== hostname);
+  rules.push({ hostname, service: serviceTarget(instance) });
+  rules.push({ service: 'http_status:404' });
+  await cf(`/accounts/${c.accountId}/cfd_tunnel/${tunnelId}/configurations`, {
+    method: 'PUT', body: { config: { ingress: rules } },
+  });
+  return { hostname, service: serviceTarget(instance) };
 }
 
 /** Full provisioning of an application's public route. Idempotent + retryable. */
@@ -128,10 +203,26 @@ export async function provisionDomainRoute(domainRow, req) {
 
   try {
     const tunnel = await ensureTunnel(domainRow, instance);
-    await ensureDns(hostname, tunnel.id);
-    const route = await publishIngress(tunnel.id, hostname, instance);
-    getDb().prepare("UPDATE domains SET tunnel_id=?, tunnel_status='provisioned', ssl_status='active', updated_at=? WHERE id=?")
-      .run(tunnel.id, now(), domainRow.id);
+    // Use wildcard DNS when the zone is close to its 200-record limit.
+    let dnsMode = 'per-host';
+    let dnsStatus = 'ok';
+    try {
+      const usage = await dnsUsage();
+      if (usage.remaining < 20) {
+        // Shared wildcard tunnel: one DNS record + many hostname ingress rules.
+        const shared = await ensureSharedTunnel();
+        await ensureDns(hostname, shared.id, { wildcard: true, sharedTunnelId: shared.id });
+        await publishSharedIngress(shared.id, hostname, instance);
+        dnsMode = 'wildcard';
+        getDb().prepare('UPDATE domains SET tunnel_id=?, routing_mode=? WHERE id=?').run(shared.id, 'wildcard', domainRow.id);
+      } else {
+        await ensureDns(hostname, tunnel.id);
+        const route = await publishIngress(tunnel.id, hostname, instance);
+      }
+    } catch (error) { dnsStatus = `dns_failed: ${error.message.slice(0, 100)}`; console.error('[cloudflare] DNS:', dnsStatus); }
+    const route = { hostname, service: serviceTarget(instance) };
+    getDb().prepare("UPDATE domains SET tunnel_id=?, tunnel_status=?, ssl_status=?, updated_at=? WHERE id=?")
+      .run(tunnel.id, dnsStatus === 'ok' ? 'provisioned' : 'dns_required', dnsStatus === 'ok' ? 'active' : 'pending', now(), domainRow.id);
 
     // Start/reuse the dedicated connector for this application.
     queueCommand(instance.node_id || 'node-01', 'tunnel.start', {

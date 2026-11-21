@@ -1,0 +1,429 @@
+// Public site behaviour. Loaded as an external file (the server CSP forbids
+// and readable without it.
+(function () {
+  'use strict';
+
+  var groups = Array.prototype.slice.call(document.querySelectorAll('[data-nav-group]'));
+  var menuToggle = document.querySelector('[data-menu-toggle]');
+  var header = document.querySelector('.site-header');
+
+  function setGroup(group, open) {
+    var trigger = group.querySelector('[data-nav-trigger]');
+    if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  function closeAllGroups(except) {
+    groups.forEach(function (g) { if (g !== except) setGroup(g, false); });
+  }
+
+  groups.forEach(function (group) {
+    var trigger = group.querySelector('[data-nav-trigger]');
+    if (!trigger) return;
+
+    trigger.addEventListener('click', function () {
+      var open = trigger.getAttribute('aria-expanded') !== 'true';
+      closeAllGroups(group);
+      setGroup(group, open);
+    });
+
+    trigger.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'Down') {
+        e.preventDefault();
+        setGroup(group, true);
+        var first = group.querySelector('.nav-menu a');
+        if (first) first.focus();
+      }
+    });
+
+    group.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        setGroup(group, false);
+        trigger.focus();
+      }
+    });
+
+    group.addEventListener('focusout', function (e) {
+      if (!group.contains(e.relatedTarget)) setGroup(group, false);
+    });
+
+    if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
+      var timer = null;
+      group.addEventListener('pointerenter', function (e) {
+        if (e.pointerType !== 'mouse') return;
+        if (timer) { clearTimeout(timer); timer = null; }
+        closeAllGroups(group);
+        setGroup(group, true);
+      });
+      group.addEventListener('pointerleave', function (e) {
+        if (e.pointerType !== 'mouse') return;
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () { setGroup(group, false); }, 120);
+      });
+    }
+  });
+
+  if (groups.length) {
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest || !e.target.closest('[data-nav-group]')) closeAllGroups();
+    });
+  }
+
+  if (menuToggle && header) {
+    menuToggle.addEventListener('click', function () {
+      var open = header.getAttribute('data-menu-open') !== 'true';
+      header.setAttribute('data-menu-open', open ? 'true' : 'false');
+      menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (!open) closeAllGroups();
+    });
+    var nav = document.getElementById('site-nav');
+    if (nav) {
+      nav.addEventListener('click', function (e) {
+        if (e.target && e.target.tagName === 'A') {
+          header.setAttribute('data-menu-open', 'false');
+          menuToggle.setAttribute('aria-expanded', 'false');
+        }
+      });
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && header.getAttribute('data-menu-open') === 'true') {
+        header.setAttribute('data-menu-open', 'false');
+        menuToggle.setAttribute('aria-expanded', 'false');
+        menuToggle.focus();
+      }
+    });
+  }
+
+  /* ---- the theme switch ----------------------------------------------------
+     The public site keeps its own preference under its own key, separate from
+     the signed-in application's. The app offers a dozen themes including custom
+     palettes; this site is built for two, its default dark look and Light.
+     Reading the app's key would drag Midnight or a custom palette onto the
+     marketing pages, and writing it from here would change how the app looks,
+     so a choice on this site must never touch the app or the other way round.
+
+     One file sets data-theme before paint; this only changes it afterwards. */
+  var THEME_KEY = 'trycord.publicTheme';
+  var themeButton = document.querySelector('[data-theme-toggle]');
+
+  function resolvedIsLight() {
+    return document.documentElement.getAttribute('data-theme') === 'light';
+  }
+  function applyTheme(name) {
+    document.documentElement.setAttribute('data-theme', name);
+    if (themeButton) themeButton.setAttribute('aria-pressed', name === 'light' ? 'true' : 'false');
+  }
+  if (themeButton) {
+    themeButton.hidden = false;
+    themeButton.addEventListener('click', function () {
+      var name = resolvedIsLight() ? 'trycord' : 'light';
+      try { localStorage.setItem(THEME_KEY, name); } catch (e) { /* storage blocked */ }
+      applyTheme(name);
+    });
+  }
+  try {
+    var savedName = null;
+    try { savedName = localStorage.getItem(THEME_KEY); } catch (e) { /* storage blocked */ }
+    if (savedName === 'system') {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      var onSystemChange = function (e) { applyTheme(e.matches ? 'trycord' : 'light'); };
+      if (mq.addEventListener) mq.addEventListener('change', onSystemChange);
+      else if (mq.addListener) mq.addListener(onSystemChange);
+    }
+  } catch (e) { /* matchMedia unsupported */ }
+
+  function toRoute(pathname) {
+    var p = String(pathname || '').split('?')[0].split('#')[0];
+    p = p.replace(/\.html$/i, '');
+    if (p.length > 1) p = p.replace(/\/+$/, '');
+    return p || '/';
+  }
+  var here = toRoute(window.location.pathname);
+  document.querySelectorAll('.site-nav a, .site-footer a').forEach(function (link) {
+    var href = link.getAttribute('href') || '';
+    if (href.charAt(0) !== '/') return;
+    if (toRoute(href) === here) {
+      link.setAttribute('aria-current', 'page');
+      var group = link.closest ? link.closest('[data-nav-group]') : null;
+      if (group) {
+        var trigger = group.querySelector('[data-nav-trigger]');
+        if (trigger) trigger.classList.add('is-current');
+      }
+    }
+  });
+
+  /* ---- the links into the application ------------------------------------
+     The application is served from the instance's own mount: the origin root on
+     one deployment, a prefix such as /app on the next. A path written into the
+     markup is therefore wrong on at least one of them, so every link into the
+     application says which page inside it it wants, and the instance's mount is
+     put in front of it.
+
+     The markup keeps a working address for readers without JavaScript; this
+     replaces it with the right one. */
+  var appLinks = Array.prototype.slice.call(document.querySelectorAll('[data-app-link]'));
+  if (appLinks.length && window.TrycordApi && typeof window.TrycordApi.appHref === 'function') {
+    appLinks.forEach(function (link) {
+      var path = link.getAttribute('data-app-link') || '';
+      window.TrycordApi.appHref(path).then(function (href) {
+        if (href) link.setAttribute('href', href);
+      });
+    });
+  }
+
+  /* ---- the sign-in door ---------------------------------------------------
+     A reader who is already signed in does not need a form: the header's
+     primary action becomes the way into the application, at the mount this
+     instance actually uses. A reader without a session keeps "Sign in", which
+     is the site's own page. The check is the same token the application reads,
+     filed under the API's origin, so the two surfaces cannot disagree. */
+  var signInLinks = Array.prototype.slice.call(document.querySelectorAll('[data-signin]'));
+  if (signInLinks.length && window.TrycordApi
+      && typeof window.TrycordApi.signedIn === 'function'
+      && typeof window.TrycordApi.appHref === 'function') {
+    window.TrycordApi.signedIn().then(function (signedIn) {
+      if (!signedIn) return;
+      return window.TrycordApi.appHref('').then(function (href) {
+        signInLinks.forEach(function (link) {
+          link.textContent = 'Open the app';
+          link.removeAttribute('data-signin');
+          if (href) link.setAttribute('href', href);
+        });
+      });
+    }).catch(function () { /* the sign-in page still answers */ });
+  }
+
+  var reveals = Array.prototype.slice.call(document.querySelectorAll('.reveal'));
+  if (reveals.length && 'IntersectionObserver' in window) {
+    document.documentElement.classList.add('js');
+    var revealObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-in');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -10% 0px' });
+    reveals.forEach(function (el) { revealObserver.observe(el); });
+  }
+
+  /* ---- the table of contents ---------------------------------------------
+     Generated from the page's own headings, so it cannot drift from the
+     document. A hand-written TOC is a list that goes stale the first time a
+     heading is renamed.
+
+     It lives outside the page:begin/page:end markers on purpose: an
+     administrator publishing replaces the marked region, and the contents list
+     is generated after the browser has it, so publishing cannot lose it. */
+  var toc = document.querySelector('.toc');
+  var prose = document.querySelector('.prose');
+  if (toc && prose) {
+    var heads = prose.querySelectorAll('h2, h3');
+    if (heads.length) {
+      var list = document.createElement('ul');
+      var sub = null;
+      heads.forEach(function (h) {
+        if (!h.id) {
+          h.id = String(h.textContent || '').trim().toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'section';
+        }
+        var item = document.createElement('li');
+        if (h.tagName === 'H3') {
+          if (!sub) {
+            sub = document.createElement('ul');
+            sub.className = 'toc-sub';
+            (list.lastElementChild || list).appendChild(sub);
+          }
+        } else {
+          sub = null;
+        }
+        var a = document.createElement('a');
+        a.href = '#' + h.id;
+        a.textContent = h.textContent;
+        item.appendChild(a);
+        (h.tagName === 'H3' && sub ? sub : list).appendChild(item);
+      });
+      toc.appendChild(list);
+
+      var links = {};
+      toc.querySelectorAll('a').forEach(function (a) {
+        links[a.getAttribute('href').slice(1)] = a;
+      });
+      if ('IntersectionObserver' in window) {
+        var seen = new Set();
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) seen.add(entry.target.id);
+            else seen.delete(entry.target.id);
+          });
+          var active = null;
+          heads.forEach(function (h) { if (seen.has(h.id) && !active) active = h.id; });
+          toc.querySelectorAll('a').forEach(function (a) {
+            a.classList.toggle('is-active', a.getAttribute('href') === '#' + active);
+          });
+        }, { rootMargin: '-80px 0px -70% 0px' });
+        heads.forEach(function (h) { observer.observe(h); });
+      }
+    }
+  }
+
+  var yearEl = document.querySelector('[data-year]');
+  if (yearEl) yearEl.textContent = String(new Date().getFullYear());
+
+  /* ---- the address in the mockup ---------------------------------------------
+     The framed client on the homepage shows an address in its title bar. It is
+     the address the reader is actually on: the same software, running on
+     their instance, and saying "trycord.dev" to somebody who runs their own
+     would be a small lie about whose server they are looking at. */
+  var addresses = Array.prototype.slice.call(document.querySelectorAll('.app-url'));
+  if (addresses.length && window.location && window.location.host) {
+    addresses.forEach(function (node) { node.textContent = window.location.host; });
+  }
+
+  /* ---- copying from a code block ---------------------------------------------
+     A reader who wants the command in their terminal should not have to
+     select it by hand, and a copy button that does nothing is worse than no
+     button at all. So the button is added here, it says what happened, and
+     when the clipboard is not available the text is selected instead. */
+  var copies = Array.prototype.slice.call(document.querySelectorAll('.prose pre'));
+  copies.forEach(function (pre) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'copy-button';
+    button.textContent = 'Copy';
+    button.setAttribute('aria-label', 'Copy this code');
+    pre.classList.add('has-copy');
+    pre.appendChild(button);
+    button.addEventListener('click', function () {
+      var text = pre.textContent || '';
+      var done = function (ok) {
+        button.textContent = ok ? 'Copied' : 'Select it';
+        button.classList.toggle('is-done', ok);
+        window.setTimeout(function () {
+          button.textContent = 'Copy';
+          button.classList.remove('is-done');
+        }, 1800);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () {
+          selectIt(pre);
+          done(false);
+        });
+        return;
+      }
+      selectIt(pre);
+      done(false);
+    });
+  });
+
+  function selectIt(pre) {
+    try {
+      var range = document.createRange();
+      range.selectNodeContents(pre);
+      var selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } catch (e) { /* the text is still there to be copied by hand */ }
+  }
+
+  /* ---- the way back -----------------------------------------------------------
+     A reader who has arrived from somewhere should be able to see where, and a
+     reader who is part way through the documentation should be able to see
+     what is next. Both are opt-in: a page says what it wants with a
+     data attribute, and nothing is added to a page that did not ask. */
+  var main = document.querySelector('#main');
+  if (main && main.getAttribute('data-crumbs')) {
+    var crumbs = document.createElement('nav');
+    crumbs.className = 'crumbs';
+    crumbs.setAttribute('aria-label', 'Breadcrumb');
+    var items = [{ href: '/', label: 'Home' }];
+    var section = main.getAttribute('data-crumbs');
+    if (section) items.push({ href: sectionHref(section), label: section });
+    var heading = document.querySelector('h1');
+    var title = heading ? (heading.textContent || '').trim() : '';
+    if (title && title !== section) items.push({ label: title, current: true });
+    crumbs.innerHTML = items.map(function (item, index) {
+      var last = index === items.length - 1;
+      if (item.href && !last) {
+        return '<a href="' + item.href + '">' + item.label + '</a>';
+      }
+      return '<span' + (last ? ' aria-current="page"' : '') + '>' + item.label + '</span>';
+    }).join('<span class="crumbs__sep" aria-hidden="true">/</span>');
+    // Inside the wrap, so the crumbs line up with the text under them.
+    (main.querySelector('.wrap') || main).insertBefore(crumbs, main.querySelector('.wrap')
+      ? main.querySelector('.wrap').firstChild
+      : main.firstChild);
+  }
+
+  function sectionHref(name) {
+    var sections = {
+      'Documentation': '/docs',
+      'Developer guide': '/developers',
+      'Legal': '/terms',
+      'Project': '/about',
+      'Community': '/support'
+    };
+    return sections[name] || '/';
+  }
+
+  /* ---- the next page ----------------------------------------------------------
+     The documentation is a handful of pages that read in an order. A reader
+     who has finished one of them should be offered the next one, and the
+     offer is a link, not a page of its own.
+
+     The position is found by the address the page is served at, not by its
+     heading: the list holds the addresses, and the heading is a title - two
+     pages can carry the same one, and a pager that guessed would send a
+     reader sideways.
+
+     A page can be served at more than one address - the documentation is
+     /docs on an instance and documentation.html on the disk - so each entry
+     carries the names it answers to. */
+  var order = [
+    { href: '/docs', names: ['/docs', '/documentation'] },
+    { href: '/install', names: ['/install'] },
+    { href: '/faq', names: ['/faq'] },
+    { href: '/developers', names: ['/developers'] },
+    { href: '/download', names: ['/download'] },
+    { href: '/features', names: ['/features'] },
+    { href: '/about', names: ['/about'] },
+    { href: '/changelog', names: ['/changelog'] },
+  ];
+  if (main && main.getAttribute('data-next')) {
+    var path = String(window.location.pathname || '')
+      .replace(/\.html$/, '')
+      .replace(/\/+$/, '');
+    var at = -1;
+    for (var i = 0; i < order.length; i++) {
+      for (var n = 0; n < order[i].names.length; n++) {
+        var name = order[i].names[n];
+        if (path === name || path.slice(-name.length) === name) { at = i; break; }
+      }
+      if (at !== -1) break;
+    }
+    var pages = [];
+    if (at > -1) {
+      if (at > 0) pages.push({ href: order[at - 1].href, label: 'Previous' });
+      if (at < order.length - 1) pages.push({ href: order[at + 1].href, label: 'Next' });
+    }
+    if (pages.length) {
+      var nav = document.createElement('nav');
+      nav.className = 'pager';
+      nav.setAttribute('aria-label', 'More pages');
+      nav.innerHTML = pages.map(function (page) {
+        return '<a class="pager__link pager__link--' + page.label.toLowerCase() + '" href="' + page.href + '">'
+          + '<span class="pager__label">' + page.label + '</span>'
+          + '<span class="pager__title">' + pageTitle(page.href) + '</span></a>';
+      }).join('');
+      // Inside the wrap, like the rest of the page.
+      (main.querySelector('.wrap') || main).appendChild(nav);
+    }
+  }
+
+  function pageTitle(href) {
+    var link = document.querySelector('.site-nav a[href="' + href + '"]');
+    if (link) {
+      var strong = link.querySelector('strong');
+      if (strong) return strong.textContent || '';
+    }
+    return href.replace(/^\//, '').replace(/-/g, ' ');
+  }
+})();

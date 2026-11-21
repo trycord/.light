@@ -1,0 +1,186 @@
+// The shared visual vocabulary.
+//
+// A primitive here is a function that returns an element, never a class, so a
+// view composes them the way it composes el(). Identity colour is derived from
+// the id, so the same person is the same colour everywhere without the server
+// storing one.
+//
+// Everything in this module renders from semantic tokens only - no component
+// names a hex, a shadow recipe or a pixel width the token layer has not agreed
+// to first.
+
+import { el } from '../../packages/dom.js';
+import { icon } from '../../packages/icons.js';
+import { initials, hueOf } from '../../packages/format.js';
+import { mediaUrl, isServerPath } from '../../packages/media.js';
+import { avatarUrlOf, serverIconOf } from '../../packages/identity.js';
+import { State } from '../../packages/store.js';
+
+function identityGradient(hue) {
+  const second = (hue + 38) % 360;
+  return 'linear-gradient(155deg, hsl(' + hue + ' 30% 32%), hsl(' + second + ' 32% 22%))';
+}
+
+// Paint an image into a node once the media URL resolves; a path the server
+// stores resolves through the media pack, a plain URL is used as given.
+function paintImage(node, url) {
+  if (!url) return;
+  const fallbackChildren = [...node.childNodes];
+  const fallbackBackground = node.style.background;
+  const apply = (src) => {
+    node.textContent = '';
+    const img = el('img', { src, alt: '', loading: 'lazy' });
+    // A picture that will not load puts the initials back, not a broken-image icon.
+    img.addEventListener('error', () => {
+      node.textContent = '';
+      node.style.background = fallbackBackground;
+      node.replaceChildren(...fallbackChildren);
+    });
+    node.appendChild(img);
+    node.style.background = 'transparent';
+  };
+  if (isServerPath(url)) mediaUrl(url).then((resolved) => { if (resolved) apply(resolved); });
+  else apply(url);
+}
+
+export function avatar(user, options) {
+  const opts = options || {};
+  // The reader's own face resolves from the session, so a new picture
+  // shows on the next repaint of rows already on the screen.
+  let who = user;
+  if (who && who.id && State.user && String(who.id) === String(State.user.id)) who = State.user;
+  const name = opts.name || (who && (who.nickname || who.displayName || who.username)) || '';
+  const hue = hueOf((who && who.id) || name);
+
+  const node = el('span', {
+    class: 'avatar avatar--' + (opts.size || 'md') + (opts.rounded ? ' avatar--rounded' : ''),
+    title: opts.decorative === false ? null : (opts.title || name || null),
+    'aria-hidden': opts.decorative === false ? null : 'true',
+    role: opts.decorative === false ? 'img' : null,
+    'aria-label': opts.decorative === false ? (opts.title || name || 'Avatar') : null,
+    style: { background: identityGradient(hue) },
+  }, initials(name));
+
+  paintImage(node, avatarUrlOf(who));
+
+  if (opts.presence) {
+    node.appendChild(el('span', {
+      class: 'avatar-dot',
+      dataset: { presence: opts.presence },
+    }));
+  }
+
+  return node;
+}
+
+// A community's face: its icon when it has one, its initials otherwise. Rounded,
+// because a community is a place rather than a person.
+export function serverMark(server, options) {
+  const opts = options || {};
+  const name = (server && server.name) || '?';
+  const hue = hueOf((server && server.id) || name);
+
+  const node = el('span', {
+    class: 'avatar avatar--rounded avatar--' + (opts.size || 'md'),
+    style: { background: identityGradient(hue) },
+    title: name,
+  }, initials(name));
+
+  paintImage(node, serverIconOf(server));
+  return node;
+}
+
+// A banner is a background, not an element with an image inside it.
+export function bannerNode(url, className) {
+  const node = el('div', { class: className ? className : 'banner' });
+  if (url) {
+    mediaUrl(url).then((resolved) => {
+      if (resolved) node.style.backgroundImage = 'url(' + resolved + ')';
+    });
+  }
+  return node;
+}
+
+export function channelIcon(channel, size) {
+  const type = channel && channel.type;
+  if (type === 'voice' || type === 'stage') return icon('volume', { size: size || 17 });
+  if (type === 'announcement') return icon('bell', { size: size || 17 });
+  if (type === 'forum') return icon('list', { size: size || 17 });
+  return icon('hash', { size: size || 17 });
+}
+
+export function channelName(channel) {
+  return (channel && (channel.name || channel.slug)) || 'channel';
+}
+
+export function iconButton(name, options) {
+  const opts = options || {};
+  return el('button', {
+    class: 'icon-btn' + (opts.class ? ' ' + opts.class : ''),
+    type: 'button',
+    title: opts.label || null,
+    'aria-label': opts.label || name,
+    'aria-pressed': opts.pressed === undefined ? null : String(!!opts.pressed),
+    'aria-haspopup': opts.haspopup || null,
+    onClick: opts.onClick,
+  }, icon(name, { size: opts.size || 18 }));
+}
+
+export function badge(text, kind) {
+  return el('span', { class: 'badge' + (kind ? ' badge--' + kind : '') }, text);
+}
+
+export function countBadge(count) {
+  if (!count) return null;
+  return el('span', { class: 'count-badge' }, count > 99 ? '99+' : String(count));
+}
+
+// A switch. Its state is the attribute, not a value held in a closure: a
+// closure that captured the state at the moment the control was built could
+// only ever report the same answer, so the switch could be turned on but
+// never off.
+export function switchControl(checked, onChange, label) {
+  const node = el('button', {
+    class: 'switch', type: 'button', role: 'switch',
+    'aria-checked': String(!!checked),
+    'aria-label': label || undefined,
+  });
+  node.addEventListener('click', () => {
+    const next = node.getAttribute('aria-checked') !== 'true';
+    node.setAttribute('aria-checked', String(next));
+    onChange(next);
+  });
+  return node;
+}
+
+// Put a switch where the server says it is, without pretending it was
+// pressed: a control that shows a state nobody set is a control that lies.
+export function setSwitch(control, value) {
+  if (!control) return;
+  control.setAttribute('aria-checked', String(!!value));
+}
+
+export function switchValue(control) {
+  return !!control && control.getAttribute('aria-checked') === 'true';
+}
+
+// The label / description / control row every settings surface arranges itself
+// with, so a switch sits identically on the account screen and in a community.
+export function fieldRow(label, description, control) {
+  return el('div', { class: 'settings-field' },
+    el('div', { class: 'settings-field-text' },
+      el('div', { class: 'settings-field-label' }, label),
+      description ? el('div', { class: 'settings-field-desc' }, description) : null),
+    el('div', { class: 'settings-field-ctl' }, control),
+  );
+}
+
+export function spinner() {
+  return el('span', { class: 'spinner', role: 'status', 'aria-label': 'Loading' });
+}
+
+export default {
+  avatar, serverMark, bannerNode, channelIcon, channelName,
+  iconButton, badge, countBadge, switchControl, setSwitch, switchValue,
+  fieldRow, spinner,
+};

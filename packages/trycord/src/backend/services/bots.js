@@ -1,0 +1,597 @@
+// Bot applications and slash commands.
+//
+// An application is created by a community administrator, gets a bearer token
+// shown once, and can then post as itself and answer slash commands. The token
+// is stored hashed for the same reason the webhook secret is: it is a
+// credential, and a database read should not be enough to impersonate a bot.
+//
+// A bot post is a real message with a real author, so it flows through the same
+// broadcast, the same attachment pipeline and the same permission evaluation as
+// anything else. There is no second message path.
+
+const crypto = require('crypto');
+const db = require('../db');
+const { now, uuid } = require('../util');
+const events = require('./events');
+const { publicMediaUrl } = require('./embeds');
+const { EVENTS } = require('../ws/events.js');
+
+const TOKEN_PREFIX = 'trcd_bot_';
+const COMMAND_RE = /^\/([a-z0-9][a-z0-9_-]{0,31})$/i;
+// The same ceiling the message path enforces, so a templated reply cannot become
+// the one way to write a message the HTTP post would refuse.
+const MAX_RESPONSE = 2000;
+
+function bad(msg) { const e = new Error(msg); e.code = 'VALIDATION_ERROR'; throw e; }
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token), 'utf8').digest('hex');
+}
+
+function appShape(r) {
+  return {
+    id: r.id,
+    serverId: r.server_id,
+    ownerUserId: r.owner_user_id,
+    // The account the application posts as. It is a bot account of its own,
+    // not the developer who made it.
+    botUserId: r.bot_user_id || null,
+    name: r.name,
+    description: r.description || null,
+    iconUrl: r.icon_url || null,
+    status: r.status || 'active',
+    // Deliberately absent: token_hash. No read path returns it.
+    createdAt: r.created_at,
+    updatedAt: r.updated_at || r.created_at,
+  };
+}
+
+function commandShape(r) {
+  return {
+    id: r.id,
+    applicationId: r.application_id,
+    name: r.name,
+    description: r.description || null,
+    response: r.response,
+    options: readOptions(r.options),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at || r.created_at,
+  };
+}
+
+// The declared argument list. Read defensively: the column is free text, so a
+// hand-edited row must not be able to crash the command list for every caller.
+function readOptions(raw) {
+  if (!raw) return [];
+  try {
+    const out = JSON.parse(raw);
+    return Array.isArray(out) ? out : [];
+  } catch { return []; }
+}
+
+// Argument declarations are validated here rather than at send time, so a
+// malformed command is refused where it is created. Names are what a caller
+// passes, so they are constrained to something that can be typed in a message.
+const OPTION_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/i;
+const OPTION_TYPES = ['string', 'number', 'boolean', 'choice'];
+
+function normaliseOptions(input) {
+  if (input == null) return [];
+  if (!Array.isArray(input)) bad('options must be an array');
+  if (input.length > 5) bad('a command may declare at most 5 options');
+  const seen = new Set();
+  const out = [];
+  for (const o of input) {
+    const name = String((o && o.name) || '').trim().toLowerCase();
+    if (!OPTION_NAME_RE.test(name)) bad('option name must be 1-32 letters, digits, dash or underscore');
+    if (seen.has(name)) bad('duplicate option name: ' + name);
+    seen.add(name);
+    const type = String((o && o.type) || 'string').toLowerCase();
+    if (!OPTION_TYPES.includes(type)) bad('option type must be one of ' + OPTION_TYPES.join(', '));
+    let choices = null;
+    if (type === 'choice') {
+      const list = Array.isArray(o.choices) ? o.choices : [];
+      if (!list.length) bad('a choice option needs at least one choice');
+      if (list.length > 25) bad('a choice option may declare at most 25 choices');
+      choices = list.map((c) => String(c).slice(0, 64));
+    }
+    out.push({
+      name,
+      type,
+      required: o.required === true,
+      description: o.description ? String(o.description).slice(0, 255) : null,
+      choices,
+    });
+  }
+  return out;
+}
+
+// Binds a typed argument list to the declaration. Unknown names and missing
+// required ones are refused; the caller cannot pass a value the command did not
+// declare, which is what keeps the declaration meaningful.
+function bindArguments(options, tokens) {
+  const byName = new Map(options.map((o) => [o.name, o]));
+  const bound = {};
+  for (const token of tokens) {
+    const eq = token.indexOf('=');
+    const key = (eq === -1 ? token : token.slice(0, eq)).toLowerCase();
+    if (!byName.has(key)) bad('unknown option: ' + key);
+    if (Object.prototype.hasOwnProperty.call(bound, key)) bad('repeated option: ' + key);
+    const spec = byName.get(key);
+    const raw = eq === -1 ? '' : token.slice(eq + 1);
+    bound[key] = coerce(spec, raw);
+  }
+  for (const o of options) {
+    if (o.required && !Object.prototype.hasOwnProperty.call(bound, o.name)) {
+      bad('missing required option: ' + o.name);
+    }
+  }
+  return bound;
+}
+
+function coerce(spec, raw) {
+  if (spec.type === 'boolean') {
+    const v = raw.toLowerCase();
+    if (v === '' || v === 'true' || v === '1') return true;
+    if (v === 'false' || v === '0') return false;
+    bad(spec.name + ' expects true or false');
+  }
+  if (spec.type === 'number') {
+    if (!/^-?\d+(\.\d+)?$/.test(raw)) bad(spec.name + ' expects a number');
+    const n = Number(raw);
+    if (!Number.isFinite(n)) bad(spec.name + ' expects a number');
+    return n;
+  }
+  if (spec.type === 'choice') {
+    if (!spec.choices.includes(raw)) bad(spec.name + ' must be one of: ' + spec.choices.join(', '));
+    return raw;
+  }
+  if (raw.length > 500) bad(spec.name + ' must be 500 characters or fewer');
+  return raw;
+}
+
+async function listApps(serverId) {
+  const rows = await db.all(
+    'SELECT * FROM bot_applications WHERE server_id = ? ORDER BY created_at', [serverId]
+  );
+  return rows.map(appShape);
+}
+
+async function getApp(appId, serverId) {
+  if (!serverId) return db.get('SELECT * FROM bot_applications WHERE id = ?', [appId]);
+  const row = await db.get(
+    'SELECT * FROM bot_applications WHERE id = ? AND server_id = ?', [appId, serverId]
+  );
+  return row || null;
+}
+
+// The account a bot posts as.
+//
+// An application is not its developer. It used to post under the developer's
+// name, which made a bot indistinguishable from a person in the channel and
+// meant that a developer's own account was what everyone saw - and what
+// everything the bot could do was measured against.
+//
+// A bot has an account of its own: it cannot sign in, it is marked as a bot
+// everywhere it appears, and it belongs to the community the application was
+// created in, with the rights that community gives an ordinary member.
+const BOT_USERNAME_MAX = 32;
+
+function botUsername(label) {
+  const base = String(label || 'bot')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, BOT_USERNAME_MAX - 5) || 'bot';
+  return 'bot_' + base;
+}
+
+// A username nobody has taken. The bot's name is a suggestion; a collision
+// with a real account must not stop a developer from making their bot.
+async function freeBotUsername(label, conn = db) {
+  const base = botUsername(label);
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const candidate = attempt === 0 ? base : base.slice(0, BOT_USERNAME_MAX - 5) + '_' + attempt;
+    const taken = await conn.get('SELECT id FROM users WHERE username = ?', [candidate]);
+    if (!taken) return candidate;
+  }
+  return base + '_' + crypto.randomBytes(3).toString('hex');
+}
+
+// The bot's account, and its membership of the community.
+//
+// The account has no password: it cannot sign in, and there is nothing to
+// guess. The membership is an ordinary one, so the bot gets the rights the
+// community gives a member and not the rights of the developer who made it.
+async function createBotAccount(app, label, conn = db, { restore = false } = {}) {
+  const username = await freeBotUsername(label, conn);
+  const userId = uuid();
+  await conn.run(
+    'INSERT INTO users (id, username, display_name, password_hash, created_at, is_bot, avatar_url)'
+    + ' VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [userId, username, label, 'bot:' + crypto.randomBytes(24).toString('hex'), now(), 1, app.icon_url || null]
+  );
+  const memberships = require('./memberships');
+  const member = { id: userId, username };
+  if (restore) await memberships.restoreIn(app.server_id, member, conn);
+  else await memberships.joinIn(app.server_id, member, conn);
+  return userId;
+}
+
+async function ensureBotAccountIn(app, conn) {
+  const existing = app.bot_user_id
+    ? await conn.get('SELECT id, username, is_bot FROM users WHERE id = ?', [app.bot_user_id])
+    : null;
+  const separateBot = existing
+    && String(existing.id) !== String(app.owner_user_id)
+    && Number(existing.is_bot) === 1;
+
+  if (separateBot) return { userId: existing.id, created: false };
+
+  const userId = await createBotAccount(app, app.name, conn, { restore: true });
+  await conn.run('UPDATE bot_applications SET bot_user_id = ? WHERE id = ?', [userId, app.id]);
+  return { userId, created: true };
+}
+
+async function ensureBotIdentity(app) {
+  const result = await db.transaction(async (t) => {
+    const current = await t.get('SELECT * FROM bot_applications WHERE id = ?', [app.id]);
+    if (!current) return null;
+    return ensureBotAccountIn(current, t);
+  });
+  if (!result) return null;
+  if (result.created) require('./memberships').afterJoin(app.server_id);
+  return getApp(app.id);
+}
+
+async function createApp({ serverId, ownerUserId, name, description, iconUrl }, conn = null) {
+  const label = String(name || '').trim();
+  if (!label || label.length > 64) bad('name must be 1-64 characters');
+  const desc = description == null ? null : String(description).trim().slice(0, 500) || null;
+  // An icon is a URL the reader's browser will load, so it goes through the same
+  // guard as a preview image rather than being trusted because an admin typed it.
+  let icon = null;
+  if (iconUrl) {
+    icon = await publicMediaUrl(iconUrl, null);
+    if (!icon) bad('iconUrl must be a public http or https address');
+  }
+  const id = uuid();
+  const token = TOKEN_PREFIX + crypto.randomBytes(24).toString('hex');
+  const ts = now();
+  const create = async (t) => {
+    await t.run(
+      'INSERT INTO bot_applications'
+      + ' (id, owner_user_id, server_id, name, description, icon_url, status, token_hash, created_at, updated_at)'
+      + ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, ownerUserId, serverId, label, desc, icon, 'active', hashToken(token), ts, ts]
+    );
+    // The bot's account is created with the application, so the two are born
+    // together and an application is never left without an identity.
+    const app = { id, server_id: serverId, owner_user_id: ownerUserId, icon_url: icon };
+    const botUserId = await createBotAccount(app, label, t);
+    await t.run('UPDATE bot_applications SET bot_user_id = ? WHERE id = ?', [botUserId, id]);
+    return t.get('SELECT * FROM bot_applications WHERE id = ?', [id]);
+  };
+  const row = conn ? await create(conn) : await db.transaction(create);
+  if (!conn) require('./memberships').afterJoin(serverId);
+  // The token is the only time it exists in plaintext.
+  return Object.assign(appShape(row), { token });
+}
+
+async function updateApp(appId, serverId, patch) {
+  const app = await getApp(appId, serverId);
+  if (!app) return null;
+  const sets = [];
+  const vals = [];
+  let nextName = null;
+  let nextIcon = null;
+  if (patch.name !== undefined) {
+    const label = String(patch.name || '').trim();
+    if (!label || label.length > 64) bad('name must be 1-64 characters');
+    sets.push('name = ?'); vals.push(label);
+    nextName = label;
+  }
+  if (patch.description !== undefined) {
+    sets.push('description = ?');
+    vals.push(patch.description == null ? null : (String(patch.description).trim().slice(0, 500) || null));
+  }
+  if (patch.iconUrl !== undefined) {
+    const icon = patch.iconUrl == null ? null : await publicMediaUrl(patch.iconUrl, null);
+    if (patch.iconUrl != null && !icon) bad('iconUrl must be a public http or https address');
+    sets.push('icon_url = ?'); vals.push(icon);
+    nextIcon = icon;
+  }
+  if (patch.status !== undefined) {
+    const status = String(patch.status || '').toLowerCase();
+    if (status !== 'active' && status !== 'disabled') bad('status must be active or disabled');
+    sets.push('status = ?'); vals.push(status);
+  }
+  if (sets.length) {
+    sets.push('updated_at = ?'); vals.push(now());
+    vals.push(appId);
+    await db.run('UPDATE bot_applications SET ' + sets.join(', ') + ' WHERE id = ?', vals);
+  }
+  // What the application is called and looks like is also what the community
+  // sees, because the bot posts under its own account. The account's display
+  // name and picture follow the application here, once, in the one place the
+  // application is renamed - so the member list, the messages and the
+  // moderation views keep showing one bot rather than the application's
+  // history of names. The username is untouched: it is the account's stable
+  // handle, the one value a rename must never move.
+  if ((nextName === null && nextIcon === undefined) || !app.bot_user_id) return appShape(await getApp(appId, serverId));
+  const userSets = [];
+  const userVals = [];
+  if (nextName !== null) { userSets.push('display_name = ?'); userVals.push(nextName); }
+  if (nextIcon !== undefined) { userSets.push('avatar_url = ?'); userVals.push(nextIcon); }
+  if (userSets.length) {
+    await db.run(
+      'UPDATE users SET ' + userSets.join(', ') + ' WHERE id = ? AND is_bot = 1',
+      [...userVals, app.bot_user_id]
+    );
+  }
+  return appShape(await getApp(appId, serverId));
+}
+
+// Take an application away for good.
+//
+// Its token stops working with the row, and the bot's account leaves the
+// community: an application that is gone has no business being a member,
+// and a member that is still there could still be spoken for.
+//
+// The account itself stays. The messages it wrote are still in the
+// channels, and a message whose author has been deleted is a message with
+// a hole in it.
+async function removeApp(appId, serverId) {
+  const row = await getApp(appId, serverId);
+  if (!row) return false;
+  if (row.bot_user_id) {
+    const memberships = require('./memberships');
+    await memberships.leave(row.server_id, row.bot_user_id).catch(() => {});
+  }
+  // The credential goes with the application. A key that outlived the
+  // application it belonged to would still be a key to the community.
+  const ts = now();
+  await db.run(
+    'UPDATE developer_api_keys SET status = ?, revoked_at = ?, revoked_reason = ?'
+    + ' WHERE bot_application_id = ? AND status = ?',
+    ['revoked', ts, 'the application was deleted', appId, 'active']
+  );
+  await db.run('DELETE FROM bot_applications WHERE id = ?', [appId]);
+  return true;
+}
+
+async function listCommands(appId) {
+  const rows = await db.all(
+    'SELECT * FROM bot_commands WHERE application_id = ? ORDER BY name', [appId]
+  );
+  return rows.map(commandShape);
+}
+
+async function setCommand(appId, serverId, input) {
+  // Scoped by server, not by id alone: an app id from another community must not be
+  // writable through this community's route just because the route resolved a server.
+  const app = await getApp(appId, serverId);
+  if (!app) return null;
+  if (!app) return null;
+  const name = String((input && input.name) || '').trim().toLowerCase();
+  if (!COMMAND_RE.exec('/' + name)) {
+    bad('command name must be 1-32 letters, digits, dash or underscore');
+  }
+  const response = String((input && input.response) || '');
+  if (!response || response.length > 2000) bad('response must be 1-2000 characters');
+  const desc = input.description == null ? null : String(input.description).slice(0, 255);
+  const options = JSON.stringify(normaliseOptions(input.options));
+  const ts = now();
+  const existing = await db.get(
+    'SELECT * FROM bot_commands WHERE application_id = ? AND name = ?', [appId, name]
+  );
+  if (existing) {
+    await db.run(
+      'UPDATE bot_commands SET description = ?, response = ?, options = ?, updated_at = ? WHERE id = ?',
+      [desc, response, options, ts, existing.id]
+    );
+    return commandShape(await db.get('SELECT * FROM bot_commands WHERE id = ?', [existing.id]));
+  }
+  const id = uuid();
+  await db.run(
+    'INSERT INTO bot_commands'
+    + ' (id, application_id, name, description, response, options, created_at, updated_at)' +
+    ' VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [id, appId, name, desc, response, options, ts, ts]
+  );
+  return commandShape(await db.get('SELECT * FROM bot_commands WHERE id = ?', [id]));
+}
+
+async function removeCommand(commandId, appId, serverId) {
+  // The command's app has to be this community's, the same way the app lookup is
+  // scoped here and everywhere else. application_id alone is not ownership.
+  const app = await getApp(appId, serverId);
+  if (!app) return false;
+  const row = await db.get(
+    'SELECT * FROM bot_commands WHERE id = ? AND application_id = ?', [commandId, app.id]
+  );
+  if (!row) return false;
+  await db.run('DELETE FROM bot_commands WHERE id = ?', [commandId]);
+  return true;
+}
+
+// The bearer token identifies the application. Constant-time compare, because a
+// token guess is still a token guess. token_hash is unique and indexed
+// (idx_bot_apps_token_hash), so this is an O(1) indexed lookup rather than a
+// full table scan plus a JS timing-compare loop per row - the latter blocked
+// the event loop once an instance had more than a handful of bot apps.
+async function appByToken(token) {
+  const raw = String(token || '');
+  if (!raw.startsWith(TOKEN_PREFIX)) return null;
+  const want = hashToken(raw);
+  const row = await db.get('SELECT * FROM bot_applications WHERE token_hash = ?', [want]);
+  if (!row) return null;
+  const got = String(row.token_hash || '');
+  if (got.length !== want.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want))) return null;
+  const botUser = row.bot_user_id
+    ? await db.get('SELECT id, is_bot FROM users WHERE id = ?', [row.bot_user_id])
+    : null;
+  if (!botUser || Number(botUser.is_bot) !== 1 || String(botUser.id) === String(row.owner_user_id)) {
+    return ensureBotIdentity(row);
+  }
+  return row;
+}
+
+// A command is matched on the first word of a message. Returns the response to
+// post, or null when nothing answers.
+async function resolveCommand(serverId, content) {
+  const text = String(content || '').trim();
+  const first = text.split(/\s+/)[0] || '';
+  const m = COMMAND_RE.exec(first);
+  if (!m) return null;
+  const name = m[1].toLowerCase();
+  const row = await db.get(
+    `SELECT c.* FROM bot_commands c
+     JOIN bot_applications a ON a.id = c.application_id
+     WHERE a.server_id = ? AND c.name = ?
+     ORDER BY c.created_at LIMIT 1`,
+    [serverId, name]
+  );
+  // options has to come along: the declaration is what the arguments are bound
+  // against, and a lookup that dropped it would make every command look as
+  // though it took none, so every argument would be "unknown".
+  return row
+    ? { appId: row.application_id, response: row.response, name, options: row.options || null }
+    : null;
+}
+
+// The one way an application posts. Both the bot HTTP API and a slash-command
+// reply go through here, so a bot message is written and broadcast exactly the
+// way a user message is, and there is no second insert path to keep correct.
+//
+// An application posts **in the clear**, and it cannot post into a
+// conversation that is encrypted. The application holds no conversation key and
+// cannot produce an envelope, so a plaintext post into an encrypted
+// conversation would be the one message the members cannot read — and it
+// would be readable by the server, which is exactly what the conversation was
+// closed to. The refusal is the honest answer.
+// Refuse to write in the clear into a conversation that is encrypted.
+//
+// This is shared with the workflow engine, because both write into the same
+// table and neither holds a conversation key. The question is asked of the
+// encryption service rather than worked out here, so the two paths cannot
+// disagree about what counts as encrypted.
+async function refuseIfEncrypted(channelRow, reason) {
+  let encrypted = false;
+  try {
+    const e2ee = require('./e2ee');
+    if (typeof e2ee.conversationEncryption === 'function') {
+      const summary = await e2ee.conversationEncryption(channelRow.id);
+      encrypted = !!(summary && summary.encrypted);
+    }
+  } catch { /* the encryption subsystem is not part of this build */ }
+  if (!encrypted) return;
+  const e = new Error(reason);
+  e.code = 'E2EE_VALIDATION_ERROR';
+  e.status = 400;
+  throw e;
+}
+
+// The account the application acts as. It is never the developer's account.
+function botUserIdOf(app) {
+  return (app && app.bot_user_id) || null;
+}
+
+// That account, named. A developer who has to tell the community's newest
+// member from their own account needs more than the id the row carries:
+// the username is what the member list, the messages and the moderation
+// tools all show.
+async function botAccountOf(app) {
+  const id = botUserIdOf(app);
+  if (!id) return null;
+  const row = await db.get(
+    'SELECT id, username, display_name AS displayName FROM users WHERE id = ? AND is_bot = 1',
+    [id]
+  );
+  if (!row) return null;
+  return { id: row.id, username: row.username, displayName: row.displayName, isBot: true };
+}
+
+async function postAsApp(app, channelRow, content, { kind } = {}) {
+  const text = String(content || '').trim().slice(0, 2000);
+  if (!text) return null;
+  await refuseIfEncrypted(channelRow, 'an application cannot post into an encrypted conversation');
+  const id = uuid();
+  const ts = now();
+  const seqRow = await db.get('SELECT COALESCE(MAX(seq), 0) AS m FROM messages WHERE channel_id = ?', [channelRow.id]);
+  const seq = (seqRow ? Number(seqRow.m) : 0) + 1;
+  // The author is the bot, not the developer who made it. A message that
+  // says "the bot said this" has to be attributable to the bot.
+  const authorId = botUserIdOf(app);
+  await db.run(
+    'INSERT INTO messages (id, channel_id, author_id, content, created_at, seq) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, channelRow.id, authorId, text, ts, seq]
+  );
+  events.emitChannel(channelRow.server_id, channelRow.id, {
+    type: EVENTS.MESSAGE,
+    id, channel_id: channelRow.id, server_id: channelRow.server_id,
+    author_id: authorId,
+    content: text, created_at: ts, edited_at: null, seq,
+    attachments: [], reactions: [], pinned: false, reply_count: 0, thread_root_id: null,
+    embeds: [],
+    bot: { applicationId: app.id, name: app.name, kind: kind || 'app' },
+  });
+  return { id, channel_id: channelRow.id, author_id: authorId, content: text, created_at: ts, seq };
+}
+
+// A slash command: bind the declared options, then post the configured answer.
+//
+// The response is a template, not a script. Only names the command actually
+// declared are substituted, so a response cannot reach into anything the
+// declaration did not name, and the result is length-capped like any other
+// message. There is no expression evaluation and no eval anywhere on this path.
+function substitute(template, bound) {
+  const text = String(template);
+  // {name} and {name:default}. An unknown placeholder is left as written, so a
+  // response containing a literal brace is not silently emptied.
+  return text.replace(/\{(\w+)(?::([^}]*))?\}/g, (whole, key, fallback) => {
+    const has = Object.prototype.hasOwnProperty.call(bound, key);
+    if (!has) return fallback === undefined ? whole : fallback;
+    const v = bound[key];
+    return v === true ? 'true' : v === false ? 'false' : String(v);
+  }).slice(0, MAX_RESPONSE);
+}
+
+async function respond(serverId, channelRow, invocation) {
+  // Accepts "/ping" or "ping", plus any trailing arguments: callers naturally
+  // have the slash already, and prefixing a second one makes every lookup miss.
+  const parts = String(invocation || '').trim().split(/\s+/).filter(Boolean);
+  const head = (parts[0] || '').replace(/^\/+/, '');
+  const hit = await resolveCommand(serverId, '/' + head);
+  if (!hit) return null;
+  const app = await db.get('SELECT * FROM bot_applications WHERE id = ?', [hit.appId]);
+  if (!app) return null;
+  // A disabled application answers nobody. Its commands stay listed so an
+  // administrator can see what exists, but it stops posting.
+  if ((app.status || 'active') !== 'active') return null;
+
+  let reply;
+  try {
+    const args = bindArguments(readOptions(hit.options), parts.slice(1));
+    reply = substitute(hit.response, args);
+  } catch (e) {
+    // A bad invocation answers with the reason rather than silently doing
+    // nothing, so the person who typed it learns what was wrong.
+    reply = (e && e.message ? String(e.message) : 'invalid arguments').slice(0, MAX_RESPONSE);
+  }
+  return postAsApp(app, channelRow, reply, { kind: 'command' });
+}
+
+module.exports = {
+  botUserIdOf,
+  botAccountOf,
+  TOKEN_PREFIX,
+  listApps, getApp, createApp, removeApp,
+  listCommands, setCommand, removeCommand,
+  appByToken, resolveCommand, postAsApp, respond, hashToken, appShape, commandShape, bad,
+  createBotAccount, ensureBotAccountIn, ensureBotIdentity,
+  refuseIfEncrypted,
+  updateApp, normaliseOptions, bindArguments, readOptions,
+  MAX_RESPONSE, OPTION_TYPES, substitute,
+};

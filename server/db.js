@@ -447,6 +447,34 @@ function seed() {
     }
   }
 
+  // ---- Native Trycord hosting product + package ----
+  if (!db.prepare("SELECT id FROM products WHERE id = 'trycord'").get()) {
+    db.prepare(`INSERT INTO products (id, category_id, name, slug, short_description, description, image, icon, features, tags, status, featured, sort_order, starting_price_monthly, currency, created_at, updated_at)
+      VALUES ('trycord','app','Trycord Hosting','trycord','Self-hosted Trycord community platform','Dedicated Debian container running the real Trycord application — REST API, WebSocket gateway, web client and persistent storage.',
+        '/assets/icons/applications.svg','◆',?,?,'published',1,3,0,'USD',?,?)`)
+      .run(JSON.stringify(['Dedicated container','Persistent data','WebSocket gateway','Web client included','Health checked']),
+        JSON.stringify(['trycord','community','chat']), ts, ts);
+  }
+  if (!db.prepare("SELECT id FROM software_packages WHERE id = 'trycord'").get()) {
+    insertPackage.run({
+      id:'trycord', name:'Trycord', description:'The real Trycord community platform (API + WebSocket + web client)',
+      category:'trycord', product_id:'trycord', runtime_id:'node', install_kind:'trycord',
+      versions:JSON.stringify(['7.2.0']), default_version:'7.2.0',
+      startup_template:'node src/server.js',
+      config_schema:JSON.stringify({
+        instanceName:{type:'text',label:'Instance name',default:'My Trycord'},
+        mailMode:{type:'select',label:'Mail mode',options:['log','smtp'],default:'log'},
+        publicUrl:{type:'text',label:'Public URL (optional)',default:''},
+      }),
+      ports:JSON.stringify(['9971/tcp']), storage:JSON.stringify({persistent:['/data','/app/uploads']}),
+      healthcheck:JSON.stringify({path:'/api/health'}), status:'published', featured:1, sort_order:0,
+      created_at:ts, updated_at:ts,
+    });
+    insertVersion.run(id('pver'), 'trycord', '7.2.0', '', '', '', '22', 'published', ts);
+    db.prepare('INSERT OR IGNORE INTO product_packages (product_id, package_id, required, created_at) VALUES (?, ?, 1, ?)')
+      .run('trycord', 'trycord', ts);
+  }
+
   // Shade runtime catalogue. Debian is the fixed OS foundation for every
   // workload — only the runtime and its explicit versions are selectable.
   const insertEnv = db.prepare(`INSERT OR IGNORE INTO environments (id, name, category, description, icon, versions, default_version, image, image_digest,

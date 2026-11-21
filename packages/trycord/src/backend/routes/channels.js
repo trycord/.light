@@ -1,0 +1,227 @@
+// /api/servers/:serverId/channels — list (members), create/patch/delete (MANAGE_CHANNELS).
+const express = require('express');
+const db = require('../db');
+const auth = require('../middleware/auth');
+const { resolveServer, requireMember, requirePerm } = require('../middleware/serverAccess');
+const { fail, serviceError } = require('../errors');
+const channels = require('../services/channels');
+const events = require('../services/events');
+const slugs = require('../services/slugs');
+const permissions = require('../services/permissions');
+const webhooks = require('../services/webhooks');
+const rateLimit = require('../middleware/ratelimit');
+
+const router = express.Router({ mergeParams: true });
+router.use(auth, resolveServer);
+
+// :channelId may be an id or a slug. Resolution happens here, at the route
+// boundary, so every service below keeps taking plain ids and none of them
+// needs to know slugs exist. The community is required because channel slugs
+// are unique per community, not globally.
+async function resolveChannelParam(req, res) {
+  const ch = await slugs.resolveChannel(req.params.channelId, req.server.id);
+  if (!ch) {
+    fail(res, 'NOT_FOUND', 'channel not found');
+    return null;
+  }
+  return ch;
+}
+
+// Channel-room broadcaster (pins land on the channel room, next to the
+// message events). Wired once at boot; structural events keep using emit().
+let broadcastChannel = () => {};
+function setGateway(gw) {
+  if (gw && typeof gw.broadcast === 'function') broadcastChannel = gw.broadcast;
+}
+
+router.get('/', requireMember, async (req, res, next) => {
+  try {
+    res.json(await channels.list(req.server.id));
+  } catch (e) { next(e); }
+});
+
+router.post('/', auth.requireVerified, requirePerm('MANAGE_CHANNELS'), async (req, res, next) => {
+  try {
+    const { name, topic, categoryId, type, slowMode } = req.body || {};
+    if (!name || !String(name).trim()) return fail(res, 'VALIDATION_ERROR', 'name required');
+    const ch = await channels.create(req.server.id, { name, topic, categoryId, type, slowMode });
+    events.emit(req.server.id, 'channel_created', { channel: ch });
+    webhooks.emit(req.server.id, 'channel.created', { serverId: req.server.id, channelId: String(ch.id), name: ch.name }).catch(() => {});
+    res.json(ch);
+  } catch (e) { serviceError(res, e); }
+});
+
+router.patch('/:channelId', auth.requireVerified, requirePerm('MANAGE_CHANNELS'), async (req, res, next) => {
+  try {
+    const ch = await resolveChannelParam(req, res);
+    if (!ch) return;
+    const { name, topic, categoryId, type, slowMode } = req.body || {};
+    const updated = await channels.update(ch, { name, topic, categoryId, type, slowMode });
+    events.emit(req.server.id, 'channel_updated', { channel: updated });
+    res.json(updated);
+  } catch (e) { serviceError(res, e); }
+});
+
+// A copy of a channel.
+//
+// The copy carries the settings over - the topic, the type, the category and
+// the slow mode - and nothing else: the messages stay where they were.
+router.post('/:channelId/duplicate', auth.requireVerified, requirePerm('MANAGE_CHANNELS'),
+  rateLimit({ windowMs: 60000, max: 30 }), async (req, res, next) => {
+    try {
+      const ch = await resolveChannelParam(req, res);
+      if (!ch) return;
+      const copy = await channels.duplicate(req.server.id, ch);
+      events.emit(req.server.id, 'channel_created', { channel: copy });
+      res.status(201).json(copy);
+    } catch (e) { serviceError(res, e); }
+  });
+
+router.post('/reorder', auth.requireVerified, requirePerm('MANAGE_CHANNELS'), async (req, res, next) => {
+  try {
+    const { orderedIds } = req.body || {};
+    const layout = await channels.reorderChannels(req.server.id, orderedIds);
+    events.emit(req.server.id, 'channels_reordered', { channels: layout.channels.map((c) => c.id) });
+    res.json(layout);
+  } catch (e) { serviceError(res, e); }
+});
+
+router.delete('/:channelId', auth.requireVerified, requirePerm('MANAGE_CHANNELS'), async (req, res, next) => {
+  try {
+    const ch = await resolveChannelParam(req, res);
+    if (!ch) return;
+    const out = await channels.remove(req.server.id, ch.id);
+    events.emit(req.server.id, 'channel_deleted', { channelId: String(ch.id) });
+    webhooks.emit(req.server.id, 'channel.deleted', { serverId: req.server.id, channelId: String(ch.id) }).catch(() => {});
+    res.json(out);
+  } catch (e) { serviceError(res, e); }
+});
+
+// ---- pins -----------------------------------------------------------
+// Pins live at /api/servers/:serverId/channels/:channelId/pins so the
+// channel is addressable without the /messages nesting. Pinning needs
+// MANAGE_MESSAGES; reading needs membership.
+const { visibleChannel } = require('../util');
+const { hasPermission } = require('../services/permissions');
+const uploads = require('../services/uploads');
+const reactions = require('../services/reactions');
+const { now } = require('../util');
+const { EVENTS } = require('../ws/events.js');
+
+async function pinChannel(req) {
+  // The community is already resolved, so a slug here is unambiguous.
+  const ch = await visibleChannel(req.params.channelId, req.user.id, req.server.id);
+  if (!ch || String(ch.server_id) !== String(req.server.id)) return null;
+  return ch;
+}
+
+router.get('/:channelId/pins', requireMember, async (req, res, next) => {
+  try {
+    const ch = await pinChannel(req);
+    if (!ch) return fail(res, 'NOT_A_MEMBER', 'channel not found or not a member');
+    const rows = await db.all(
+      `SELECT m.*, u.username AS author_name, u.display_name AS author_display,
+              u.avatar_url AS author_avatar, u.banner_url AS author_banner, u.is_bot AS author_is_bot,
+              p.pinned_by, p.pinned_at
+       FROM pinned_messages p
+       JOIN messages m ON m.id = p.message_id
+       JOIN users u ON u.id = m.author_id
+       WHERE p.channel_id = ? ORDER BY p.pinned_at ASC, m.created_at ASC`,
+      [ch.id]
+    );
+    const byId = await uploads.getForMessages(rows.map((r) => r.id));
+    rows.forEach((r) => { r.attachments = byId[r.id] || []; r.pinned = true; });
+    const summaries = await reactions.summary(rows.map((r) => r.id), req.user.id);
+    rows.forEach((r) => { r.reactions = summaries[r.id] || []; });
+    res.json(rows);
+  } catch (e) { next(e); }
+});
+
+router.post('/:channelId/pins', auth.requireVerified, requirePerm('MANAGE_MESSAGES'), rateLimit({ windowMs: 60000, max: 30 }), async (req, res, next) => {
+  try {
+    const ch = await pinChannel(req);
+    if (!ch) return fail(res, 'NOT_A_MEMBER', 'channel not found or not a member');
+    // Community-level MANAGE_MESSAGES is not enough: a channel override can deny it,
+    // and a pin is a channel write. The same gate the message routes use decides it.
+    if (!(await permissions.hasChannelPermission(req.user.id, ch.server_id, ch.id, 'MANAGE_MESSAGES'))) {
+      return fail(res, 'PERMISSION_DENIED', 'requires MANAGE_MESSAGES');
+    }
+    const messageId = String((req.body || {}).messageId || '');
+    const msg = await db.get('SELECT id FROM messages WHERE id = ? AND channel_id = ?', [messageId, ch.id]);
+    if (!msg) return fail(res, 'NOT_FOUND', 'message not found in this channel');
+    const at = now();
+    try {
+      await db.run(
+        'INSERT INTO pinned_messages (message_id, channel_id, server_id, pinned_by, pinned_at) VALUES (?, ?, ?, ?, ?)',
+        [messageId, ch.id, ch.server_id, req.user.id, at]
+      );
+    } catch (e) {
+      const s = String((e && e.message) || e);
+      if (!/UNIQUE|unique|duplicate|PRIMARY/i.test(s)) throw e;
+    }
+    broadcastChannel(ch.server_id, ch.id, { type: EVENTS.MESSAGE_PINNED, id: messageId, channel_id: ch.id, pinned_by: req.user.id, pinned_at: at });
+    res.json({ ok: true, id: messageId });
+  } catch (e) { next(e); }
+});
+
+router.delete('/:channelId/pins/:messageId', auth.requireVerified, requirePerm('MANAGE_MESSAGES'), async (req, res, next) => {
+  try {
+    const ch = await pinChannel(req);
+    if (!ch) return fail(res, 'NOT_A_MEMBER', 'channel not found or not a member');
+    if (!(await permissions.hasChannelPermission(req.user.id, ch.server_id, ch.id, 'MANAGE_MESSAGES'))) {
+      return fail(res, 'PERMISSION_DENIED', 'requires MANAGE_MESSAGES');
+    }
+    await db.run('DELETE FROM pinned_messages WHERE message_id = ? AND channel_id = ?', [req.params.messageId, ch.id]);
+    broadcastChannel(ch.server_id, ch.id, { type: EVENTS.MESSAGE_UNPINNED, id: req.params.messageId, channel_id: ch.id });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// ---- channel permission overrides ----
+// Tri-state per permission: inherit (no row), allow, or deny. Editing
+// overrides is a channel-administration action, so it takes MANAGE_CHANNELS
+// at the community level - the same gate that already authorises creating and
+// deleting the channel. Overrides narrow or widen what roles grant; they do
+// not create a second permission system.
+router.get('/:channelId/overrides', requireMember, async (req, res, next) => {
+  try {
+    const ch = await pinChannel(req);
+    if (!ch) return fail(res, 'NOT_A_MEMBER', 'channel not found or not a member');
+    // The caller's channel-scoped permission set, computed by the same
+    // evaluator the write paths gate on. Sent here because this is already the
+    // one member-gated call about this channel's effective permissions, and the
+    // client needs it: it used to gate the composer on the community-level
+    // permission list, which cannot see a channel or category override at all.
+    // A deny set here is the backend's own answer, not a client guess.
+    const effective = await permissions.effectiveChannelPermissions(
+      await permissions.getOwnerId(ch.server_id), req.user.id, ch.server_id, ch.id
+    );
+    res.json({
+      channelId: ch.id,
+      categoryId: ch.category_id || null,
+      effective: [...effective],
+      overrides: await permissions.overridesFor('channel_permission_overrides', ch.id),
+      categoryOverrides: ch.category_id
+        ? await permissions.overridesFor('category_permission_overrides', ch.category_id)
+        : {},
+      all: Object.keys(permissions.PERMISSIONS),
+    });
+  } catch (e) { serviceError(res, e); }
+});
+
+router.put('/:channelId/overrides/:permission', auth.requireVerified, requirePerm('MANAGE_CHANNELS'), async (req, res, next) => {
+  try {
+    const ch = await pinChannel(req);
+    if (!ch) return fail(res, 'NOT_A_MEMBER', 'channel not found or not a member');
+    const { effect } = req.body || {};
+    await permissions.setOverride('channel_permission_overrides', ch.id, req.params.permission, effect);
+    events.emit(req.server.id, 'channel_updated', { channel: ch });
+    res.json({
+      channelId: ch.id,
+      overrides: await permissions.overridesFor('channel_permission_overrides', ch.id),
+    });
+  } catch (e) { serviceError(res, e); }
+});
+
+module.exports = router;
+module.exports.setGateway = setGateway;

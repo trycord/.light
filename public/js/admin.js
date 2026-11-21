@@ -390,12 +390,12 @@ async function settings(){
       return keys.length?panel(title,'',keys.map(([k,m])=>fieldFor(k,m)).join('')):'';
     }).join('')}
     </form>
-    <p class="lt-meta" style="margin-top:12px">Ownership attribution is embedded in the software and cannot be changed here. Some general settings require an application restart.</p>`;
+    <p class="lt-meta" style="margin-top:12px">Ownership attribution is embedded in the software and cannot be changed here. All settings apply immediately — no restart required.</p>`;
   view.querySelector('#saveSettings').addEventListener('click',async()=>{
     const form=view.querySelector('#settingsForm');const values={};
     for(const el of form.elements){if(!el.name)continue;values[el.name]=el.type==='checkbox'?el.checked:el.value;}
     try{const r=await api.updateAdminSettings(values);toast('Settings saved','success');
-      if(r.requiresRestart?.length)toast('Some changes require a restart: '+r.requiresRestart.join(', '),'warning');
+      if(r.appliedImmediately)toast('Settings applied immediately','success');
       settings();
     }catch(e){toast(e.message,'error');}
   });

@@ -1,0 +1,347 @@
+// /api/users/me — profile read/update.
+// /api/users/search, /presence, /:id — public directory (no private fields).
+const express = require('express');
+const db = require('../db');
+const auth = require('../middleware/auth');
+const rateLimit = require('../middleware/ratelimit');
+const { fail, serviceError } = require('../errors');
+const enforcement = require('../services/enforcement');
+const privacy = require('../services/privacy');
+const presenceService = require('../services/presence');
+const uploads = require('../services/uploads');
+const events = require('../services/events');
+const { singleImage } = require('../middleware/upload');
+const { escapeLike } = require('../util');
+
+let gateway = { getPresence: null, announcePresence: null };
+function setGateway(gw) {
+  gateway = Object.assign(gateway, gw);
+}
+
+const router = express.Router();
+router.use(auth);
+
+function publicUser(row) {
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name,
+    createdAt: row.created_at,
+    bio: row.bio || null,
+    avatarUrl: row.avatar_url || null,
+    bannerUrl: row.banner_url || null,
+    statusText: row.status_text || null,
+    // Server-controlled bot identity (platform admins set it). Rows that do
+    // not select the column default to false — never inferred client-side.
+    isBot: !!row.is_bot,
+  };
+}
+
+// The account's own chosen state plus the registry's answer about sockets,
+// narrowed to what a reader may see. A hidden presence and a disconnected one
+// are the same answer to everybody except the account itself.
+async function presenceOf(id) {
+  const all = await presenceOfMany([String(id)]);
+  return all[String(id)] || 'offline';
+}
+
+async function presenceOfMany(ids) {
+  return presenceService.forGateway(ids, gateway);
+}
+
+router.get('/me', async (req, res, next) => {
+  try {
+    const row = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    if (!row) return fail(res, 'NOT_FOUND', 'user not found');
+    // Email recovery state is private to the owner — never on publicUser.
+    // isAdmin mirrors the adminGuard table (presentation only; every admin
+    // route re-checks server-side, so a forged client value cannot escalate).
+    const isAdmin = await enforcement.isPlatformAdmin(req.user.id);
+    res.json(Object.assign(publicUser(row), {
+      email: row.email || null,
+      emailVerified: !!row.email_verified_at,
+      // When the instance cannot send mail, an address can never be
+      // confirmed. Clients use this to hide verification prompts and avoid
+      // locking messaging behind an action that is impossible here.
+      verificationRequired: auth.verificationEnforceable(),
+      isAdmin,
+      // The account's own answer about how it presents itself. Other people
+      // never receive 'invisible' as a distinct state; the owner does, because
+      // otherwise the choice they made would be invisible to them too.
+      presenceStatus: await presenceService.chosen(row.id),
+      presence: await presenceService.chosen(row.id),
+    }));
+  } catch (e) { next(e); }
+});
+
+// PATCH /api/users/me/presence — choose how the account presents itself.
+//
+// The choice is stored on the account, not only in the socket, because it has
+// to survive a reconnect: a person who chose invisible does not become visible
+// again when their laptop reconnects.
+router.patch('/me/presence', async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const value = body.status !== undefined ? body.status : body.presence;
+    let out;
+    try {
+      out = await presenceService.setStatus(req.user.id, value);
+    } catch (e) {
+      if (e && e.code === 'VALIDATION_ERROR') return fail(res, e.code, e.message);
+      throw e;
+    }
+    // The account's own other tabs follow immediately, and everybody allowed
+    // to see this account is told the new state. Fire-and-forget: a presence
+    // push must not fail the write that succeeded.
+    if (gateway.announcePresence) {
+      events.emitTo(req.user.id, 'presence', { presence: out.status });
+      gateway.announcePresence(req.user.id);
+    }
+    res.json(out);
+  } catch (e) { next(e); }
+});
+
+router.patch('/me', async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const out = {};
+
+    if ('displayName' in body) {
+      const displayName = String(body.displayName || '').trim();
+      if (displayName.length < 1 || displayName.length > 32) {
+        return fail(res, 'VALIDATION_ERROR', 'display name must be 1-32 characters');
+      }
+      out.display_name = displayName;
+    }
+    if ('bio' in body) {
+      const bio = String(body.bio == null ? '' : body.bio).trim();
+      if (bio.length > 200) return fail(res, 'VALIDATION_ERROR', 'bio must be 200 characters or fewer');
+      out.bio = bio || null;
+    }
+    if ('statusText' in body) {
+      const st = String(body.statusText == null ? '' : body.statusText).trim();
+      if (st.length > 64) return fail(res, 'VALIDATION_ERROR', 'status must be 64 characters or fewer');
+      out.status_text = st || null;
+    }
+    if (!Object.keys(out).length) return fail(res, 'VALIDATION_ERROR', 'nothing to update');
+
+    const sets = Object.keys(out).map((k) => k + ' = ?').join(', ');
+    const vals = Object.keys(out).map((k) => out[k]);
+    await db.run(`UPDATE users SET ${sets} WHERE id = ?`, vals.concat([req.user.id]));
+    const row = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    res.json(publicUser(row));
+  } catch (e) { next(e); }
+});
+
+// --- profile media (avatars / banners) -------------------------------------
+// singleImage now lives in middleware/upload so the profile and community
+// image routes share one definition of the field name and the size limit.
+
+function profileImageRoute(kind) {
+  return async (req, res, next) => {
+    try {
+      if (!req.file || !req.file.buffer) {
+        return fail(res, 'VALIDATION_ERROR', 'send the image as a multipart field named "file"');
+      }
+      const out = await uploads.storeProfileMedia({ userId: req.user.id, kind, buffer: req.file.buffer, originalName: req.file.originalname || '' });
+      if (out.error) return fail(res, out.error, out.message);
+      // Replace (and free) any previous image of the same kind.
+      const row = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+      const prev = kind === 'avatar' ? row.avatar_url : row.banner_url;
+      await db.run(`UPDATE users SET ${kind === 'avatar' ? 'avatar_url' : 'banner_url'} = ? WHERE id = ?`, [out.url, req.user.id]);
+      await uploads.removeProfileFile(prev).catch(() => {});
+      const updated = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+      events.emitTo(req.user.id, 'profile', { profile: publicUser(updated) });
+      res.status(201).json(publicUser(updated));
+    } catch (e) { next(e); }
+  };
+}
+
+function profileImageDelete(kind) {
+  return async (req, res, next) => {
+    try {
+      const row = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+      const prev = kind === 'avatar' ? row.avatar_url : row.banner_url;
+      await db.run(`UPDATE users SET ${kind === 'avatar' ? 'avatar_url' : 'banner_url'} = NULL WHERE id = ?`, [req.user.id]);
+      if (prev) await uploads.removeProfileFile(prev).catch(() => {});
+      const updated = await db.get('SELECT * FROM users WHERE id = ?', [req.user.id]);
+      events.emitTo(req.user.id, 'profile', { profile: publicUser(updated) });
+      res.json(publicUser(updated));
+    } catch (e) { next(e); }
+  };
+}
+
+router.post('/me/avatar', rateLimit({ windowMs: 60000, max: 10 }), singleImage, profileImageRoute('avatar'));
+router.delete('/me/avatar', profileImageDelete('avatar'));
+router.post('/me/banner', rateLimit({ windowMs: 60000, max: 10 }), singleImage, profileImageRoute('banner'));
+router.delete('/me/banner', profileImageDelete('banner'));
+
+// GET /api/users/search?q=alice — prefix-first directory, public fields only.
+router.get('/search', rateLimit({ windowMs: 60000, max: 60 }), async (req, res, next) => {
+  try {
+    const q = String(req.query.q || '').trim().slice(0, 32);
+    if (q.length < 2) return fail(res, 'VALIDATION_ERROR', 'type at least 2 characters to search');
+    const lit = escapeLike(q);
+    const rows = await db.all(
+      `SELECT id, username, display_name, created_at, bio, avatar_url, banner_url, status_text, is_bot FROM users
+       WHERE username LIKE ? ESCAPE '!' OR username LIKE ? ESCAPE '!'
+       ORDER BY CASE WHEN username LIKE ? ESCAPE '!' THEN 0 ELSE 1 END, username
+       LIMIT 20`,
+      [`${lit}%`, `%${lit}%`, `${lit}%`]
+    );
+    // Two settings are enforced here rather than in the client, because a
+    // filtered-out row that still reached the browser would be discoverable to
+    // anyone reading the response: a user who is not discoverable, and anyone
+    // in a block in either direction. Presence is filtered for the same reason -
+    // a hidden presence that arrived in the payload is not hidden.
+    const out = [];
+    for (const r of rows) {
+      if (!(await privacy.canDiscover(req.user.id, r.id))) continue;
+      const user = publicUser(r);
+      user.presence = (await privacy.canSeePresence(req.user.id, r.id)) ? await presenceOf(r.id) : null;
+      out.push(user);
+    }
+    res.json(out);
+  } catch (e) { next(e); }
+});
+
+// GET /api/users/presence?ids=a,b — online/offline derived from live sockets.
+router.get('/presence', async (req, res, next) => {
+  try {
+    const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 100);
+    // The same filter search already applies, applied here too: a hidden presence
+    // that still arrives in the payload is not hidden, and bulk is the easiest
+    // place to read one. null, not 'offline', so the caller cannot tell a
+    // withheld answer apart from a genuinely offline account.
+    const states = await presenceOfMany(ids);
+    const me = req.user.id;
+    const filtered = {};
+    for (const id of ids) {
+      filtered[id] = (await privacy.canSeePresence(me, id)) ? states[String(id)] || 'offline' : null;
+    }
+    res.json(filtered);
+  } catch (e) { next(e); }
+});
+
+// GET /api/users/:id — public profile plus my relationship to them.
+router.get('/:id', async (req, res, next) => {
+  try {
+    const row = await db.get(
+      'SELECT id, username, display_name, created_at, bio, avatar_url, banner_url, status_text, is_bot FROM users WHERE id = ?',
+      [req.params.id]
+    );
+    if (!row) return fail(res, 'NOT_FOUND', 'user not found');
+    const me = req.user.id;
+    const self = String(row.id) === String(me);
+    // The subject's profile_visibility (and a block in either direction) is
+    // enforced here, on the route that returns the profile, rather than only
+    // in the client that draws the page. A profile hidden in the interface
+    // but readable from the API is not hidden.
+    const view = await privacy.canViewProfile(me, row.id);
+    if (!view.allowed) return fail(res, 'PROFILE_PRIVATE', 'this profile is private');
+
+    // The owner sees the state they chose, including 'invisible'. Everybody
+    // else sees the presented state, and only when presence privacy allows it.
+    let presence = null;
+    if (self) presence = await presenceService.chosen(row.id);
+    else if (await privacy.canSeePresence(me, row.id)) presence = await presenceOf(row.id);
+    const profile = Object.assign(publicUser(row), { presence });
+    if (String(row.id) === String(me)) {
+      profile.relation = 'self';
+    } else {
+      const [friend, pending] = await Promise.all([
+        db.get('SELECT 1 FROM friendships WHERE user_id = ? AND friend_id = ?', [me, row.id]),
+        db.get(
+          `SELECT from_user_id FROM friend_requests
+           WHERE ((from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?))
+             AND status = 'pending'`,
+          [me, row.id, row.id, me]
+        ),
+      ]);
+      profile.relation = friend ? 'friend' : pending
+        ? (String(pending.from_user_id) === String(me) ? 'pending-out' : 'pending-in')
+        : 'none';
+
+      // The people both accounts know, and the communities both belong to.
+      // Both are facts about the viewer's own relationships as much as the
+      // subject's, which is why they are safe to show on a profile the viewer
+      // is already allowed to open.
+      const [mutual, mutualCount, shared] = await Promise.all([
+        db.all(
+          `SELECT u.id, u.username, u.display_name, u.avatar_url
+           FROM friendships mine
+           JOIN friendships theirs ON theirs.friend_id = mine.friend_id AND theirs.user_id = ?
+           JOIN users u ON u.id = mine.friend_id
+           WHERE mine.user_id = ?
+           ORDER BY u.username
+           LIMIT 12`,
+          [row.id, me]
+        ),
+        db.get(
+          `SELECT COUNT(*) AS n
+           FROM friendships mine
+           JOIN friendships theirs ON theirs.friend_id = mine.friend_id AND theirs.user_id = ?
+           WHERE mine.user_id = ?`,
+          [row.id, me]
+        ),
+        db.all(
+          `SELECT s.id, s.name, s.icon_url
+           FROM server_members mine
+           JOIN server_members theirs ON theirs.server_id = mine.server_id AND theirs.user_id = ?
+           JOIN servers s ON s.id = mine.server_id
+           WHERE mine.user_id = ?
+           ORDER BY s.name
+           LIMIT 12`,
+          [row.id, me]
+        ),
+      ]);
+      profile.mutualFriends = mutual.map((u) => ({
+        id: u.id,
+        username: u.username,
+        displayName: u.display_name,
+        avatarUrl: u.avatar_url || null,
+      }));
+      profile.mutualFriendCount = Number((mutualCount && mutualCount.n) || 0);
+      profile.sharedCommunities = shared.map((s) => ({
+        id: s.id,
+        name: s.name,
+        iconUrl: s.icon_url || null,
+      }));
+    }
+    // Whether the viewer has blocked them. The profile page needs this to label
+    // the control honestly: without it the only way to find out is to press
+    // Block and read the error, which is a terrible way to learn a fact about
+    // your own account. It reveals nothing about them - only what the viewer has
+    // already done - and it stays a boolean, so the blocked party learns nothing
+    // from being looked up.
+    profile.blockedByViewer = await privacy.isBlocked(me, row.id);
+    // Community-aware profile: when the viewer names a server they both
+    // belong to, attach that community's membership (nickname, roles,
+    // joined date). Never leaks memberships of other servers.
+    const serverId = String(req.query.serverId || '');
+    if (serverId) {
+      const [mine, theirs] = await Promise.all([
+        db.get('SELECT nickname FROM server_members WHERE server_id = ? AND user_id = ?', [serverId, me]),
+        db.get('SELECT nickname, joined_at FROM server_members WHERE server_id = ? AND user_id = ?', [serverId, row.id]),
+      ]);
+      if (mine && theirs) {
+        const mroles = await db.all(
+          `SELECT r.id, r.name, r.color, r.position FROM member_roles mr
+           JOIN roles r ON r.id = mr.role_id
+           WHERE mr.server_id = ? AND mr.user_id = ? ORDER BY r.position DESC`,
+          [serverId, row.id]
+        );
+        profile.membership = {
+          serverId,
+          nickname: theirs.nickname || null,
+          joinedAt: theirs.joined_at,
+          roles: mroles.map((r) => ({ id: r.id, name: r.name, color: r.color || null })),
+        };
+      }
+    }
+    res.json(profile);
+  } catch (e) { serviceError(res, e); }
+});
+
+module.exports = router;
+module.exports.setGateway = setGateway;

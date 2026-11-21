@@ -1,0 +1,281 @@
+// Server lifecycle: create (server + owner membership + roles + category + channels),
+// update settings, delete (atomic cascade). All multi-row flows are transactional.
+const crypto = require('crypto');
+const db = require('../db');
+const { now, uuid } = require('../util');
+const roles = require('./roles');
+const slugs = require('./slugs');
+const { Codes } = require('../errors');
+const { effectivePermissions, isKnown } = require('./permissions');
+
+const LIST_COLS = `
+  s.id, s.name, s.description, s.owner_id, s.join_code,
+  s.is_public, s.is_discoverable, s.icon_url, s.banner_url, s.created_at,
+  s.enforcement_state,
+  s.slug,
+  (SELECT COUNT(*) FROM server_members m WHERE m.server_id = s.id) AS member_count,
+  (SELECT COUNT(*) FROM channels c WHERE c.server_id = s.id) AS channel_count,
+  (SELECT MAX(m2.created_at) FROM messages m2
+     JOIN channels c2 ON c2.id = m2.channel_id WHERE c2.server_id = s.id) AS last_activity_at`;
+
+async function withAccess(row, userId, perms) {
+  if (!row) return null;
+  row.is_public = !!row.is_public;
+  row.is_discoverable = !!row.is_discoverable;
+  row.is_owner = row.owner_id === userId;
+  // Callers that already hold the computed set (middleware req.access,
+  // the batched mine() flow) pass it in; otherwise compute as before.
+  row.permissions = perms || [...(await effectivePermissions(userId, row.id))];
+  return row;
+}
+
+// One roles query for a whole server list instead of two queries per
+// row (owner lookup + roles). Returns serverId -> permission array.
+async function rolesForServers(userId, serverIds) {
+  const out = {};
+  const ids = (serverIds || []).filter(Boolean).slice(0, 500);
+  if (!ids.length) return out;
+  const ph = ids.map(() => '?').join(',');
+  const rows = await db.all(
+    `SELECT mr.server_id AS sid, r.permissions FROM member_roles mr
+     JOIN roles r ON r.id = mr.role_id
+     WHERE mr.user_id = ? AND mr.server_id IN (${ph})`,
+    [userId].concat(ids)
+  );
+  for (const r of rows) {
+    try {
+      for (const p of JSON.parse(r.permissions)) {
+        if (isKnown(p)) ((out[r.sid] = out[r.sid] || new Set())).add(p);
+      }
+    } catch { /* ignore malformed role row */ }
+  }
+  for (const k of Object.keys(out)) out[k] = [...out[k]];
+  return out;
+}
+
+function isUniqueViolation(e) {
+  const msg = String((e && e.message) || '');
+  return /UNIQUE|unique|ER_DUP_ENTRY/i.test(msg) || e.code === 'ER_DUP_ENTRY' || e.code === 'SQLITE_CONSTRAINT_UNIQUE';
+}
+
+async function create({ name, description, joinCode, isPublic, isDiscoverable }, owner) {
+  const cleanName = String(name || '').trim().slice(0, 64);
+  if (!cleanName) throw { code: 'VALIDATION_ERROR', message: 'Name required' };
+  if (await require('./enforcement').isRestricted(owner.id, 'CREATE_COMMUNITIES')) {
+    throw {
+      code: 'FEATURE_RESTRICTED',
+      message: 'creating communities is restricted on your account',
+    };
+  }
+  // A short code in the shortener style when the creator did not choose one.
+  const GEN_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let code = String(joinCode || '').trim().toLowerCase();
+  if (!code) {
+    const buf = crypto.randomBytes(7);
+    code = '';
+    for (let i = 0; i < 7; i++) code += GEN_CHARS[buf[i] % GEN_CHARS.length];
+  }
+  if (!/^[a-z0-9-]{3,32}$/.test(code)) {
+    throw { code: 'VALIDATION_ERROR', message: 'Join code must be 3-32 characters: a-z, 0-9, -' };
+  }
+  try {
+    return await db.transaction(async (t) => {
+      const serverId = uuid();
+      await t.run(
+        `INSERT INTO servers
+         (id, name, description, owner_id, join_code, is_public, is_discoverable, created_at, slug)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [serverId, cleanName, String(description || '').slice(0, 500), owner.id, code,
+          isPublic ? 1 : 0, isDiscoverable === undefined ? (isPublic ? 1 : 0) : (isDiscoverable ? 1 : 0), now(),
+          await slugs.forServer(cleanName)]
+      );
+      await t.run(
+        'INSERT INTO server_members (id, user_id, server_id, nickname, joined_at) VALUES (?, ?, ?, ?, ?)',
+        [uuid(), owner.id, serverId, owner.username, now()]
+      );
+      // Seeds the single @everyone baseline. The owner is NOT given a role:
+      // ownership itself grants every permission, so an extra role would be
+      // redundant at best and misleading at worst.
+      await roles.createDefaults(serverId, t);
+      const catId = uuid();
+      await t.run('INSERT INTO categories (id, server_id, name, position) VALUES (?, ?, ?, ?)', [catId, serverId, 'Text Channels', 0]);
+      const channelId = uuid();
+      const defaultChannel = 'general';
+      await t.run(
+        'INSERT INTO channels (id, server_id, category_id, name, topic, type, position, slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [channelId, serverId, catId, defaultChannel, 'General chat', 'text', 0, await slugs.forChannel(defaultChannel, serverId)]
+      );
+      // The slugs come back too: a client that has just created a community has
+      // to build a link immediately, and without them the only addressable form
+      // is the UUID it would otherwise have to round-trip for.
+      const row = await t.get('SELECT slug FROM servers WHERE id = ?', [serverId]);
+      return { serverId, joinCode: code, channelId, slug: row.slug, channelSlug: defaultChannel };
+    });
+  } catch (e) {
+    // Service-shaped errors pass through; raw driver errors get translated.
+    if (e && e.code && Codes[e.code]) throw e;
+    if (isUniqueViolation(e)) throw { code: 'CONFLICT', message: 'Join code taken' };
+    throw e;
+  }
+}
+
+async function detail(serverId, userId, perms) {
+  const row = await db.get(
+    `SELECT ${LIST_COLS},
+      (SELECT COUNT(*) FROM messages m2
+         JOIN channels c2 ON c2.id = m2.channel_id WHERE c2.server_id = s.id) AS message_count,
+      (SELECT COUNT(*) FROM roles r WHERE r.server_id = s.id) AS role_count,
+       u.username AS owner_name, u.display_name AS owner_display
+    FROM servers s JOIN users u ON u.id = s.owner_id WHERE s.id = ?`,
+    [serverId]
+  );
+  return withAccess(row, userId, perms);
+}
+
+// The community's own settings, as they stand.
+//
+// The PATCH route writes these, and a setting that can be written but not
+// read is a setting the interface cannot show: the box is empty, the
+// operator types what they think is there, and the write replaces whatever
+// was actually there. They are in the community's detail rather than in the
+// community's list, because a list of communities does not need every
+// community's rules in it.
+async function settings(serverId) {
+  const row = await db.get(
+    `SELECT welcome_content, welcome_enabled, guidelines,
+            notification_defaults, interaction_settings
+     FROM servers WHERE id = ?`,
+    [serverId]
+  );
+  if (!row) return null;
+  return {
+    welcomeContent: row.welcome_content || '',
+    welcomeEnabled: !!row.welcome_enabled,
+    guidelines: row.guidelines || '',
+    notificationDefaults: row.notification_defaults || '',
+    interactionSettings: row.interaction_settings || '',
+  };
+}
+
+async function mine(userId) {
+  const rows = await db.all(
+    `SELECT ${LIST_COLS} FROM servers s
+     JOIN server_members m ON m.server_id = s.id
+     WHERE m.user_id = ? ORDER BY s.created_at DESC`,
+    [userId]
+  );
+  // Owners bypass roles by contract; one query covers every other row.
+  const owners = new Set(rows.filter((r) => r.owner_id === userId).map((r) => r.id));
+  const batched = await rolesForServers(userId, rows.filter((r) => !owners.has(r.id)).map((r) => r.id));
+  return Promise.all(rows.map((r) => withAccess(r, userId, owners.has(r.id) ? ['*'] : (batched[r.id] || []))));
+}
+
+async function update(serverId, patch) {
+  const sets = [];
+  const vals = [];
+  if (patch.name !== undefined) {
+    if (!String(patch.name).trim()) throw { code: 'VALIDATION_ERROR', message: 'Name cannot be empty' };
+    sets.push('name = ?');
+    const name = String(patch.name).slice(0, 64);
+    vals.push(name);
+    // The slug follows the name, so a renamed community has a URL that matches
+    // what it now calls itself. Excluded from itself so renaming to the same
+    // name is not treated as a collision with its own slug.
+    sets.push('slug = ?');
+    vals.push(await slugs.forServer(name, serverId));
+  }
+  if (patch.description !== undefined) {
+    sets.push('description = ?');
+    vals.push(String(patch.description).slice(0, 500));
+  }
+  if (patch.isPublic !== undefined) {
+    sets.push('is_public = ?');
+    vals.push(patch.isPublic ? 1 : 0);
+  }
+  if (patch.isDiscoverable !== undefined) {
+    sets.push('is_discoverable = ?');
+    vals.push(patch.isDiscoverable ? 1 : 0);
+  }
+  if (!sets.length) throw { code: 'VALIDATION_ERROR', message: 'Nothing to update' };
+  vals.push(serverId);
+  await db.run(`UPDATE servers SET ${sets.join(', ')} WHERE id = ?`, vals);
+  return db.get('SELECT * FROM servers WHERE id = ?', [serverId]);
+}
+
+async function remove(serverId) {
+  // Dependent rows cascade via foreign keys; one statement, atomic by itself.
+  await db.run('DELETE FROM servers WHERE id = ?', [serverId]);
+  return { ok: true };
+}
+
+// Hand a community to a new owner.
+//
+// The whole point of this is that an owner could not leave: `leave` refuses
+// for the owner, and nothing could change owner_id, so the only exit was
+// deleting the community. Ownership is a single column, so the invariants are
+// enforced by doing all of it in one transaction:
+//
+//   - the new owner is a current member (otherwise a community could end up
+//     owned by someone who cannot even see it)
+//   - the caller is the current owner (authorisation, re-checked inside the
+//     transaction rather than trusted from middleware)
+//   - the new owner is granted a top role, because a community whose owner
+//     holds no roles would be unadministrable
+//   - the old owner stays a member, and is demoted to a normal role so the
+//     community is never left with two owners
+//   - exactly one owner exists before and after, and never none in between
+async function transferOwnership(serverId, actorId, targetUserId) {
+  const target = String(targetUserId || '').trim();
+  if (!target) throw { code: 'VALIDATION_ERROR', message: 'A new owner is required' };
+  if (target === String(actorId)) {
+    throw { code: 'VALIDATION_ERROR', message: 'You already own this community' };
+  }
+  return db.transaction(async (t) => {
+    const srv = await t.get('SELECT id, owner_id FROM servers WHERE id = ?', [serverId]);
+    if (!srv) throw { code: 'NOT_FOUND', message: 'Community not found' };
+    if (String(srv.owner_id) !== String(actorId)) {
+      throw { code: 'PERMISSION_DENIED', message: 'Only the owner can transfer ownership' };
+    }
+    const member = await t.get(
+      'SELECT 1 AS ok FROM server_members WHERE server_id = ? AND user_id = ?',
+      [serverId, target]
+    );
+    if (!member) {
+      throw { code: 'NOT_A_MEMBER', message: 'The new owner must already be a member of this community' };
+    }
+
+    // The new owner inherits every permission from ownership alone, so there
+    // is no role to hand them: granting the top custom role would only give
+    // away power they already have and would make it look revocable.
+    //
+    // The outgoing owner keeps the community baseline and nothing else.
+    // Without this they would retain whatever authority they had been holding,
+    // which is not what transferring means.
+    const baseline = await t.get(
+      'SELECT id FROM roles WHERE server_id = ? AND is_default = 1 LIMIT 1',
+      [serverId]
+    );
+    if (baseline) {
+      await t.run(
+        'DELETE FROM member_roles WHERE server_id = ? AND user_id = ? AND role_id <> ?',
+        [serverId, actorId, baseline.id]
+      );
+      await t.run(
+        'INSERT ' + (t.dialect === 'mysql' ? 'IGNORE' : 'OR IGNORE') +
+        ' INTO member_roles (server_id, user_id, role_id) VALUES (?, ?, ?)',
+        [serverId, actorId, baseline.id]
+      );
+    }
+
+    // Single statement: one owner before, one after, never zero.
+    await t.run('UPDATE servers SET owner_id = ? WHERE id = ? AND owner_id = ?',
+      [target, serverId, actorId]);
+    const after = await t.get('SELECT id, owner_id, name FROM servers WHERE id = ?', [serverId]);
+    if (!after || String(after.owner_id) !== target) {
+      throw { code: 'CONFLICT', message: 'Ownership transfer did not apply' };
+    }
+    return { serverId: after.id, name: after.name, ownerId: target, previousOwnerId: String(actorId) };
+  });
+}
+
+module.exports = { create, detail, settings, mine, update, remove, transferOwnership };

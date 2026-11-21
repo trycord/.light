@@ -52,7 +52,16 @@ export function provisionOrder(orderId) {
 
     // The purchased software package determines the runtime and version.
     const software = order.package_id ? packageForProvisioning(order.package_id, order.package_version) : null;
-    const runtime = resolveRuntime(db, {
+    // Image-based packages (Trycord) carry the whole application in their
+    // approved custom image; the runtime catalogue is only a fallback.
+    const imageBased = software?.id === 'trycord';
+    const imageRef = imageBased ? 'trycord/light-trycord:1.0.0' : null;
+    const runtime = imageBased ? {
+      environmentId: 'node', environmentName: 'Trycord', version: software.version,
+      imageRef, command: software.startupTemplate || 'node src/server.js',
+      workingDir: '/app', exposedPorts: software.ports || ['9971/tcp'],
+      digest: '', runtimeEnv: {}, healthcheck: software.healthcheck || { path: '/api/health' }, security: {},
+    } : resolveRuntime(db, {
       environmentId: software?.runtimeId || order.environment_id,
       version: software?.runtimeVersion || order.runtime_version,
     });

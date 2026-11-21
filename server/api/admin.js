@@ -191,15 +191,20 @@ export function adminRoutes() {
   }));
   router.post('/system/restart', requirePermission('settings.write'), asyncRoute(async (req, res) => {
     if (str(req.body?.confirm, 40) !== 'RESTART') throw badRequest('confirmation_required');
-    audit(req, 'admin.system.restart', 'system', 'default', {});
-    res.json({ ok: true, message: 'Restarting control plane…' });
-    // Respond first, then hand off to systemd (or exit for process managers with
-    // a restart policy). Never block the response on the restart itself.
+    audit(req, 'admin.system.restart', 'system', 'default', { scope: 'full-product' });
+    res.json({ ok: true, message: 'Restarting the full .light stack (control plane + Shade)…' });
+    // Restart the WHOLE product: control plane, Shade agent, and the watchdog.
+    // sudo -n is used for Shade because it needs Docker socket access. If it is
+    // unavailable, the control plane still restarts via its systemd policy.
     setTimeout(() => {
       try {
-        const child = spawn('systemctl', ['--user', 'restart', 'light-cp'], { detached: true, stdio: 'ignore' });
+        const script = '/home/ultim/.light/scripts/restart-all.sh';
+        const child = spawn('sudo', ['-n', 'bash', script], { detached: true, stdio: 'ignore' });
         child.unref();
-        child.on('error', () => process.exit(0));
+        child.on('error', () => {
+          try { spawn('systemctl', ['--user', 'restart', 'light-control.service'], { detached: true, stdio: 'ignore' }).unref(); } catch {}
+          process.exit(0);
+        });
       } catch { process.exit(0); }
     }, 800);
   }));
@@ -272,7 +277,9 @@ export function adminRoutes() {
     const values = req.body?.settings && typeof req.body.settings === 'object' ? req.body.settings : req.body || {};
     const settings = updateSettings(values);
     audit(req, 'admin.settings.update', 'settings', 'default', { keys: Object.keys(values) });
-    res.json({ settings, requiresRestart: ['PLATFORM_DOMAIN','CONTROL_BASE_URL','ALLOW_SIGNUP','ALLOW_CUSTOM_PLANS'].filter((k) => k in values) });
+    // All settings are read live from the in-process cache on every request —
+    // no restart needed for any config change.
+    res.json({ settings, appliedImmediately: true });
   }));
 
   /* ---------- Orders & provisioning ---------- */

@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#18191D" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Trycord">
+  <link rel="apple-touch-icon" href="/assets/trycord-assets/app/trycord-app-icon.svg">
+  <title>Security: how Trycord is built and how to report a vulnerability</title>
+  <meta name="description" content="How Trycord handles sign-in, permissions, uploads and moderation on the server, which versions are supported, and the private route for reporting a vulnerability.">
+  <link rel="icon" href="/assets/trycord-assets/app/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/design-tokens.css">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="wrap masthead">
+      <a class="brand" href="/">
+        <svg class="mark" viewBox="0 0 100 100" role="img" aria-hidden="true" focusable="false">
+          <path d="M50 9 L88 78 Q90 82 85 82 L65 82 L50 56 L35 82 L15 82 Q10 82 12 78 Z" fill="currentColor"/>
+          <path d="M39 70 L50 51 L61 70 Z" fill="var(--cutout)"/>
+          <path d="M49 31 L67 31 L67 40 L58 40 L58 49 L49 49 Z" fill="var(--cutout)"/>
+          <circle cx="72" cy="58" r="7" fill="var(--cutout)"/>
+        </svg>
+        <span class="brand-word">Trycord</span>
+      </a>
+
+      <button class="menu-toggle" type="button" data-menu-toggle aria-controls="site-nav" aria-expanded="false" aria-label="Open menu">
+        <svg class="icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></g></svg>
+      </button>
+
+      <nav class="site-nav" id="site-nav" aria-label="Primary">
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Product
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu nav-menu--wide">
+            <div class="nav-menu-grid">
+              <a href="/features"><strong>Features</strong><span>Channels, roles, moderation and more.</span></a>
+              <a href="/download"><strong>Download</strong><span>Get the desktop app for your computer.</span></a>
+              <a href="/status"><strong>Status</strong><span>Live health for this instance.</span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Docs
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu nav-menu--wide">
+            <div class="nav-menu-grid">
+              <a href="/docs"><strong>Documentation</strong><span>Run and configure your own instance.</span></a>
+              <a href="/install"><strong>Install</strong><span>The short version of the install.</span></a>
+              <a href="/faq"><strong>FAQ</strong><span>The questions people ask most.</span></a>
+              <a href="/support"><strong>Support</strong><span>Get help and reach the project.</span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Developers
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu">
+            <a href="/developers"><strong>Developer guide</strong><span>Build a bot with the API and the SDK.</span></a>
+            <a href="/developers#the-api-reference"><strong>API reference</strong><span>The routes a bot uses.</span></a>
+            <a href="/developers#the-sdk-trycord-botjs"><strong>SDK</strong><span>The client for those routes.</span></a>
+            <a href="https://github.com/trycord/.trycord" target="_blank" rel="noopener"><strong>Source code</strong><span>The whole repository.</span></a>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Community
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu nav-menu--wide">
+            <div class="nav-menu-grid">
+              <a href="/communities"><strong>Communities</strong><span>Browse public communities.</span></a>
+              <a href="/instances"><strong>Instances</strong><span>Find an instance to join.</span></a>
+              <a href="https://discord.gg/dSF7eqsJuP" target="_blank" rel="noopener"><strong>Discord</strong><span>Join the community chat.</span></a>
+              <a href="/trust-and-safety"><strong>Trust and safety</strong><span>Rules, reporting, and appeals.</span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            About
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu">
+            <a href="/about"><strong>About Trycord</strong><span>Why Trycord exists and how it's built.</span></a>
+            <a href="/changelog"><strong>Changelog</strong><span>What's shipped recently.</span></a>
+            <a href="/roadmap"><strong>Roadmap</strong><span>Where the project is going.</span></a>
+            <a href="/security"><strong>Security</strong><span>How to report a vulnerability.</span></a>
+          </div>
+        </div>
+
+        <div class="nav-mobile-actions">
+          <a class="btn btn-ghost btn-sm" href="/app/" data-app-link>Open the app</a>
+          <a class="btn btn-ghost btn-sm" href="/register">Create account</a>
+          <a class="btn btn-primary btn-sm" href="/login" data-signin>Sign in</a>
+        </div>
+      </nav>
+
+      <div class="masthead-actions">
+        <button class="theme-toggle" type="button" data-theme-toggle hidden aria-pressed="false" aria-label="Switch between the light and dark theme">
+          <svg class="icon icon-sun" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg>
+          <svg class="icon icon-moon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></g></svg>
+        </button>
+        <a class="btn btn-ghost btn-sm" href="/register">Create account</a>
+        <a class="btn btn-primary btn-sm" href="/login" data-signin>Sign in</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="page" data-crumbs="Project">
+    <div class="wrap">
+      <div class="page-head">
+        <p class="kicker">Security</p>
+        <h1>Security</h1>
+        <p class="lede">
+          Trycord enforces who can do what on the server, not in the browser.
+          The server decides, and the interface only shows what you are
+          allowed to do. This page covers how the pieces are handled, which
+          versions are supported, and the private route for reporting a
+          problem.
+        </p>
+      </div>
+      <div class="prose-layout">
+        <article class="prose">
+          <!-- page:begin -->
+          <div class="draft-note" role="note">
+            <strong>Legal review required before publication.</strong> This
+            document comes from the Trycord project as a starting point for an
+            instance. It is not legal advice, and nobody has reviewed it for the
+            instance serving it. The fields marked <code>OPERATOR</code> are
+            facts only the operator can supply: a security contact for the
+            instance, and the disclosure terms the operator commits to. Fill
+            them in, and have a qualified lawyer read the result, before
+            presenting this document as binding.
+            The contact points in these documents are the project's own. If you run your own
+            instance, replace them with yours before you publish them.
+          </div>
+          <p class="small muted">
+            <strong>Version:</strong> <code>1.0</code> &middot;
+            <strong>Template last revised:</strong> <code>2026-09-20</code> &middot;
+            <strong>Effective on this instance:</strong>
+            <span class="op-field" data-op="effective-date">OPERATOR: the date this page takes effect on this instance</span>
+          </p>
+
+          <h2>1. Sign-in</h2>
+          <p>
+            Passwords are hashed before they are stored, and are never kept in
+            a form the server could hand back. The work factor is 12 by
+            default and can be raised per instance. Sessions use signed tokens
+            with an individual identifier, so one session can be revoked and
+            all of them can be revoked at once, and revoking them also
+            disconnects any live connection opened by the old session.
+            Optional two-step authentication adds a second factor for an
+            account that wants one.
+          </p>
+          <p>
+            Email verification and password recovery are supported. A
+            self-hosted instance with no mail configured sends no mail at all,
+            which means it also cannot verify addresses or reset passwords by
+            email; the operator has to handle those by hand.
+          </p>
+
+          <h2>2. Permissions</h2>
+          <p>
+            Community roles and administrative powers are checked on the
+            server for every request. The client never decides for itself what
+            you may do; it draws the answer the server gives. A permission
+            that was misspelled in configuration is a startup error rather
+            than a silent grant or a silent refusal.
+          </p>
+
+          <h2>3. Uploads</h2>
+          <p>
+            Avatars and file attachments are served through routes that check
+            who is asking, not from a public folder anyone can browse. Uploads
+            are identified by their contents rather than by the name the
+            sender supplied, and a file the server cannot place is served as a
+            download, so a browser is never asked to interpret bytes the
+            server did not recognise. Avatars, banners and community icons
+            must be images. The size limit is a per-instance setting, and
+            uploads can be switched off entirely.
+          </p>
+
+          <h2>4. Rate limits and abuse controls</h2>
+          <p>
+            Registration, email verification, direct messages and other
+            abuse-prone endpoints are rate limited per account and per
+            address, with the limits configurable per instance. The limits are
+            a speed bump, not a defence: they make casual abuse inconvenient
+            and they do nothing about a determined attacker.
+          </p>
+
+          <h2>5. Moderation and records</h2>
+          <p>
+            Reports, appeals and administrative actions are written to a
+            server-side log that only people permitted to see it can read. An
+            action records who took it and when, and an appeal creates a
+            record an administrator can act on rather than a message in a
+            private inbox.
+          </p>
+
+          <h2>6. Federation</h2>
+          <p>
+            Federation is off unless an operator turns it on. Where it is on,
+            a remote instance is not trusted: it cannot read a private
+            channel, cannot see a local ban, and cannot grant itself local
+            administrative rights. Material that arrives over federation is
+            still content on this instance, and the rules in the
+            <a href="/guidelines">acceptable use rules</a> apply to it in full,
+            including the prohibition on child sexual abuse material. The
+            <a href="/federation-policy">Federation Policy</a> describes what
+            an operator takes on when enabling it.
+          </p>
+
+          <h2>7. Transport security</h2>
+          <p>
+            Trycord speaks plain HTTP and expects to sit behind a proxy that
+            terminates TLS, except in local development. Transport encryption
+            is therefore the operator's responsibility. No method of
+            transmission is perfect, and no operator can promise absolute
+            security.
+          </p>
+
+          <h2>8. Supported versions</h2>
+          <p>
+            Trycord is developed continuously on <code>main</code>. Security
+            fixes land on the current codebase and are included in later
+            releases. There is no long-term-support branch.
+          </p>
+          <table class="plain">
+            <thead><tr><th>Component</th><th>Supported</th></tr></thead>
+            <tbody>
+              <tr><td>Server (<code>main</code>)</td><td>Yes</td></tr>
+              <tr><td>Web client (<code>main</code>)</td><td>Yes</td></tr>
+              <tr><td>Latest desktop release</td><td>Yes</td></tr>
+              <tr><td>Older desktop releases</td><td>No</td></tr>
+              <tr><td>Unmaintained forks or modified builds</td><td>No</td></tr>
+            </tbody>
+          </table>
+          <p>
+            If you self-host Trycord, keep your server updated with the latest
+            supported code and apply fixes promptly. The
+            <a href="/changelog">changelog</a> is where releases are described.
+          </p>
+
+          <h2>9. Reporting a vulnerability</h2>
+          <p>
+            Report privately, and only when it could allow unauthorized
+            access, data exposure, privilege escalation, or other harm to
+            users or self-hosted instances.
+          </p>
+          <p>
+            <strong>Preferred route:</strong> use GitHub's private
+            vulnerability reporting on the repository. Do <strong>not</strong>
+            open a public issue for a security vulnerability.
+          </p>
+          <p>
+            A useful report says what you found, where, how to reproduce it,
+            and what the impact could be. If you can, include the version or
+            commit, the configuration that matters, and a minimal
+            reproduction.
+          </p>
+          <p>
+            Please do not test against instances that have not agreed to it,
+            and do not access, change, or keep other people's data while
+            demonstrating an issue. Do not send material that is itself
+            illegal to possess, and do not include other people's personal data
+            in a report; a description is enough.
+          </p>
+          <p>
+            A security contact for this instance, if you want one besides the
+            project:
+            <span class="op-contact" data-op="security-contact">the project's Discord, discord.gg/dSF7eqsJuP</span>.
+            The terms the operator commits to on disclosure are
+            <span class="op-field" data-op="security-disclosure">OPERATOR: how long the operator takes to release a fix, and what it will tell the reporter</span>.
+          </p>
+
+          <h2>10. If you run an instance</h2>
+          <p>
+            Your users' security is your responsibility, because their data is
+            yours. Keep the server updated, set a unique
+            <code>JWT_SECRET</code>, put the service behind TLS, keep the
+            database and the upload directory off the public internet, and
+            review the settings that widen access before you turn them on. The
+            <a href="/docs">documentation</a> covers the options that have
+            security consequences.
+          </p>
+          <p>
+            A secret that is shared between two instances is a secret that
+            neither of them can rotate on its own. A default value left in
+            place is not a secret at all.
+          </p>
+          <!-- page:end -->
+        </article>
+        <aside class="toc" aria-label="On this page">
+          <p class="toc-title">On this page</p>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div class="footer-col footer-brand">
+        <a class="brand" href="/">
+          <svg class="mark" viewBox="0 0 100 100" role="img" aria-hidden="true" focusable="false">
+          <path d="M50 9 L88 78 Q90 82 85 82 L65 82 L50 56 L35 82 L15 82 Q10 82 12 78 Z" fill="currentColor"/>
+          <path d="M39 70 L50 51 L61 70 Z" fill="var(--cutout)"/>
+          <path d="M49 31 L67 31 L67 40 L58 40 L58 49 L49 49 Z" fill="var(--cutout)"/>
+          <circle cx="72" cy="58" r="7" fill="var(--cutout)"/>
+        </svg>
+          <span class="brand-word">Trycord</span>
+        </a>
+        <p>Private, self-hostable community messaging. One client, browser and desktop.</p>
+        <div class="footer-actions">
+          <a class="btn btn-primary btn-sm" href="/register">Create account</a>
+          <a class="btn btn-ghost btn-sm" href="/login" data-signin>Sign in</a>
+        </div>
+      </div>
+      <nav class="footer-col" aria-label="Product">
+        <h2 class="footer-heading">Product</h2>
+        <a href="/features">Features</a>
+        <a href="/download">Desktop app</a>
+        <a href="/status">Status</a>
+      </nav>
+      <nav class="footer-col" aria-label="Docs">
+        <h2 class="footer-heading">Docs</h2>
+        <a href="/docs">Self-hosting guide</a>
+        <a href="/install">Install</a>
+        <a href="/faq">FAQ</a>
+        <a href="/support">Support</a>
+      </nav>
+      <nav class="footer-col" aria-label="Developers">
+        <h2 class="footer-heading">Developers</h2>
+        <a href="/developers">Developer guide</a>
+        <a href="/developers#the-api-reference">API reference</a>
+        <a href="/developers#the-sdk-trycord-botjs">SDK</a>
+        <a href="https://github.com/trycord/.trycord" rel="noopener">Source code</a>
+      </nav>
+      <nav class="footer-col" aria-label="Community">
+        <h2 class="footer-heading">Community</h2>
+        <a href="/communities">Communities</a>
+        <a href="/instances">Instances</a>
+        <a href="https://discord.gg/dSF7eqsJuP" rel="noopener">Discord</a>
+        <a href="/trust-and-safety">Trust and safety</a>
+      </nav>
+      <nav class="footer-col" aria-label="About">
+        <h2 class="footer-heading">About</h2>
+        <a href="/about">About the project</a>
+        <a href="/changelog">Changelog</a>
+        <a href="/roadmap">Roadmap</a>
+        <a href="/licenses">Licences</a>
+      </nav>
+      <nav class="footer-col" aria-label="Legal">
+        <h2 class="footer-heading">Legal</h2>
+        <a href="/terms">Terms of service</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/cookies">Cookies</a>
+        <a href="/instances-terms">Instance terms</a>
+        <a href="/community-guidelines">Community rules</a>
+        <a href="/guidelines">Acceptable use</a>
+        <a href="/federation-policy">Federation policy</a>
+        <a href="/security">Security</a>
+      </nav>
+    </div>
+    <div class="wrap footer-bottom">
+      <span>&copy; <span data-year>2026</span> Trycord</span>
+      <span class="muted">Your instance, your conversations, your rules.</span>
+    </div>
+  </footer>
+
+  <script src="/js/public-api.js"></script>
+  <script src="/js/site.js"></script>
+</body>
+</html>

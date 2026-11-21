@@ -1,0 +1,893 @@
+// The voice session.
+//
+// One seat, one channel at a time, held in the in-house mesh the server runs
+// itself: audio flows browser to browser, and the server only relays offers,
+// answers and ICE between room members. Nothing here pretends a media server
+// exists; the instance's refusal reads in every state the dock can draw.
+//
+// Two facts shape the module. The roster is the server's truth, so the room is
+// polled while the session lives and diffed - a peer that disappears is closed,
+// not clung to. And each peer connection runs the standard perfect-negotiation
+// pattern, so a microphone granted after the join, or refused entirely, still
+// reaches the room through the same offer path.
+
+import Api from './api.js';
+import { on as onRealtime } from './realtime.js';
+
+const POLL_MS = 4000;
+
+/**
+ * The states a seat can be in, and what each of them is called.
+ *
+ * One list, so the dock on the desk and the sheet on the phone cannot
+ * disagree about what the call is doing. A state with no word is a state
+ * the reader cannot read.
+ */
+export const CONNECTION_STATES = {
+  idle: 'Not in a room',
+  joining: 'Joining the room',
+  connecting: 'Connecting',
+  connected: 'Connected',
+  alone: 'You are the only one here',
+  reconnecting: 'Reconnecting',
+  failed: 'The connection failed',
+  leaving: 'Leaving',
+};
+
+const state = {
+  // The joined channel, or null while idle.
+  channel: null,
+  joined: false,
+  muted: false,
+  deafened: false,
+  // True when the browser could not supply a microphone; the seat stays and hears.
+  listenOnly: false,
+  // The devices the reader can choose from, and the ones chosen.
+  //
+  // The list is what the browser says it has - not a list the instance
+  // guesses at - and a device that is unplugged afterwards is gone from the
+  // list rather than chosen silently.
+  inputs: [],
+  outputs: [],
+  inputDeviceId: '',
+  outputDeviceId: '',
+  // What the browser can do about the output: some browsers do not let a
+  // page choose the speaker, and the dock says so rather than offering a
+  // picker that does nothing.
+  canChooseOutput: false,
+  // Whether this seat is sharing its screen, and the stream it is sharing.
+  sharing: false,
+  shareStream: null,
+  // The screen a peer is sharing, by their id. The value is the media stream
+  // the browser sent, and it is there so the room can show it.
+  sharedScreens: {},
+  // [{ userId, speaking, connection: 'connecting' | 'live' | 'reconnecting', muted }]
+  participants: [],
+  // A room-level note the room view and the dock show as they are.
+  note: '',
+  // The state of this seat's connection, as the reader should see it:
+  //
+  //   idle          not in a room
+  //   joining       the seat is being taken
+  //   connecting    the peers are being connected
+  //   connected     somebody is there and the media is flowing
+  //   reconnecting  the connection was lost and is being made again
+  //   failed        the connection could not be made
+  //   leaving       the seat is being given up
+  //
+  // It is worked out from the peers rather than set by hand, so it cannot
+  // say "connected" while every peer is trying.
+  connection: 'idle',
+};
+
+const subscribers = new Set();
+export function subscribe(fn) {
+  subscribers.add(fn);
+  return () => subscribers.delete(fn);
+}
+
+function emit() {
+  // The connection state is worked out here, so every surface that listens
+  // hears the same one.
+  try { state.connection = connectionState(); } catch { /* the room is not ready */ }
+  for (const fn of Array.from(subscribers)) {
+    try { fn(state); } catch { /* a listener must not break the room */ }
+  }
+}
+
+// The state, read without subscribing - the views that poll on ticks use this
+// for their current-world checks.
+export function current() {
+  return state;
+}
+
+function note(text) {
+  state.note = text || '';
+  emit();
+}
+
+// ---- capabilities ------------------------------------------------------------
+
+let caps = null;
+let capsAsked = false;
+
+export async function capabilities(force) {
+  if (capsAsked && !force) return caps;
+  capsAsked = true;
+  try {
+    const res = await Api.voiceCapabilities();
+    const flags = (res && res.features && res.features.voiceVideo) || {};
+    caps = { enabled: !!flags.enabled, provider: flags.provider || '', detail: '' };
+  } catch {
+    // An unreachable backend is not the same as voice being switched off, and
+    // reading it that way would hide a real outage behind a flag.
+    caps = { enabled: false, provider: '', detail: 'Could not reach the server.' };
+  }
+  return caps;
+}
+
+// The cached answer, read synchronously by views that already waited for it.
+export function currentCaps() {
+  return caps;
+}
+
+// ---- media -------------------------------------------------------------------
+
+function mediaSupported() {
+  return typeof navigator !== 'undefined'
+    && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+    && typeof window.RTCPeerConnection === 'function';
+}
+
+let localStream = null;
+let audioContext = null;
+let selfWatch = null;
+let roomIceList = [];
+let localShare = null;
+
+const peers = new Map(); // userId -> { pc, polite, audio, watch, makingOffer }
+let unsubs = [];
+let pollTimer = 0;
+let pulseTimer = 0;
+let joining = false;
+
+let userIdLookup = () => '';
+export function setLocalUserId(id) {
+  userIdLookup = typeof id === 'function' ? id : () => id;
+}
+
+function myId() {
+  return String(userIdLookup() || '');
+}
+
+function signalTo(peerId, kind, payload) {
+  if (!state.channel) return Promise.resolve();
+  return Api.voiceMeshSignal(state.channel.id, { to: String(peerId), kind, payload })
+    .catch(() => {}); // a lost signal is retried by renegotiation
+}
+
+// ---- the devices -------------------------------------------------------------
+
+// Whether the browser can be asked for its devices at all.
+function devicesSupported() {
+  return typeof navigator !== 'undefined'
+    && !!(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices);
+}
+
+// The devices the reader can choose from.
+//
+// The list is what the browser reports, and the labels are only there after
+// the microphone has been granted: a browser does not name a device before
+// the reader has allowed one, and a list of "Default" is the truth before
+// that.
+async function readDevices() {
+  if (!devicesSupported()) return { inputs: [], outputs: [] };
+  let list = [];
+  try {
+    list = await navigator.mediaDevices.enumerateDevices();
+  } catch {
+    return { inputs: [], outputs: [] };
+  }
+  const inputs = [];
+  const outputs = [];
+  for (const device of list) {
+    if (device.kind === 'audioinput') {
+      inputs.push({ id: device.deviceId, label: device.label || 'Microphone' });
+    } else if (device.kind === 'audiooutput') {
+      outputs.push({ id: device.deviceId, label: device.label || 'Speaker' });
+    }
+  }
+  return { inputs, outputs };
+}
+
+// The devices, read and kept.
+export async function refreshDevices() {
+  const found = await readDevices();
+  state.inputs = found.inputs;
+  state.outputs = found.outputs;
+  // A browser that will not let a page choose the speaker says so with the
+  // absence of the method, and the dock does not offer a picker that does
+  // nothing.
+  state.canChooseOutput = typeof HTMLMediaElement !== 'undefined'
+    && typeof HTMLMediaElement.prototype.setSinkId === 'function';
+  emit();
+  return state;
+}
+
+// A microphone, from a chosen device.
+//
+// The device is asked for by name, and a refusal falls back to the default
+// one rather than leaving the reader with no microphone at all.
+async function openMicrophone(deviceId) {
+  const constraints = { audio: deviceId ? { deviceId: { exact: deviceId } } : true };
+  try {
+    return await navigator.mediaDevices.getUserMedia(constraints);
+  } catch {
+    return navigator.mediaDevices.getUserMedia({ audio: true });
+  }
+}
+
+// The track the reader is speaking with.
+function localTrack() {
+  if (!localStream) return null;
+  return localStream.getAudioTracks()[0] || null;
+}
+
+// The track the peers are hearing, replaced when the device changes.
+//
+// The track is replaced on the connection and not by renegotiating, so
+// changing the microphone does not make every peer offer and answer again.
+function replaceLocalTrack(track) {
+  if (!track) return;
+  for (const peer of peers.values()) {
+    for (const sender of peer.pc.getSenders ? peer.pc.getSenders() : []) {
+      if (sender.track && sender.track.kind === 'audio') {
+        sender.replaceTrack(track).catch(() => { /* renegotiation covers it */ });
+      }
+    }
+  }
+}
+
+/**
+ * Choose the microphone.
+ *
+ * The new device is asked for first, and only when it has actually been
+ * granted is the old one given up: a device that cannot be opened leaves
+ * the reader with the microphone they had.
+ */
+export async function setInputDevice(deviceId) {
+  if (!devicesSupported()) return state;
+  const wanted = String(deviceId || '');
+  let stream = null;
+  try {
+    stream = await openMicrophone(wanted);
+  } catch {
+    note('That microphone could not be opened; the one you had is still in use.');
+    emit();
+    return state;
+  }
+  const track = stream && stream.getAudioTracks()[0];
+  if (!track) {
+    note('That microphone offered no audio; the one you had is still in use.');
+    emit();
+    return state;
+  }
+  const old = localStream;
+  localStream = stream;
+  state.inputDeviceId = wanted;
+  state.listenOnly = false;
+  track.enabled = !state.muted;
+  replaceLocalTrack(track);
+  if (old) {
+    for (const oldTrack of old.getTracks()) {
+      try { oldTrack.stop(); } catch { /* already stopped */ }
+    }
+  }
+  selfWatch = speakingOf(stream);
+  await refreshDevices();
+  note('');
+  emit();
+  return state;
+}
+
+/**
+ * Choose the speaker.
+ *
+ * The choice is the browser's, not the page's: where a browser does not let
+ * a page choose the speaker, the dock says so and the browser's own
+ * settings are the way.
+ */
+export async function setOutputDevice(deviceId) {
+  const wanted = String(deviceId || '');
+  if (!state.canChooseOutput) {
+    note('This browser chooses the speaker itself; change it in the browser settings.');
+    emit();
+    return state;
+  }
+  let applied = false;
+  for (const peer of peers.values()) {
+    try {
+      if (typeof peer.audio.setSinkId === 'function') {
+        await peer.audio.setSinkId(wanted);
+        applied = true;
+      }
+    } catch { /* the browser refused this device */ }
+  }
+  state.outputDeviceId = applied ? wanted : '';
+  note(applied ? '' : 'That speaker could not be used; the one you had is still in use.');
+  emit();
+  return state;
+}
+
+// The devices, watched.
+//
+// A device that is unplugged while a call is running is gone from the list,
+// and the list says so rather than offering a device that is not there.
+function watchDevices() {
+  if (!devicesSupported() || !navigator.mediaDevices.ondevicechange) return;
+  navigator.mediaDevices.ondevicechange = () => { refreshDevices().catch(() => {}); };
+}
+
+// ---- sharing a screen --------------------------------------------------------
+
+// Whether this browser can share a screen at all.
+export function canShareScreen() {
+  return typeof navigator !== 'undefined'
+    && !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+}
+
+/**
+ * Start sharing this seat's screen.
+ *
+ * The screen is a video track, and in a mesh it goes to every peer: the
+ * picture is carried peer to peer like everything else. The browser asks the
+ * reader what to share, and the reader can stop it from the browser's own
+ * bar as well as from here.
+ */
+export async function startScreenShare() {
+  if (!canShareScreen()) {
+    note('This browser cannot share a screen.');
+    emit();
+    return state;
+  }
+  if (state.sharing) return state;
+  let stream = null;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+  } catch {
+    note('The screen was not shared; the browser said no.');
+    emit();
+    return state;
+  }
+  const track = stream && stream.getVideoTracks()[0];
+  if (!track) {
+    note('The screen was not shared; there was no picture in it.');
+    emit();
+    return state;
+  }
+  localShare = stream;
+  state.sharing = true;
+  state.shareStream = stream;
+  // The track goes to every peer, and the connection renegotiates for it.
+  for (const peer of peers.values()) {
+    try { peer.pc.addTrack(track, stream); } catch { /* renegotiation covers it */ }
+  }
+  // The reader can stop sharing from the browser's own bar, and the room has
+  // to hear about it.
+  track.addEventListener('ended', () => { stopScreenShare().catch(() => {}); });
+  note('You are sharing your screen.');
+  emit();
+  return state;
+}
+
+/**
+ * Stop sharing this seat's screen.
+ *
+ * The track is taken off every peer and the camera light goes out - the
+ * browser's own capture stops with it.
+ */
+export async function stopScreenShare() {
+  if (!state.sharing && !localShare) return state;
+  const stream = localShare;
+  localShare = null;
+  state.sharing = false;
+  state.shareStream = null;
+  if (stream) {
+    for (const track of stream.getTracks()) {
+      try { track.stop(); } catch { /* already stopped */ }
+    }
+  }
+  for (const peer of peers.values()) {
+    for (const sender of peer.pc.getSenders ? peer.pc.getSenders() : []) {
+      if (sender.track && sender.track.kind === 'video') {
+        sender.replaceTrack(null).catch(() => { /* renegotiation covers it */ });
+      }
+    }
+  }
+  note('You stopped sharing your screen.');
+  emit();
+  return state;
+}
+
+// ---- one peer ----------------------------------------------------------------
+
+function speakingOf(stream) {
+  if (!audioContext || !stream || !stream.getAudioTracks().length) return null;
+  try {
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.6;
+    source.connect(analyser);
+    return { analyser, data: new Uint8Array(analyser.frequencyBinCount) };
+  } catch {
+    return null;
+  }
+}
+
+function peerRow(userId, person) {
+  const known = state.participants.find((p) => String(p.userId) === String(userId));
+  if (known) {
+    // The name is filled in when it is first heard, and kept after that: a
+    // person who joins the room is named in the room's list, and the list is
+    // the only place the name comes from.
+    if (person && !known.displayName) {
+      known.username = person.username;
+      known.displayName = person.displayName;
+      known.avatarUrl = person.avatarUrl;
+    }
+    return known;
+  }
+  const row = {
+    userId: String(userId),
+    speaking: false,
+    connection: 'connecting',
+    muted: false,
+    username: (person && person.username) || null,
+    displayName: (person && person.displayName) || null,
+    avatarUrl: (person && person.avatarUrl) || null,
+  };
+  state.participants.push(row);
+  return row;
+}
+
+function dropRow(userId) {
+  state.participants = state.participants.filter((p) => String(p.userId) !== String(userId));
+}
+
+function attachAudio(audio, muted) {
+  audio.muted = !!muted;
+  try {
+    audio.setAttribute('playsinline', '');
+    audio.setAttribute('autoplay', '');
+  } catch { /* best effort on the sink */ }
+  if (!audio.isConnected) document.body.appendChild(audio);
+}
+
+function buildPeer(userId) {
+  if (!mediaSupported() || !state.channel) return null;
+  if (peers.has(String(userId))) return peers.get(String(userId));
+
+  const pc = new window.RTCPeerConnection({ iceServers: roomIceList });
+  const audio = document.createElement('audio');
+  const row = peerRow(userId);
+  const peer = { pc, polite: String(userId) > myId(), audio, watch: null, makingOffer: false };
+  peers.set(String(userId), peer);
+
+  if (localStream) {
+    for (const track of localStream.getTracks()) {
+      try { peer.pc.addTrack(track, localStream); } catch { /* renegotiated later */ }
+    }
+  }
+
+  peer.pc.ontrack = (event) => {
+    const remote = event.streams && event.streams[0];
+    if (!remote) return;
+    // A video track is somebody sharing their screen. It is kept apart from
+    // the audio, so the room can show the picture without the microphone
+    // hearing it.
+    if (event.track && event.track.kind === 'video') {
+      state.sharedScreens[String(userId)] = remote;
+      emit();
+      return;
+    }
+    peer.audio.srcObject = remote;
+    attachAudio(peer.audio, state.deafened);
+    if (!peer.watch) peer.watch = speakingOf(remote);
+  };
+
+  peer.pc.onicecandidate = (event) => {
+    if (event.candidate) signalTo(userId, 'ice', { candidate: event.candidate.toJSON() });
+  };
+
+  peer.pc.onconnectionstatechange = () => {
+    const s = peer.pc.connectionState;
+    if (s === 'connected') row.connection = 'live';
+    else if (s === 'connecting' || s === 'new') row.connection = 'connecting';
+    else if (s === 'disconnected') row.connection = 'reconnecting';
+    else if (s === 'failed') failPeer(userId);
+    emit();
+  };
+
+  // Perfect negotiation: whoever needs to talk, offers; the polite side yields
+  // on a collision with a rollback rather than fighting one.
+  peer.pc.onnegotiationneeded = async () => {
+    try {
+      peer.makingOffer = true;
+      await peer.pc.setLocalDescription(await peer.pc.createOffer());
+      const desc = peer.pc.localDescription && peer.pc.localDescription.toJSON();
+      await signalTo(userId, 'offer', { sdp: desc });
+    } catch { /* a race loses to the incoming offer or answer */ } finally {
+      peer.makingOffer = false;
+    }
+  };
+
+  return peer;
+}
+
+function destroyPeer(userId) {
+  const peer = peers.get(String(userId));
+  if (!peer) return;
+  peers.delete(String(userId));
+  try { peer.pc.close(); } catch { /* already closed */ }
+  try { peer.audio.remove(); } catch { /* never attached */ }
+  dropRow(userId);
+  emit();
+}
+
+// A connection that failed.
+//
+// The peer is closed, but the row stays. It used to be dropped, and a
+// dropped row says nothing: the state could never be "failed", so a call
+// that could not be made sat on "Connecting" for as long as the reader
+// looked at it.
+function failPeer(userId) {
+  const peer = peers.get(String(userId));
+  if (!peer) return;
+  peers.delete(String(userId));
+  try { peer.pc.close(); } catch { /* already closed */ }
+  try { peer.audio.remove(); } catch { /* never attached */ }
+  const row = state.participants.find((p) => String(p.userId) === String(userId));
+  if (row) row.connection = 'failed';
+  emit();
+}
+
+function destroyPeers() {
+  for (const userId of Array.from(peers.keys())) destroyPeer(userId);
+}
+
+// ---- signaling frames ---------------------------------------------------------
+
+async function handleOffer(frame) {
+  const peer = buildPeer(frame.from);
+  if (!peer) return;
+  const description = frame.payload && frame.payload.sdp;
+  if (!description) return;
+  try {
+    const collision = !!peer.makingOffer || (peer.pc.signalingState !== 'stable');
+    if (!peer.polite && collision) return; // impolite side ignores a glare
+    if (collision) await peer.pc.setLocalDescription({ type: 'rollback' });
+    await peer.pc.setRemoteDescription(description);
+    await peer.pc.setLocalDescription(await peer.pc.createAnswer());
+    const desc = peer.pc.localDescription && peer.pc.localDescription.toJSON();
+    await signalTo(frame.from, 'answer', { sdp: desc });
+  } catch { /* a stale offer loses to the next round */ }
+}
+
+async function handleAnswer(frame) {
+  const peer = peers.get(String(frame.from));
+  const description = frame.payload && frame.payload.sdp;
+  if (!peer || !description) return;
+  try { await peer.pc.setRemoteDescription(description); } catch { /* stale answer */ }
+}
+
+function handleIce(frame) {
+  const peer = peers.get(String(frame.from));
+  const candidate = frame.payload && frame.payload.candidate;
+  if (!peer || !candidate) return;
+  try { peer.pc.addIceCandidate(candidate).catch(() => {}); } catch { /* late candidate */ }
+}
+
+function handleMute(frame) {
+  const row = state.participants.find((p) => String(p.userId) === String(frame.from));
+  if (!row) return;
+  row.muted = !!(frame.payload && frame.payload.muted);
+  emit();
+}
+
+function handleLeft(frame) {
+  if (state.channel && String(frame.channelId) === String(state.channel.id)) destroyPeer(frame.from);
+}
+
+function onStatus(status) {
+  if (status !== 'online' && status !== 'offline') return;
+  for (const row of state.participants) {
+    if (!peers.has(String(row.userId))) continue;
+    if (status === 'offline') row.connection = 'reconnecting';
+  }
+  emit();
+}
+
+// The state of this seat, from the peers.
+//
+// A seat with no peers is not connected to anybody, so it is connecting
+// rather than connected: the difference is what the reader is told.
+function connectionState() {
+  if (!state.joined) return state.connection === 'leaving' ? 'leaving' : 'idle';
+  const rows = (state.participants || []).filter((row) => String(row.userId) !== myId());
+  // Nobody else is in the room, so there is no connection being made. The
+  // room said "Connecting" for as long as the reader looked at it, which
+  // reads as a fault rather than as an empty room.
+  if (!rows.length) return 'alone';
+  if (rows.some((row) => row.connection === 'failed')) return 'failed';
+  if (rows.some((row) => row.connection === 'live')) return 'connected';
+  if (rows.some((row) => row.connection === 'reconnecting')) return 'reconnecting';
+  return 'connecting';
+}
+
+// ---- the room poll ------------------------------------------------------------
+
+async function refreshRoom() {
+  if (!state.channel) return;
+  let seat = null;
+  let ids = [];
+  let people = [];
+  try {
+    const room = await Api.voiceMeshPeers(state.channel.id);
+    ids = ((room && room.participants) || []).map(String);
+    // The people the room holds, with their names. The server sends them
+    // with the peers, so a room that lists "Unknown" for everybody is a
+    // thing that cannot happen.
+    people = (room && Array.isArray(room.people)) ? room.people : [];
+    if (myId() && !ids.includes(myId())) {
+      // The server dropped the seat: the socket blinked, or a moderator
+      // disconnected it. Re-seating is honest; pretending is not.
+      seat = await Api.voiceMeshJoin(state.channel.id);
+      ids = ((seat && seat.participants) || []).map(String);
+    }
+  } catch {
+    // A failed poll does not end the room. The transport may be between
+    // reconnects; the next tick judges again.
+    return;
+  }
+
+  const byId = new Map(people.map((person) => [String(person.userId), person]));
+  for (const userId of ids) {
+    peerRow(userId, byId.get(String(userId)));
+    if (!peers.has(String(userId))) buildPeer(userId);
+  }
+  for (const key of Array.from(peers.keys())) {
+    if (!ids.includes(String(key))) destroyPeer(key);
+  }
+  state.participants = state.participants
+    .filter((p) => String(p.userId) === myId() || ids.includes(String(p.userId)));
+  emit();
+}
+
+// ---- join and leave -------------------------------------------------------------
+
+export async function join(channel) {
+  if (joining || state.joined) return state;
+  joining = true;
+  try {
+    const c = await capabilities();
+    if (!c.enabled) {
+      note('Voice and video are off on this instance.');
+      emit();
+      return state;
+    }
+    if (!mediaSupported()) {
+      note('This browser cannot open a media connection, so the room cannot be joined from here.');
+      emit();
+      return state;
+    }
+
+    let seat;
+    try {
+      seat = await Api.voiceMeshJoin(channel.id);
+    } catch (e) {
+      note((e && e.message) || 'The room refused the join.');
+      emit();
+      return state;
+    }
+
+    roomIceList = (seat && seat.iceServers) || [];
+    state.channel = { id: channel.id, serverId: channel.serverId, name: channel.name, type: channel.type };
+    state.participants = [];
+    state.joined = true;
+    state.connection = 'connecting';
+    state.listenOnly = false;
+    state.muted = false;
+    state.deafened = false;
+    peerRow(myId());
+
+    // The microphone is asked for once the seat exists: a denial becomes a
+    // listen-only seat rather than a failed join, because hearing people is
+    // still worth something when your own mic is off the table.
+    try {
+      const stream = await openMicrophone(state.inputDeviceId);
+      localStream = stream;
+      state.listenOnly = !(stream && stream.getAudioTracks().length);
+      if (state.listenOnly) note('The microphone offered no audio; you are listening only.');
+    } catch {
+      localStream = null;
+      state.listenOnly = true;
+      note('The microphone was not granted; you are listening only. Speak from the dock once it is granted.');
+    }
+    // The devices are read once the microphone has been granted, because a
+    // browser does not name a device before that.
+    await refreshDevices();
+    watchDevices();
+
+    if (!audioContext) {
+      try { audioContext = new window.AudioContext(); } catch { audioContext = null; }
+      if (!audioContext && typeof window.webkitAudioContext === 'function') {
+        try { audioContext = new window.webkitAudioContext(); } catch { audioContext = null; }
+      }
+    }
+    if (localStream) selfWatch = speakingOf(localStream);
+
+    // The people already in the room, with their names, so the dock shows
+    // who is speaking from the first paint and not from the second one.
+    let people = [];
+    try {
+      const room = await Api.voiceMeshPeers(channel.id);
+      people = (room && Array.isArray(room.people)) ? room.people : [];
+    } catch {
+      // The names are not worth failing a join over: the room poll brings
+      // them a moment later.
+    }
+    const byId = new Map(people.map((person) => [String(person.userId), person]));
+    for (const userId of ((seat && seat.participants) || [])) {
+      peerRow(String(userId), byId.get(String(userId)));
+      buildPeer(String(userId));
+    }
+
+    unsubs.push(onRealtime('voice.mesh.offer', handleOffer));
+    unsubs.push(onRealtime('voice.mesh.answer', handleAnswer));
+    unsubs.push(onRealtime('voice.mesh.ice', handleIce));
+    unsubs.push(onRealtime('voice.mesh.mute', handleMute));
+    unsubs.push(onRealtime('voice.mesh.leave', handleLeft));
+    unsubs.push(onRealtime('status', onStatus));
+    pollTimer = setInterval(() => { refreshRoom().catch(() => {}); }, POLL_MS);
+    pulseTimer = setInterval(() => { pulse(); }, 220);
+
+    // What the reader should know about the room they are in.
+    //
+    // An empty ICE list means the instance has no relay to offer, and a call
+    // with no relay can only be made between two people on the same network.
+    // Saying so is better than a call that silently never connects.
+    const notes = [];
+    if (!roomIceList.length) {
+      notes.push('This instance has no relay to offer, so the call can only be made on one network.');
+    }
+    if (seat && seat.maxParticipants) {
+      notes.push('Peer to peer, up to ' + seat.maxParticipants + ' people in the room.');
+    }
+    note(notes.join(' '));
+    emit();
+    return state;
+  } finally {
+    joining = false;
+  }
+}
+
+export async function leave() {
+  state.connection = 'leaving';
+  const channel = state.channel;
+  if (channel) {
+    for (const peerId of peers.keys()) await signalTo(peerId, 'leave', {});
+  }
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = 0; }
+  if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = 0; }
+  for (const fn of unsubs) { try { fn(); } catch { /* gone */ } }
+  unsubs = [];
+  if (localStream) {
+    for (const track of localStream.getTracks()) {
+      try { track.stop(); } catch { /* already stopped */ }
+    }
+    localStream = null;
+  }
+  // The screen goes with the seat: a share nobody can stop is a share that
+  // follows the reader off the page.
+  if (localShare) {
+    for (const track of localShare.getTracks()) {
+      try { track.stop(); } catch { /* already stopped */ }
+    }
+    localShare = null;
+  }
+  state.sharing = false;
+  state.shareStream = null;
+  state.sharedScreens = {};
+  selfWatch = null;
+  destroyPeers();
+  state.channel = null;
+  state.joined = false;
+  state.connection = 'idle';
+  state.participants = [];
+  state.muted = false;
+  state.deafened = false;
+  state.listenOnly = false;
+  state.note = '';
+  emit();
+  if (channel) {
+    // The seat clears on the socket close as well; this ask is the polite one.
+    try { await Api.voiceMeshLeave(channel.id); } catch { /* the room forgets either way */ }
+  }
+  return state;
+}
+
+// ---- controls -------------------------------------------------------------------
+
+export function setMuted(muted) {
+  if (!state.joined) return state;
+  state.muted = !!muted;
+  if (localStream) {
+    for (const track of localStream.getAudioTracks()) track.enabled = !state.muted;
+  }
+  for (const peerId of peers.keys()) signalTo(peerId, 'mute', { muted: state.muted });
+  const self = state.participants.find((p) => String(p.userId) === myId());
+  if (self) { self.muted = state.muted; self.speaking = false; }
+  emit();
+  return state;
+}
+
+export function setDeafened(deafened) {
+  if (!state.joined) return state;
+  state.deafened = !!deafened;
+  for (const peer of peers.values()) attachAudio(peer.audio, state.deafened);
+  emit();
+  return state;
+}
+
+export function enableMic() {
+  // A refused microphone becomes a granted one without leaving the room; the
+  // added track triggers each peer's renegotiation through the same offer path.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.resolve(state);
+  return openMicrophone(state.inputDeviceId).then((stream) => {
+    const track = stream && stream.getAudioTracks()[0];
+    if (!track) return state;
+    localStream = stream;
+    state.listenOnly = false;
+    if (!audioContext) {
+      try { audioContext = new window.AudioContext(); } catch { audioContext = null; }
+    }
+    selfWatch = speakingOf(stream);
+    for (const peer of peers.values()) {
+      try { peer.pc.addTrack(track, stream); } catch { /* renegotiation covers it */ }
+    }
+    note('');
+    emit();
+    return state;
+  }).catch(() => {
+    note('The microphone was not granted; you are still listening only.');
+    return state;
+  });
+}
+
+export function pulse() {
+  if (audioContext && audioContext.state === 'suspended') audioContext.resume().catch(() => {});
+  for (const row of state.participants) {
+    if (String(row.userId) === myId()) {
+      row.speaking = !!(selfWatch && levelOf(selfWatch)) && !state.muted;
+      continue;
+    }
+    const peer = peers.get(String(row.userId));
+    row.speaking = !!(peer && peer.watch && levelOf(peer.watch));
+  }
+  emit();
+}
+
+function levelOf(watch) {
+  if (!watch || !watch.analyser) return false;
+  watch.analyser.getByteFrequencyData(watch.data);
+  let sum = 0;
+  for (const v of watch.data) sum += v;
+  return (sum / watch.data.length) > 12;
+}
+
+export default {
+  subscribe, capabilities, join, leave, setMuted, setDeafened, enableMic,
+  pulse, setLocalUserId, state, refreshDevices, setInputDevice, setOutputDevice,
+  canShareScreen, startScreenShare, stopScreenShare,
+};

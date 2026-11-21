@@ -39,6 +39,15 @@ export function domainsRoutes() {
     res.status(201).json({ domain: getDb().prepare('SELECT * FROM domains WHERE id = ?').get(did) });
   }));
 
+  // Retry Cloudflare route provisioning for a failed/pending domain.
+  router.post('/:id/retry-route', requireAdmin, asyncRoute(async (req, res) => {
+    const domain = getDb().prepare('SELECT * FROM domains WHERE id = ?').get(req.params.id);
+    if (!domain) throw notFound();
+    if (!isCloudflareConfigured()) throw badRequest('cloudflare_not_configured');
+    await provisionDomainRoute(domain, req);
+    res.json({ domain: getDb().prepare('SELECT * FROM domains WHERE id = ?').get(domain.id) });
+  }));
+
   router.post('/:id/verify', asyncRoute(async (req, res) => {
     const domain = getDb().prepare('SELECT * FROM domains WHERE id = ? AND team_id = ?').get(req.params.id, req.teamId);
     if (!domain) throw notFound();

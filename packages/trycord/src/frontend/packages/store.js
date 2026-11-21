@@ -1,0 +1,720 @@
+// Application state.
+//
+// One mutable object and one event bus. Views read from it and subscribe to the
+// event that concerns them; nothing reaches into another module's copy of the
+// same data, which is how two screens came to disagree about who was online.
+
+import Api, { ApiError, token, setToken, tokenClaims } from './api.js';
+
+const listeners = new Map();
+
+export function on(event, handler) {
+  if (!listeners.has(event)) listeners.set(event, new Set());
+  listeners.get(event).add(handler);
+  return () => listeners.get(event).delete(handler);
+}
+
+export function emit(event, payload) {
+  const set = listeners.get(event);
+  if (!set) return;
+  for (const handler of Array.from(set)) {
+    try { handler(payload); } catch (error) {
+      // A broken listener must not take the screen down with it, but it must
+      // not be invisible either.
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[trycord] listener for "' + event + '" failed', error);
+      }
+    }
+  }
+}
+
+export const State = {
+  ready: false,
+  online: false,
+  user: null,
+  instance: null,
+  // The legal documents in force on this instance, as the server publishes them:
+  // { termsVersion, privacyVersion, updated }. A registration is only accepted
+  // when it carries exactly these two versions, so they are kept here rather
+  // than written into a client.
+  legal: null,
+  announcements: [],
+  servers: [],
+  // The communities that live on other instances and that this instance knows
+  // about. They are references, not copies: they grant no role and no
+  // permission here, and the instance they live on stays the only authority
+  // over them. They are kept apart from `servers` because they are different
+  // things, and the community list shows them in a section of their own.
+  federated: [],
+  serverDetail: new Map(),
+  serverTree: new Map(),
+  serverEmojis: new Map(),
+  serverMembers: new Map(),
+  serverRoles: new Map(),
+  serverPermissions: new Map(),
+  dms: [],
+  friends: [],
+  friendRequests: { incoming: [], outgoing: [] },
+  notifications: {
+    items: [], unreadCount: 0, unreadByCategory: {},
+    hasMore: false, nextCursor: null, category: null,
+  },
+  dmInvites: [],
+  presence: new Map(),
+  typing: new Map(),
+  mutedChannels: new Set(),
+  hasToken: !!token(),
+  // The instance requires a second factor and this account has none. Set while
+  // loading the session; the router reads it to send the reader to enrolment
+  // rather than to every screen that is going to be refused.
+  mfaRequired: false,
+};
+
+// --- normalisation ----------------------------------------------------------
+//
+// The API is not uniform: /api/users/me answers camelCase, the member roster
+// answers snake_case, because they were written at different times. Normalising
+// here means a view never has to know which one it is holding.
+
+export function normalizeUser(raw) {
+  if (!raw) return null;
+  return {
+    id: raw.id,
+    username: raw.username,
+    displayName: raw.display_name || raw.displayName || raw.username,
+    nickname: raw.nickname || null,
+    avatarUrl: raw.avatar_url !== undefined ? raw.avatar_url : raw.avatarUrl,
+    bannerUrl: raw.banner_url !== undefined ? raw.banner_url : raw.bannerUrl,
+    bio: raw.bio || null,
+    statusText: raw.status_text !== undefined ? raw.status_text : raw.statusText,
+    presence: raw.presence !== undefined ? raw.presence : null,
+    presenceStatus: raw.presence_status || raw.presenceStatus || null,
+    lastActiveAt: raw.last_active_at || raw.lastActiveAt || null,
+    role: raw.role || null,
+    isBot: !!(raw.is_bot || raw.isBot),
+    isOwner: !!(raw.is_owner || raw.isOwner),
+    roles: raw.roles || [],
+    joinedAt: raw.joined_at || raw.joinedAt || null,
+    timeoutExpiresAt: raw.timeout_expires_at || null,
+    createdAt: raw.created_at || raw.createdAt || null,
+    email: raw.email || null,
+    emailVerified: raw.email_verified !== undefined ? raw.email_verified : raw.emailVerified,
+    isAdmin: !!raw.isAdmin,
+  };
+}
+
+export function nameOf(user) {
+  if (!user) return 'Unknown';
+  return user.nickname || user.displayName || user.username || 'Unknown';
+}
+
+export function handleOf(user) {
+  return user && user.username ? user.username : '';
+}
+
+// --- session ----------------------------------------------------------------
+
+export async function loadInstance() {
+  try {
+    State.instance = await Api.instance();
+  } catch {
+    State.instance = null;
+  }
+  emit('instance', State.instance);
+  return State.instance;
+}
+
+export async function loadLegal() {
+  try {
+    const legal = await Api.legal();
+    // The server answers with the two versions and the date they changed. A
+    // partial answer is no answer: a registration sent with half a version is
+    // refused, so an incomplete document is treated as none.
+    State.legal = legal && legal.termsVersion && legal.privacyVersion
+      ? {
+        termsVersion: String(legal.termsVersion),
+        privacyVersion: String(legal.privacyVersion),
+        updated: legal.updated || null,
+      }
+      : null;
+  } catch {
+    State.legal = null;
+  }
+  emit('legal', State.legal);
+  return State.legal;
+}
+
+export async function loadSession() {
+  if (!token()) {
+    State.user = null;
+    State.hasToken = false;
+    return null;
+  }
+  try {
+    State.user = normalizeUser(await Api.me());
+    State.hasToken = true;
+    State.mfaRequired = false;
+    emit('user', State.user);
+    return State.user;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.code === 'AUTH_REQUIRED')) {
+      State.mfaRequired = false;
+      signOut({ local: true });
+      return null;
+    }
+    if (error instanceof ApiError && error.code === 'MFA_REQUIRED') {
+      // The instance requires a second factor and this account has not enrolled
+      // one. The token is kept: it is valid, it is what the enrolment endpoints
+      // accept, and it is what lets the reader fix this without signing in again.
+      State.user = null;
+      State.hasToken = true;
+      State.mfaRequired = true;
+      throw error;
+    }
+    // A network failure is not a signed-out reader: keep the token and let the
+    // caller show a connection problem instead of a login screen.
+    throw error;
+  }
+}
+
+export function applyToken(value, user) {
+  setToken(value);
+  State.hasToken = !!value;
+  if (user) State.user = normalizeUser(user);
+}
+
+// Whether there is a credential to present, read from storage rather than from
+// the last session load: a tab whose token was cleared elsewhere is a guest even
+// if State.user has not caught up.
+export function signedIn() {
+  return !!token();
+}
+
+export function signOut(options) {
+  const opts = options || {};
+  clearCaches();
+  setToken(null);
+  State.hasToken = false;
+  State.user = null;
+  State.mfaRequired = false;
+  emit('signed-out', opts.reason || null);
+}
+
+function clearCaches() {
+  State.servers = [];
+  State.serverDetail.clear();
+  State.serverTree.clear();
+  treeInFlight.clear();
+  treeFetchedAt.clear();
+  State.serverEmojis.clear();
+  emojiInFlight.clear();
+  emojiFetchedAt.clear();
+  State.serverMembers.clear();
+  State.serverRoles.clear();
+  State.serverPermissions.clear();
+  State.dms = [];
+  State.dmInvites = [];
+  State.friends = [];
+  State.friendRequests = { incoming: [], outgoing: [] };
+  State.notifications = {
+    items: [], unreadCount: 0, unreadByCategory: {},
+    hasMore: false, nextCursor: null, category: null,
+  };
+  State.presence.clear();
+  presenceInFlight = null;
+  presenceFetchedAt = 0;
+  presenceWanted = [];
+  State.typing.clear();
+  State.mutedChannels.clear();
+}
+
+// Forgets everything this browser knows about the instance it was reading.
+//
+// Switching instances is not a sign-out: the reader may keep the old account
+// and come back to it. But the communities, conversations, people and presence
+// held here belong to that instance alone, and carrying them into another
+// instance's workspace would show one server's data under another's name.
+export function clearInstanceState() {
+  clearCaches();
+  emit('instance-cleared', null);
+}
+
+export function ownJti() {
+  const claims = tokenClaims();
+  return claims && claims.jti ? String(claims.jti) : null;
+}
+
+export async function logout() {
+  try { await Api.logout(); } catch { /* the session is going regardless */ }
+  signOut();
+}
+
+// --- communities ------------------------------------------------------------
+
+export async function refreshServers() {
+  State.servers = await Api.servers();
+  emit('servers', State.servers);
+  return State.servers;
+}
+
+// The communities that live on other instances.
+//
+// An instance that does not federate has none, and the answer is an empty
+// list rather than an error: federation is off, not broken.
+export async function refreshFederated() {
+  try {
+    const answer = await Api.continuumFederated();
+    // Only a list is a list. An instance that answers with something else -
+    // an error page, an object - must not put that in the community list.
+    State.federated = Array.isArray(answer) ? answer : [];
+  } catch (e) {
+    // The reader may not be allowed to ask, or this instance does not
+    // federate. Either way there is nothing to show, and the community list
+    // is not broken by it.
+    State.federated = [];
+  }
+  emit('federated', State.federated);
+  return State.federated;
+}
+
+export async function refreshServer(serverId) {
+  const detail = await Api.server(serverId);
+  State.serverDetail.set(serverId, detail);
+  emit('server', detail);
+  return detail;
+}
+
+const TREE_TTL_MS = 5000;
+const treeInFlight = new Map();
+const treeFetchedAt = new Map();
+
+// The emojis of each community, held beside its channel tree: the same
+// TTL and the same in-flight promise, because a conversation paints many
+// rows at once and each one asks the same question of the same list.
+const emojiInFlight = new Map();
+const emojiFetchedAt = new Map();
+
+// The picture behind a short code: the emoji named `name` in `serverId`, or
+// null when the community has none by that name. Renderers call this per
+// token, so it reads the map and never the wire.
+export function emojiOf(serverId, name) {
+  const list = serverId && name ? State.serverEmojis.get(serverId) : null;
+  if (!list) return null;
+  const wanted = String(name).toLowerCase();
+  return list.find((one) => one.name === wanted) || null;
+}
+
+export async function refreshServerEmojis(serverId, options) {
+  if (!serverId) return [];
+  const force = !!(options && options.force);
+  const fresh = emojiFetchedAt.get(serverId) && (Date.now() - emojiFetchedAt.get(serverId)) < TREE_TTL_MS;
+  if (!force && fresh) return State.serverEmojis.get(serverId) || [];
+  if (emojiInFlight.has(serverId)) return emojiInFlight.get(serverId);
+  const run = (async () => {
+    try {
+      const list = await Api.emojis(serverId);
+      State.serverEmojis.set(serverId, Array.isArray(list) ? list : []);
+      emojiFetchedAt.set(serverId, Date.now());
+      emit('emojis', { serverId, emojis: State.serverEmojis.get(serverId) });
+      return State.serverEmojis.get(serverId);
+    } finally {
+      emojiInFlight.delete(serverId);
+    }
+  })();
+  emojiInFlight.set(serverId, run);
+  return run;
+}
+
+export async function refreshServerTree(serverId, options) {
+  const force = !!(options && options.force);
+  const fresh = treeFetchedAt.get(serverId) && (Date.now() - treeFetchedAt.get(serverId)) < TREE_TTL_MS;
+  if (!force && fresh) return State.serverTree.get(serverId);
+  if (treeInFlight.has(serverId)) return treeInFlight.get(serverId);
+  const run = (async () => {
+    try {
+      const tree = await Api.channels(serverId);
+      State.serverTree.set(serverId, tree || { categories: [], channels: [] });
+      treeFetchedAt.set(serverId, Date.now());
+      emit('tree', { serverId, tree: State.serverTree.get(serverId) });
+      return State.serverTree.get(serverId);
+    } finally {
+      treeInFlight.delete(serverId);
+    }
+  })();
+  treeInFlight.set(serverId, run);
+  return run;
+}
+
+export async function refreshServerMembers(serverId, opts) {
+  const page = await Api.serverMembers(serverId, opts);
+  State.serverMembers.set(serverId, page);
+  emit('members', { serverId, page });
+  return page;
+}
+
+export async function refreshServerRoles(serverId) {
+  const roles = await Api.roles(serverId);
+  State.serverRoles.set(serverId, roles || []);
+  emit('roles', { serverId, roles: State.serverRoles.get(serverId) });
+  return State.serverRoles.get(serverId);
+}
+
+export async function refreshServerPermissions(serverId) {
+  const perms = await Api.rolePermissions(serverId);
+  State.serverPermissions.set(serverId, perms || { permissions: [], all: [], descriptions: {}, is_owner: false });
+  emit('permissions', { serverId, permissions: State.serverPermissions.get(serverId) });
+  return State.serverPermissions.get(serverId);
+}
+
+export function serverById(id) {
+  return State.servers.find((s) => s.id === id) || State.serverDetail.get(id) || null;
+}
+
+export function channelsOf(serverId) {
+  const tree = State.serverTree.get(serverId);
+  return tree ? tree.channels || [] : [];
+}
+
+export function categoriesOf(serverId) {
+  const tree = State.serverTree.get(serverId);
+  return tree ? tree.categories || [] : [];
+}
+
+export function channelById(serverId, channelId) {
+  return channelsOf(serverId).find((c) => c.id === channelId) || null;
+}
+
+// A community's address is its slug when it has one, because that is what a
+// person can read out loud. The id is the fallback, and the route accepts both.
+export function serverPath(server) {
+  return server && server.slug ? server.slug : (server ? server.id : '');
+}
+
+export function permissionsOf(serverId) {
+  const server = State.servers.find((s) => s.id === serverId);
+  if (server && server.permissions) return server.permissions;
+  return [];
+}
+
+export function can(serverId, permission) {
+  const perms = permissionsOf(serverId);
+  if (perms.indexOf('*') !== -1) return true;
+  return perms.indexOf(permission) !== -1;
+}
+
+export function isOwner(serverId) {
+  const server = State.servers.find((s) => s.id === serverId);
+  return !!(server && server.is_owner);
+}
+
+// --- direct messages --------------------------------------------------------
+
+export async function refreshDms() {
+  State.dms = await Api.dms();
+  emit('dms', State.dms);
+  return State.dms;
+}
+
+// The group invitations waiting for this account. They are separate from the
+// list of conversations because a question is not yet a place to talk in.
+export async function refreshDmInvites() {
+  State.dmInvites = await Api.dmInvites();
+  emit('dm-invites', State.dmInvites);
+  return State.dmInvites;
+}
+
+export function dmInviteById(id) {
+  return (State.dmInvites || []).find((invite) => String(invite.id) === String(id)) || null;
+}
+
+export function dmById(id) {
+  return State.dms.find((d) => d.id === id) || null;
+}
+
+// A conversation has been read - here, or on another device of this account.
+// The unread count in the store is corrected so the badge does not keep
+// claiming there is something unread that is not.
+export function markConversationRead(conversationId) {
+  const id = String(conversationId || '');
+  if (!id) return false;
+  const dm = State.dms.find((entry) => String(entry.id) === id);
+  if (!dm || !dm.unreadCount) return false;
+  dm.unreadCount = 0;
+  emit('dms', State.dms);
+  return true;
+}
+
+// The person on the other side of a one-to-one conversation.
+//
+// A conversation of more than two people is a group, and it has no single
+// person on the other side: naming one of them as "the person you are
+// talking to" would be a lie about a group of five.
+export function dmPeer(dm) {
+  if (!dm) return null;
+  if (dm.isGroup) return null;
+  // The list answer carries the peer directly; older spells kept a users array.
+  const users = dm.users || dm.participants || [];
+  const me = State.user && State.user.id;
+  const others = users.filter((u) => u.id !== me);
+  const peer = dm.peer ? dm.peer : (others.length ? others[0] : (users[0] || null));
+  return peer ? normalizeUser(peer) : null;
+}
+
+// What a conversation is called.
+//
+// A group is called by its name. A conversation of two people is called by
+// the other person's name. A group with no name is called by the people in
+// it, because that is the only thing that says which conversation it is.
+export function dmName(dm) {
+  if (!dm) return 'Conversation';
+  if (dm.isGroup) {
+    const named = String(dm.name || '').trim();
+    if (named) return named;
+    const people = (dm.people || dm.members || []).filter((person) =>
+      String(person.id) !== String(State.user && State.user.id));
+    if (!people.length) return 'A group';
+    if (people.length === 1) return nameOf(normalizeUser(people[0]));
+    if (people.length === 2) {
+      return nameOf(normalizeUser(people[0])) + ' and ' + nameOf(normalizeUser(people[1]));
+    }
+    return nameOf(normalizeUser(people[0])) + ' and ' + String(people.length - 1) + ' others';
+  }
+  const peer = dmPeer(dm);
+  return peer ? nameOf(peer) : 'Conversation';
+}
+
+// The people in a conversation, apart from the reader.
+export function dmPeople(dm) {
+  if (!dm) return [];
+  const people = dm.people || dm.users || dm.participants || [];
+  const me = State.user && State.user.id;
+  return people
+    .filter((person) => String(person.id) !== String(me))
+    .map((person) => normalizeUser(person));
+}
+
+// --- friends ----------------------------------------------------------------
+
+export async function refreshFriends() {
+  const [friends, requests] = await Promise.all([
+    Api.friends(),
+    Api.friendRequests(),
+  ]);
+  State.friends = Array.isArray(friends) ? friends.map(normalizeUser) : (friends.items || []).map(normalizeUser);
+  State.friendRequests = {
+    incoming: (requests.incoming || []).map((r) => Object.assign({}, r, { user: normalizeUser(r.user || r.from || r.sender) })),
+    outgoing: (requests.outgoing || []).map((r) => Object.assign({}, r, { user: normalizeUser(r.user || r.to || r.receiver) })),
+  };
+  emit('friends', { friends: State.friends, requests: State.friendRequests });
+  return State.friends;
+}
+
+export function friendshipWith(userId) {
+  if (State.friends.some((f) => f.id === userId)) return 'friend';
+  if (State.friendRequests.incoming.some((r) => r.user && r.user.id === userId)) return 'incoming';
+  if (State.friendRequests.outgoing.some((r) => r.user && r.user.id === userId)) return 'outgoing';
+  return 'none';
+}
+
+// --- notifications ----------------------------------------------------------
+
+export async function refreshNotifications(opts) {
+  const o = opts || {};
+  const page = await Api.notifications(o);
+  if (o.before) {
+    State.notifications.items = State.notifications.items.concat(page.items || []);
+  } else {
+    State.notifications.items = page.items || [];
+  }
+  State.notifications.unreadCount = page.unreadCount || 0;
+  State.notifications.unreadByCategory = page.unreadByCategory || {};
+  State.notifications.hasMore = !!page.hasMore;
+  State.notifications.nextCursor = page.nextCursor || null;
+  // The filter is part of the answer, because a category page is a different
+  // list from the whole list and refreshing the wrong one would replace the
+  // rows the reader is looking at.
+  State.notifications.category = o.category || null;
+  emit('notifications', State.notifications);
+  return State.notifications;
+}
+
+function decrementUnread(entry) {
+  State.notifications.unreadCount = Math.max(0, (State.notifications.unreadCount || 0) - 1);
+  const category = entry && entry.category;
+  if (category && State.notifications.unreadByCategory) {
+    State.notifications.unreadByCategory[category] = Math.max(
+      0,
+      (State.notifications.unreadByCategory[category] || 0) - 1
+    );
+  }
+}
+
+export function noteNotificationRead(id) {
+  const entry = (State.notifications.items || [])
+    .find((item) => String(item.id) === String(id));
+  if (!entry || entry.readAt) return false;
+  entry.readAt = new Date().toISOString();
+  decrementUnread(entry);
+  emit('notifications', State.notifications);
+  return true;
+}
+
+export function removeNotificationLocal(id) {
+  const list = State.notifications.items || [];
+  const entry = list.find((item) => String(item.id) === String(id));
+  if (!entry) return false;
+  if (!entry.readAt) decrementUnread(entry);
+  State.notifications.items = list.filter((item) => String(item.id) !== String(id));
+  emit('notifications', State.notifications);
+  return true;
+}
+
+export function forgetNotifications(opts) {
+  const o = opts || {};
+  const list = State.notifications.items || [];
+  State.notifications.items = o.readOnly
+    ? list.filter((entry) => !entry.readAt)
+    : [];
+  if (!o.readOnly) {
+    State.notifications.unreadCount = 0;
+    State.notifications.unreadByCategory = {};
+    State.notifications.hasMore = false;
+    State.notifications.nextCursor = null;
+  }
+  emit('notifications', State.notifications);
+}
+
+export function bumpUnread(delta) {
+  State.notifications.unreadCount = Math.max(0, State.notifications.unreadCount + delta);
+  emit('notifications', State.notifications);
+}
+
+// A new notification arrived over the socket while the reader is looking at a
+// filtered list. It is only added to the visible rows when it belongs to the
+// filter; the badge and the category totals always move.
+export function noteNotificationIncoming(notification) {
+  if (!notification || !notification.id) return false;
+  if ((State.notifications.items || []).some((entry) => String(entry.id) === String(notification.id))) {
+    return false;
+  }
+  const category = State.notifications.category;
+  if (!category || category === notification.category) {
+    State.notifications.items = [notification].concat(State.notifications.items || []);
+  }
+  if (!notification.readAt) {
+    State.notifications.unreadCount = (State.notifications.unreadCount || 0) + 1;
+    const key = notification.category;
+    if (key && State.notifications.unreadByCategory) {
+      State.notifications.unreadByCategory[key] = (State.notifications.unreadByCategory[key] || 0) + 1;
+    }
+  }
+  emit('notifications', State.notifications);
+  return true;
+}
+
+// --- presence ---------------------------------------------------------------
+
+const PRESENCE_TTL_MS = 3000;
+let presenceInFlight = null;
+let presenceFetchedAt = 0;
+let presenceWanted = [];
+
+export async function refreshPresence(ids) {
+  const unique = Array.from(new Set((ids || []).filter(Boolean).map(String)));
+  if (!unique.length) return State.presence;
+  for (const id of unique) if (presenceWanted.indexOf(id) === -1) presenceWanted.push(id);
+
+  // A cached answer is only fresh for the ids it actually covers. A page that
+  // opens a new conversation during the TTL used to ask for its people and be
+  // handed the previous batch's cache, leaving them with no dot until the next
+  // unrelated refresh.
+  const missing = unique.filter((id) => !State.presence.has(id));
+  const fresh = presenceFetchedAt && (Date.now() - presenceFetchedAt) < PRESENCE_TTL_MS;
+  if (fresh && !missing.length) return State.presence;
+
+  if (presenceInFlight) await presenceInFlight;
+  const stillMissing = unique.filter((id) => !State.presence.has(id));
+  if (!presenceWanted.length && !stillMissing.length) return State.presence;
+
+  let batch = presenceWanted.slice();
+  presenceWanted = [];
+  // The in-flight request may have answered everything the caller asked for
+  // while this call was waiting; asking again would be a wasted round trip.
+  batch = batch.filter((id) => !State.presence.has(id) || !fresh);
+  if (!batch.length) return State.presence;
+
+  presenceInFlight = (async () => {
+    try {
+      const map = await Api.presence(batch);
+      for (const id of Object.keys(map || {})) State.presence.set(id, map[id]);
+      presenceFetchedAt = Date.now();
+      emit('presence', State.presence);
+    } catch { /* presence is best-effort */ } finally {
+      presenceInFlight = null;
+    }
+  })();
+  await presenceInFlight;
+  return State.presence;
+}
+
+export function presenceOf(userId) {
+  return State.presence.get(userId) || 'offline';
+}
+
+export function setPresence(userId, status) {
+  State.presence.set(String(userId), status);
+  emit('presence', State.presence);
+}
+
+// The account's own chosen state. The map is the same one other views read, so
+// the little dot on the account is the setting the reader just picked.
+export async function choosePresence(status) {
+  const answer = await Api.setPresence(status);
+  const chosen = (answer && answer.status) || status;
+  const me = State.user;
+  if (me) {
+    me.presenceStatus = chosen;
+    me.presence = chosen;
+    setPresence(me.id, chosen);
+    emit('user', me);
+  }
+  return chosen;
+}
+
+// --- typing -----------------------------------------------------------------
+
+export function noteTyping(key, userId, name) {
+  if (!State.typing.has(key)) State.typing.set(key, new Map());
+  const map = State.typing.get(key);
+  const me = State.user && State.user.id;
+  if (userId === me) return;
+  map.set(userId, { name, until: Date.now() + 6000 });
+  emit('typing', { key });
+  clearTimeout(map.get(userId)._timer);
+  map.get(userId)._timer = setTimeout(() => {
+    map.delete(userId);
+    emit('typing', { key });
+  }, 6000);
+}
+
+export function typersFor(key) {
+  const map = State.typing.get(key);
+  if (!map) return [];
+  const now = Date.now();
+  return Array.from(map.values()).filter((entry) => entry.until > now).map((entry) => entry.name);
+}
+
+// --- mutes ------------------------------------------------------------------
+
+export async function refreshMutes() {
+  try {
+    const mutes = await Api.mutes();
+    State.mutedChannels = new Set((mutes || []).map((m) => m.channel_id || m.channelId || m));
+  } catch { /* not fatal */ }
+  emit('mutes', State.mutedChannels);
+  return State.mutedChannels;
+}
+
+export function isMuted(channelId) {
+  return State.mutedChannels.has(channelId);
+}

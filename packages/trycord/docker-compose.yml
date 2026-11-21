@@ -1,0 +1,105 @@
+# Trycord - the easy self-hosting path.
+#
+#   cp .env.docker.example .env      # then edit JWT_SECRET at minimum
+#   docker compose up -d
+#
+# Data lives in two named volumes, so `docker compose down` and image
+# upgrades never touch your database or uploads.
+
+services:
+  trycord:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # To run a published image instead of building locally, comment out
+    # `build` above and uncomment this:
+    # image: ghcr.io/trycord/trycord:latest
+    container_name: trycord
+    restart: unless-stopped
+    ports:
+      - "${TRYCORD_PORT:-9971}:9971"
+    env_file:
+      - .env
+    environment:
+      # Bind address and port are fixed by the port mapping above.
+      HOST: 0.0.0.0
+      PORT: "9971"
+      # Keep the SQLite file on the volume, not inside the container layer.
+      DB_CLIENT: sqlite
+      DB_FILE: /data/trycord.db
+      SERVER_HOST_TYPE: express
+    volumes:
+      - trycord-data:/data
+      - trycord-uploads:/app/uploads
+    # The image declares these too, but naming them keeps `compose down`
+    # from silently creating anonymous volumes.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9971/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # Log rotation is the most common way a self-hosted container fills a
+    # disk. Cap it in the daemon config or here.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # The voice subsystem: the instance's own STUN and TURN relay.
+  #
+  # It is a second process from the same image because it fails differently
+  # from the application: the API can be restarting while a call is still
+  # being carried. Without this service the mesh has no relay, and a peer that
+  # cannot be met directly has nowhere to go.
+  #
+  # The relay speaks UDP, so the port is published as UDP. The address the
+  # peers are given is TRYCORD_VOICE_PUBLIC_URL in the .env: it has to point
+  # straight at this host, DNS only and not through a proxy that terminates
+  # TLS, because a proxy carries HTTP and not the arbitrary UDP a relay needs.
+  trycord-voice:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # image: ghcr.io/trycord/trycord:latest
+    container_name: trycord-voice
+    restart: unless-stopped
+    command: ["node", "src/voice/index.js"]
+    env_file:
+      - .env
+    environment:
+      # The relay listens on every interface inside the container, and the
+      # published address is the one in the .env.
+      TRYCORD_TURN_HOST: "::"
+      # The voice process's own interface - the page that says whether the
+      # stack works, and the health checks - is on the loopback and on nothing
+      # else. It is not a setting here on purpose: the process refuses to
+      # start on any other address, so a file that asked for one would only
+      # stop the service from coming up. The health check below runs inside
+      # this container, so the loopback is the address it wants.
+    ports:
+      - "${TRYCORD_TURN_PORT:-3478}:3478/udp"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:'+(process.env.TRYCORD_VOICE_PROCESS_PORT||9973)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  trycord-data:
+  trycord-uploads:

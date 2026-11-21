@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#18191D" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Trycord">
+  <link rel="apple-touch-icon" href="/assets/trycord-assets/app/trycord-app-icon.svg">
+  <title>Support &amp; community: get help with Trycord</title>
+  <meta name="description" content="Get help with a Trycord instance: where to report a bug, appeal a moderation decision, ask a data question, raise a security issue, and find the community chat.">
+  <link rel="icon" href="/assets/trycord-assets/app/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/design-tokens.css">
+  <link rel="stylesheet" href="/css/site.css">
+  <script src="/js/theme.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="wrap masthead">
+      <a class="brand" href="/">
+        <svg class="mark" viewBox="0 0 100 100" role="img" aria-hidden="true" focusable="false">
+          <path d="M50 9 L88 78 Q90 82 85 82 L65 82 L50 56 L35 82 L15 82 Q10 82 12 78 Z" fill="currentColor"/>
+          <path d="M39 70 L50 51 L61 70 Z" fill="var(--cutout)"/>
+          <path d="M49 31 L67 31 L67 40 L58 40 L58 49 L49 49 Z" fill="var(--cutout)"/>
+          <circle cx="72" cy="58" r="7" fill="var(--cutout)"/>
+        </svg>
+        <span class="brand-word">Trycord</span>
+      </a>
+
+      <button class="menu-toggle" type="button" data-menu-toggle aria-controls="site-nav" aria-expanded="false" aria-label="Open menu">
+        <svg class="icon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></g></svg>
+      </button>
+
+      <nav class="site-nav" id="site-nav" aria-label="Primary">
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Product
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu nav-menu--wide">
+            <div class="nav-menu-grid">
+              <a href="/features"><strong>Features</strong><span>Channels, roles, moderation and more.</span></a>
+              <a href="/download"><strong>Download</strong><span>Get the desktop app for your computer.</span></a>
+              <a href="/status"><strong>Status</strong><span>Live health for this instance.</span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Docs
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu nav-menu--wide">
+            <div class="nav-menu-grid">
+              <a href="/docs"><strong>Documentation</strong><span>Run and configure your own instance.</span></a>
+              <a href="/install"><strong>Install</strong><span>The short version of the install.</span></a>
+              <a href="/faq"><strong>FAQ</strong><span>The questions people ask most.</span></a>
+              <a href="/support"><strong>Support</strong><span>Get help and reach the project.</span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Developers
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu">
+            <a href="/developers"><strong>Developer guide</strong><span>Build a bot with the API and the SDK.</span></a>
+            <a href="/developers#the-api-reference"><strong>API reference</strong><span>The routes a bot uses.</span></a>
+            <a href="/developers#the-sdk-trycord-botjs"><strong>SDK</strong><span>The client for those routes.</span></a>
+            <a href="https://github.com/trycord/.trycord" target="_blank" rel="noopener"><strong>Source code</strong><span>The whole repository.</span></a>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            Community
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu nav-menu--wide">
+            <div class="nav-menu-grid">
+              <a href="/communities"><strong>Communities</strong><span>Browse public communities.</span></a>
+              <a href="/instances"><strong>Instances</strong><span>Find an instance to join.</span></a>
+              <a href="https://discord.gg/dSF7eqsJuP" target="_blank" rel="noopener"><strong>Discord</strong><span>Join the community chat.</span></a>
+              <a href="/trust-and-safety"><strong>Trust and safety</strong><span>Rules, reporting, and appeals.</span></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group" data-nav-group>
+          <button class="nav-trigger" type="button" data-nav-trigger aria-expanded="false" aria-haspopup="true">
+            About
+            <svg class="icon chevron" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></g></svg>
+          </button>
+          <div class="nav-menu">
+            <a href="/about"><strong>About Trycord</strong><span>Why Trycord exists and how it's built.</span></a>
+            <a href="/changelog"><strong>Changelog</strong><span>What's shipped recently.</span></a>
+            <a href="/roadmap"><strong>Roadmap</strong><span>Where the project is going.</span></a>
+            <a href="/security"><strong>Security</strong><span>How to report a vulnerability.</span></a>
+          </div>
+        </div>
+
+        <div class="nav-mobile-actions">
+          <a class="btn btn-ghost btn-sm" href="/app/" data-app-link>Open the app</a>
+          <a class="btn btn-ghost btn-sm" href="/register">Create account</a>
+          <a class="btn btn-primary btn-sm" href="/login" data-signin>Sign in</a>
+        </div>
+      </nav>
+
+      <div class="masthead-actions">
+        <button class="theme-toggle" type="button" data-theme-toggle hidden aria-pressed="false" aria-label="Switch between the light and dark theme">
+          <svg class="icon icon-sun" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg>
+          <svg class="icon icon-moon" viewBox="0 0 24 24" role="img" aria-hidden="true" focusable="false"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></g></svg>
+        </button>
+        <a class="btn btn-ghost btn-sm" href="/register">Create account</a>
+        <a class="btn btn-primary btn-sm" href="/login" data-signin>Sign in</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="page" data-crumbs="Project">
+    <div class="wrap">
+      <div class="page-head">
+        <p class="kicker">Help</p>
+        <h1>Support and community</h1>
+        <p class="lede">
+          Trycord is software you run yourself, so the person who can fix most
+          problems is the operator of the instance you are on. This page
+          explains which problem belongs to whom, and where the rest of the
+          community talks.
+        </p>
+      </div>
+      <div class="prose-layout">
+        <article class="prose">
+          <!-- page:begin -->
+          <div class="draft-note" role="note">
+            <strong>Legal review required before publication.</strong> This
+            document comes from the Trycord project as a starting point for an
+            instance. It is not legal advice, and nobody has reviewed it for the
+            instance serving it. The fields marked <code>OPERATOR</code> are
+            facts only the operator can supply: the address for support, the
+            address for privacy requests, the address for formal notices, and
+            any response times the operator commits to. Fill them in, and have
+            a qualified lawyer read the result, before presenting this
+            document as binding.
+            The contact points in these documents are the project's own. If you run your own
+            instance, replace them with yours before you publish them.
+          </div>
+          <p class="small muted">
+            <strong>Version:</strong> <code>1.0</code> &middot;
+            <strong>Template last revised:</strong> <code>2026-09-20</code> &middot;
+            <strong>Effective on this instance:</strong>
+            <span class="op-field" data-op="effective-date">OPERATOR: the date this support policy takes effect on this instance</span>
+          </p>
+
+          <h2>1. Start here: which instance are you on?</h2>
+          <p>This decides who can actually fix your problem.</p>
+          <ul>
+            <li>
+              <strong>An official instance</strong>, run by the project or by a
+              partner and listed in the app. One party operates all of them, so
+              you can escalate straight to that party. See the
+              <a href="/instances-terms">official instance terms</a>.
+            </li>
+            <li>
+              <strong>Your own, or a community's</strong>, run by whoever set
+              it up. They are the operator, they control the data, and they are
+              the only people who can change anything.
+            </li>
+          </ul>
+          <p>
+            If you are not sure, the instance's name and owner are shown in the
+            application, and self-hosted instances usually publish an admin
+            contact of their own.
+          </p>
+
+          <h2>2. An account, community or content problem</h2>
+          <p>
+            A ban, a timeout, a deleted message, a role you think you should
+            have, a channel you cannot see: this is moderation, and it belongs
+            to the <strong>instance operator or the community moderators</strong>,
+            not to the project. They can undo what they did. The project cannot,
+            because it does not run your instance.
+          </p>
+          <p>
+            Report it in the application where you can, or contact the
+            operator at
+            <span class="op-contact" data-op="support-contact">the project's Discord, discord.gg/dSF7eqsJuP</span>.
+          </p>
+
+          <h2>3. Appealing a decision</h2>
+          <p>
+            If an account, a community or a message was actioned, you can
+            appeal. Start at the
+            <a href="/app/support/appeals/new" data-app-link="support/appeals/new">appeal form</a>.
+          </p>
+          <ul>
+            <li>You need the action ID from the enforcement notice.</li>
+            <li>You do <strong>not</strong> need to be signed in. Being banned should not stop you appealing.</li>
+            <li>Signed-in users can review past decisions under <a href="/app/support/appeals" data-app-link="support/appeals">My appeals</a>.</li>
+            <li>On an official instance, appeals are reviewed centrally, so a community you were removed from cannot refuse to hear you.</li>
+            <li>Appeals are read by a person. Expect a real answer, not an autoresponder.</li>
+          </ul>
+          <p>
+            Where the action was taken because content was illegal, or because
+            a law required it, there may be no appeal, and the operator may not
+            be able to explain the decision in full. The
+            <a href="/trust-and-safety">Trust and Safety</a> page says more
+            about that.
+          </p>
+
+          <h2>4. Reporting abuse, and anything involving a child</h2>
+          <p>
+            Abuse of a person, of a community, or of the service is reported to
+            the operator at
+            <span class="op-contact" data-op="support-report-contact">the project's Discord, discord.gg/dSF7eqsJuP</span>.
+            The rules that apply are in the
+            <a href="/guidelines">acceptable use rules</a>.
+          </p>
+          <p>
+            Anything involving the sexual exploitation of a child is treated as
+            urgent and goes to a named person:
+            <span class="op-contact" data-op="support-csam-contact">the project's Discord, discord.gg/dSF7eqsJuP</span>.
+            Report it to the operator and, where the law requires it, to the
+            authority in the country where it happened. Do not forward or keep
+            copies of the material.
+          </p>
+          <p>
+            The <a href="/trust-and-safety">Trust and Safety</a> page describes
+            what the operator does with a report, and what happens to the
+            account and to any bot or integration involved.
+          </p>
+
+          <h2>5. Your data, or a legal request</h2>
+          <p>
+            Access, export, correction and deletion are handled by the
+            <strong>operator of your instance</strong>, because they are the
+            data controller. If you are self-hosting, that is you. The
+            <a href="/privacy">Privacy Policy</a> says what is held, for how
+            long, and what the process is.
+          </p>
+          <p>
+            A privacy request goes to
+            <span class="op-contact" data-op="support-privacy-contact">the project's Discord, discord.gg/dSF7eqsJuP</span>.
+            A formal legal notice goes to
+            <span class="op-contact" data-op="support-notices">the project's Discord, discord.gg/dSF7eqsJuP</span>.
+          </p>
+
+          <h2>6. Something is broken</h2>
+          <p>Work down this list; it finds the cause most of the time.</p>
+          <ol>
+            <li>
+              Check the <a href="/status">status page</a>. If the instance is
+              degraded, nothing you do locally will help.
+            </li>
+            <li>
+              Reload, and try a private window. A stale cached build or a
+              stuck service worker causes a surprising share of "the app is
+              broken" reports.
+            </li>
+            <li>
+              If the desktop app misbehaves, update it. It does not
+              auto-update mid-session, so an old build against a new server is
+              a common cause of odd failures.
+            </li>
+            <li>
+              Still stuck? Report it on
+              <a href="https://github.com/trycord/.trycord/issues" rel="noopener">GitHub</a>.
+              Include the instance URL, what you expected, what happened, and
+              your app version, from <a href="/app/settings/updates" data-app-link="settings/updates">Settings, Updates</a>.
+            </li>
+          </ol>
+
+          <h2>7. Talking to other people</h2>
+          <p>
+            For questions, ideas, and the kind of help that is easier as a
+            conversation, the project runs a Discord server:
+            <a href="https://discord.gg/dSF7eqsJuP" rel="noopener">discord.gg/dSF7eqsJuP</a>.
+            It is the same community the issues and the roadmap come from, and
+            it is a good place to ask before you file something.
+          </p>
+          <p>
+            The Discord is not the support route for an instance, and it is not
+            a place to report abuse, child safety concerns or legal requests.
+            Those go to the operator, as above.
+          </p>
+
+          <h2>8. Something wrong on this website</h2>
+          <p>
+            If a page here says something the product does not do, or a
+            self-hosting step does not work, that is worth reporting too. The
+            documentation ships with the code, so an issue is the right place.
+          </p>
+
+          <h2>9. What to put in a report</h2>
+          <p>
+            A report that says what happened, where, when, and who was
+            involved is usually enough to act on. Where you can, add the
+            message ID, the channel, the account, and a screenshot. Do not
+            include material that is itself illegal to hold, and do not send
+            it to a public issue tracker.
+          </p>
+          <p>
+            Response times on this instance:
+            <span class="op-field" data-op="support-response">OPERATOR: the response times this instance commits to, or a statement that it does not commit to any</span>.
+          </p>
+          <!-- page:end -->
+        </article>
+        <aside class="toc" aria-label="On this page">
+          <p class="toc-title">On this page</p>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div class="footer-col footer-brand">
+        <a class="brand" href="/">
+          <svg class="mark" viewBox="0 0 100 100" role="img" aria-hidden="true" focusable="false">
+          <path d="M50 9 L88 78 Q90 82 85 82 L65 82 L50 56 L35 82 L15 82 Q10 82 12 78 Z" fill="currentColor"/>
+          <path d="M39 70 L50 51 L61 70 Z" fill="var(--cutout)"/>
+          <path d="M49 31 L67 31 L67 40 L58 40 L58 49 L49 49 Z" fill="var(--cutout)"/>
+          <circle cx="72" cy="58" r="7" fill="var(--cutout)"/>
+        </svg>
+          <span class="brand-word">Trycord</span>
+        </a>
+        <p>Private, self-hostable community messaging. One client, browser and desktop.</p>
+        <div class="footer-actions">
+          <a class="btn btn-primary btn-sm" href="/register">Create account</a>
+          <a class="btn btn-ghost btn-sm" href="/login" data-signin>Sign in</a>
+        </div>
+      </div>
+      <nav class="footer-col" aria-label="Product">
+        <h2 class="footer-heading">Product</h2>
+        <a href="/features">Features</a>
+        <a href="/download">Desktop app</a>
+        <a href="/status">Status</a>
+      </nav>
+      <nav class="footer-col" aria-label="Docs">
+        <h2 class="footer-heading">Docs</h2>
+        <a href="/docs">Self-hosting guide</a>
+        <a href="/install">Install</a>
+        <a href="/faq">FAQ</a>
+        <a href="/support">Support</a>
+      </nav>
+      <nav class="footer-col" aria-label="Developers">
+        <h2 class="footer-heading">Developers</h2>
+        <a href="/developers">Developer guide</a>
+        <a href="/developers#the-api-reference">API reference</a>
+        <a href="/developers#the-sdk-trycord-botjs">SDK</a>
+        <a href="https://github.com/trycord/.trycord" rel="noopener">Source code</a>
+      </nav>
+      <nav class="footer-col" aria-label="Community">
+        <h2 class="footer-heading">Community</h2>
+        <a href="/communities">Communities</a>
+        <a href="/instances">Instances</a>
+        <a href="https://discord.gg/dSF7eqsJuP" rel="noopener">Discord</a>
+        <a href="/trust-and-safety">Trust and safety</a>
+      </nav>
+      <nav class="footer-col" aria-label="About">
+        <h2 class="footer-heading">About</h2>
+        <a href="/about">About the project</a>
+        <a href="/changelog">Changelog</a>
+        <a href="/roadmap">Roadmap</a>
+        <a href="/licenses">Licences</a>
+      </nav>
+      <nav class="footer-col" aria-label="Legal">
+        <h2 class="footer-heading">Legal</h2>
+        <a href="/terms">Terms of service</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/cookies">Cookies</a>
+        <a href="/instances-terms">Instance terms</a>
+        <a href="/community-guidelines">Community rules</a>
+        <a href="/guidelines">Acceptable use</a>
+        <a href="/federation-policy">Federation policy</a>
+        <a href="/security">Security</a>
+      </nav>
+    </div>
+    <div class="wrap footer-bottom">
+      <span>&copy; <span data-year>2026</span> Trycord</span>
+      <span class="muted">Your instance, your conversations, your rules.</span>
+    </div>
+  </footer>
+
+  <script src="/js/public-api.js"></script>
+  <script src="/js/site.js"></script>
+</body>
+</html>

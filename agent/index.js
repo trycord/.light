@@ -51,20 +51,34 @@ function send(res, code, object) {
   res.end(body);
 }
 
-async function post(path, body) {
-  const response = await fetch(CONTROL + path, { method: 'POST', headers: HEADERS, body: JSON.stringify(body) });
-  if (!response.ok) throw new Error(`${path} responded ${response.status}`);
-  return response.json().catch(() => ({}));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function post(path, body, retries = 2) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(CONTROL + path, { method: 'POST', headers: HEADERS, body: JSON.stringify(body) });
+      if (!response.ok) throw new Error(`${path} responded ${response.status}`);
+      return response.json().catch(() => ({}));
+    } catch (error) { lastError = error; if (attempt < retries) await sleep(300 * (attempt + 1)); }
+  }
+  throw lastError;
 }
 
+let consecutiveHeartbeatFailures = 0;
 async function heartbeat() {
   try {
     const metrics = await hostMetrics();
     await post('/api/agent/heartbeat', { version: '1.0.0', ...metrics });
     await post('/api/agent/health', { ok: true, docker: true });
+    consecutiveHeartbeatFailures = 0;
   } catch (error) {
-    console.error('[agent] heartbeat failed:', error.message);
-    try { await post('/api/agent/health', { ok: false }); } catch { /* ignore */ }
+    consecutiveHeartbeatFailures++;
+    console.error(`[agent] heartbeat failed (${consecutiveHeartbeatFailures}):`, error.message);
+    // Only report unhealthy after sustained failure (control plane may be restarting).
+    if (consecutiveHeartbeatFailures >= 3) {
+      try { await post('/api/agent/health', { ok: false }); } catch { /* ignore */ }
+    }
   }
 }
 

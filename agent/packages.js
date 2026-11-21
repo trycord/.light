@@ -73,6 +73,23 @@ function writeProperties(dir, config) {
 /** Install the purchased package into the persistent service directory. */
 export async function installPackage({ installKind, name, version, runtimeVersion, downloadUrl, sha256, startupTemplate, config }, dir, memoryMb) {
   if (!installKind) return { installed: false, reason: 'no_package' };
+  // Image-based packages (e.g. Trycord) carry the application inside their
+  // approved Docker image — no artifact is downloaded into the customer volume.
+  // We only prepare persistent directories and write runtime config.
+  if (installKind === 'trycord') {
+    fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'uploads'), { recursive: true });
+    const env = [
+      'NODE_ENV=production', 'PORT=9971', 'HOST=0.0.0.0', 'DB_CLIENT=sqlite',
+      'DB_FILE=/home/container/data/trycord.db', 'UPLOAD_DIR=/home/container/uploads',
+      'SERVER_HOST_TYPE=express', 'MAIL_MODE=' + String(config?.mailMode || 'log'),
+      'TRYCORD_INSTANCE_ID=' + String(config?.instanceName || 'trycord').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60),
+      'JWT_SECRET=' + crypto.randomBytes(32).toString('hex'),
+    ];
+    if (config?.publicUrl) env.push('TRYCORD_PUBLIC_URL=' + String(config.publicUrl).slice(0, 500));
+    fs.writeFileSync(path.join(dir, '.env'), env.join('\n') + '\n', { mode: 0o600 });
+    return { installed: true, imageBased: true, startup: 'node src/server.js', env };
+  }
   fs.mkdirSync(dir, { recursive: true });
   let result;
   switch (installKind) {
