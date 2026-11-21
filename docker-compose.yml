@@ -77,6 +77,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: light
     image: ${LIGHT_IMAGE:-trycd/trycord-light:latest}
     container_name: ${LIGHT_CONTAINER:-trycord-light}
     restart: unless-stopped
@@ -103,8 +104,9 @@ services:
   shade:
     build:
       context: .
-      dockerfile: Dockerfile.shade
-    image: ${SHADE_IMAGE:-light-shade:latest}
+      dockerfile: Dockerfile
+      target: shade
+    image: ${SHADE_IMAGE:-trycd/trycord-light:shade}
     container_name: ${SHADE_CONTAINER:-light-shade}
     restart: unless-stopped
     depends_on:

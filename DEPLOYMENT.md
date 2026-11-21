@@ -5,7 +5,11 @@
 | Service | Image | Role | Docker socket |
 |---|---|---|---|
 | `light` | `trycd/trycord-light:1.0.0` | Control plane, public site, customer dashboard, admin dashboard, auth, database, provisioning orchestration, webhooks | **No** |
-| `shade` | `light-shade:latest` (built from `Dockerfile.shade`) | Infrastructure agent — creates and manages customer workload containers | **Yes** |
+| `shade` | `trycd/trycord-light:shade` (built from the `shade` target in the single `Dockerfile`) | Infrastructure agent — creates and manages customer workload containers | **Yes** |
+
+Both images live in the **one** Docker Hub repository `trycd/trycord-light`:
+- `:latest` / `:1.0.0` → the platform (`light` target)
+- `:shade` → the Shade agent (`shade` target)
 
 Customer workloads are **never** baked into these images. Shade launches them at runtime from approved runtime images. The Docker socket is mounted only into `shade`.
 
@@ -50,11 +54,13 @@ Networks: `LIGHT_NET_SUBNET` overrides the default `172.31.0.0/16`.
 ## Building locally
 
 ```bash
-docker build -t trycd/trycord-light:platform -f Dockerfile .
-docker build -t light-shade:latest -f Dockerfile.shade .
-docker tag trycd/trycord-light:platform trycd/trycord-light:1.0.0
+# One Dockerfile, two targets, ONE repository.
+docker build --target light -t trycd/trycord-light:1.0.0 -f Dockerfile .
+docker build --target shade -t trycd/trycord-light:shade  -f Dockerfile .
+docker tag trycd/trycord-light:1.0.0 trycd/trycord-light:latest
 docker push trycd/trycord-light:1.0.0
 docker push trycd/trycord-light:latest
+docker push trycd/trycord-light:shade
 ```
 
 ## Verification performed
