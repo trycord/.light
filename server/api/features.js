@@ -10,6 +10,13 @@ import { isCloudflareConfigured, cloudflareConfig } from '../cloudflare.js';
 export function featuresRoutes() {
   const router = Router();
 
+  router.get('/cloudflare/tunnels', requireAdmin, asyncRoute(async (req, res) => {
+    const { allNodeTunnels } = await import('../cloudflare.js');
+    const tunnels = allNodeTunnels().map(t => ({ nodeId: t.node_id, tunnelId: t.tunnel_id,
+      status: t.status, lastHeartbeat: t.last_heartbeat, updatedAt: t.updated_at }));
+    res.json({ tunnels });
+  }));
+
   router.get('/cloudflare', requireAuth, asyncRoute(async (req, res) => {
     const c = cloudflareConfig();
     res.json({ configured: isCloudflareConfigured(), domain: c.domain,

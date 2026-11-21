@@ -440,8 +440,19 @@ function loadPrefs(){try{const p=JSON.parse(localStorage.getItem('lt_dash_prefs'
 function savePrefs(p){localStorage.setItem('lt_dash_prefs',JSON.stringify(p));document.documentElement.setAttribute('data-density',p.density);}
 
 async function renderDeployments(){const v=app.querySelector('#view'),d=await api.deployments();
-  const rows=d.deployments.map(x=>`<tr><td class="lt-td-strong">${esc(x.instanceName||x.instanceId)}</td><td>${badge(x.status)}</td><td class="lt-td-mono">${esc(x.source)}</td><td class="lt-td-mono">${esc(x.version)}</td><td>${fmtTime(x.createdAt)}</td></tr>`).join('');
-  v.innerHTML=`<div class="lt-page-header"><h1 class="lt-page-title">Deployments</h1></div>${section('History',`${d.deployments.length} records`,rows?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Server</th><th>Status</th><th>Source</th><th>Version</th><th>Time</th></tr></thead><tbody>${rows}</tbody></table></div>`:empty('No deployments','Deploy a server to see history.'))}`;
+  const rows=d.deployments.map(x=>`<tr><td class="lt-td-strong">${esc(x.instanceName||x.instanceId)}</td><td>${badge(x.status)}</td><td class="lt-td-mono">${esc(x.source)}</td><td class="lt-td-mono">${esc(x.commitSha?.slice(0,8)||x.version||'—')}</td>
+    <td>${fmtTime(x.createdAt)}</td><td>${x.hasLogs?`<button class="lt-btn lt-btn-ghost lt-btn-sm" data-logs="${esc(x.id)}">Logs</button>`:'—'}
+    ${x.status==='success'?`<button class="lt-btn lt-btn-secondary lt-btn-sm" data-rb="${esc(x.instanceId)}|${esc(x.id)}">Rollback</button>`:''}</td></tr>`).join('');
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Deployments</h1><p class="lt-page-subtitle">Build history and rollbacks for your services</p></div></div>
+    ${section('History',`${d.deployments.length} records`,rows?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Server</th><th>Status</th><th>Source</th><th>Commit / version</th><th>Time</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:empty('No deployments','Deploy a server to see history.'))}`;
+  v.querySelectorAll('[data-logs]').forEach(b=>b.addEventListener('click',async()=>{
+    try{const r=await api.deploymentLogs(b.dataset.logs);modal('Build logs',`<pre class="lt-code-block">${esc(r.logs||'No logs recorded')}</pre>`,{ok:'Close'});}catch(e){toast(e.message,'error');}
+  }));
+  v.querySelectorAll('[data-rb]').forEach(b=>b.addEventListener('click',async()=>{
+    const [instanceId,deploymentId]=b.dataset.rb.split('|');
+    if(!await confirmDialog('Rollback','Replace the running workload with this deployment? Customer files are preserved.'))return;
+    try{await api.rollback(instanceId,deploymentId);toast('Rollback started','success');renderDeployments();}catch(e){toast(e.message,'error');}
+  }));
   poll(async()=>{if(currentView==='deployments')await renderDeployments();});
 }
 async function renderDomains(){const v=app.querySelector('#view'),[d,ins]=await Promise.all([api.domains(),api.instances()]);

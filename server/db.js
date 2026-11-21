@@ -174,7 +174,8 @@ const TABLES = {
     status TEXT NOT NULL DEFAULT 'queued', version TEXT NOT NULL DEFAULT 'latest',
     source TEXT NOT NULL DEFAULT 'image', repo_url TEXT NOT NULL DEFAULT '',
     ref TEXT NOT NULL DEFAULT 'main', commit_sha TEXT NOT NULL DEFAULT '',
-    command TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, finished_at INTEGER)`,
+    command TEXT NOT NULL DEFAULT '', logs TEXT NOT NULL DEFAULT '',
+    build_id TEXT, created_at INTEGER NOT NULL, finished_at INTEGER)`,
   logs: `CREATE TABLE IF NOT EXISTS logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT NOT NULL, team_id TEXT NOT NULL,
     ts INTEGER NOT NULL, stream TEXT NOT NULL DEFAULT 'stdout', line TEXT NOT NULL)`,
@@ -204,6 +205,12 @@ const TABLES = {
     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
     ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '')`,
+  // One persistent Cloudflare Tunnel per hosting node, with published routes
+  // (hostname -> internal service address:port) managed through remote config.
+  node_tunnels: `CREATE TABLE IF NOT EXISTS node_tunnels (
+    node_id TEXT PRIMARY KEY, tunnel_id TEXT NOT NULL DEFAULT '',
+    tunnel_token TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
+    last_heartbeat INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
   meta: `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
   // Product-aware software package registry.
   software_packages: `CREATE TABLE IF NOT EXISTS software_packages (

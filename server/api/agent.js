@@ -81,6 +81,16 @@ export function agentRoutes() {
       sets.push('updated_at = ?'); values.push(now(), command.instance_id);
       getDb().prepare(`UPDATE instances SET ${sets.join(', ')} WHERE id = ?`).run(...values);
     }
+    // Host ports are now known — republish Cloudflare routes for this node so
+    // hostname -> 127.0.0.1:<published port> points at the live service.
+    if (command.type === 'instance.create' && ok) {
+      const instance = getDb().prepare('SELECT node_id FROM instances WHERE id = ?').get(command.instance_id);
+      if (instance?.node_id) {
+        import('../cloudflare.js').then(({ publishIngress, isCloudflareConfigured }) => {
+          if (isCloudflareConfigured()) publishIngress(instance.node_id).catch(() => {});
+        }).catch(() => {});
+      }
+    }
     res.json({ ok: true });
   }));
 

@@ -7,7 +7,7 @@ import { id, now, str, json, conflict } from './util.js';
 import { resolveRuntime } from './runtime-catalog.js';
 import { pickNode } from './api/instances.js';
 import { queueCommand } from './commands.js';
-import { provisionTunnel, isCloudflareConfigured } from './cloudflare.js';
+import { provisionDomainRoute, isCloudflareConfigured } from './cloudflare.js';
 import { addOrderEvent, incrementAttempt, markOrderFailed, markOrderActive } from './orders.js';
 import { teamUsage } from './plans.js';
 import { packageForProvisioning } from './packages.js';
@@ -113,7 +113,7 @@ export function provisionOrder(orderId) {
       .run(domainId, order.team_id, iid, subdomain, ts);
     const domainRow = db.prepare('SELECT * FROM domains WHERE id = ?').get(domainId);
     if (domainRow && isCloudflareConfigured()) {
-      provisionTunnel(domainRow, null).catch(() => {});
+      provisionDomainRoute(domainRow, null).catch(() => {});
     } else if (domainRow) {
       db.prepare("UPDATE domains SET tunnel_status = 'configuration_required', updated_at = ? WHERE id = ?").run(ts, domainId);
     }

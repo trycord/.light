@@ -20,9 +20,17 @@ export function deploymentsRoutes() {
     res.json({ deployment: view(row) });
   }));
 
+  router.get('/:id/logs', asyncRoute(async (req, res) => {
+    const row = getDb().prepare('SELECT team_id, logs FROM deployments WHERE id = ?').get(req.params.id);
+    if (!row || (row.team_id !== req.teamId && req.user.role !== 'admin')) throw notFound();
+    res.json({ logs: row.logs || '', deploymentId: req.params.id });
+  }));
+
   return router;
 }
 
 function view(row) {
-  return { id: row.id, instanceId: row.instance_id, teamId: row.team_id, status: row.status, version: row.version, source: row.source, repoUrl: row.repo_url, ref: row.ref, commitSha: row.commit_sha, command: row.command, createdAt: row.created_at, finishedAt: row.finished_at };
+  return { id: row.id, instanceId: row.instance_id, teamId: row.team_id, status: row.status, version: row.version, source: row.source,
+    repoUrl: row.repo_url, ref: row.ref, commitSha: row.commit_sha, command: row.command,
+    hasLogs: Boolean(row.logs), createdAt: row.created_at, finishedAt: row.finished_at };
 }

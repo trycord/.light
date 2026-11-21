@@ -6,7 +6,7 @@ import { dispatch, queueCommand } from '../commands.js';
 import { audit } from '../audit.js';
 import { checkQuota, teamUsage, planFor } from '../plans.js';
 import { resolveRuntime } from '../runtime-catalog.js';
-import { provisionTunnel, isCloudflareConfigured } from '../cloudflare.js';
+import { provisionDomainRoute, isCloudflareConfigured } from '../cloudflare.js';
 import { asyncRoute, badRequest, notFound, forbidden, conflict, id, now, json, str, int, num } from '../util.js';
 
 const CATEGORIES = ['game', 'web', 'app', 'database'];
@@ -91,7 +91,7 @@ export function instancesRoutes() {
       .run(domainId, req.teamId, iid, subdomain, ts);
     const domainRow = getDb().prepare('SELECT * FROM domains WHERE id = ?').get(domainId);
     if (domainRow && isCloudflareConfigured()) {
-      provisionTunnel(domainRow, req).catch((error) => {
+      provisionDomainRoute(domainRow, req).catch((error) => {
         getDb().prepare('UPDATE domains SET tunnel_status = ?, updated_at = ? WHERE id = ?')
           .run(`failed: ${error.message.slice(0, 120)}`, now(), domainId);
       });
@@ -232,10 +232,45 @@ export function instancesRoutes() {
       getDb().prepare("UPDATE instances SET status = 'error', updated_at = ? WHERE id = ?").run(now(), row.id);
       throw error;
     }
-    getDb().prepare("UPDATE deployments SET status = 'success', commit_sha = ? WHERE id = ?").run(str(result.commitSha || '', 100), did);
+    getDb().prepare("UPDATE deployments SET status = 'success', commit_sha = ?, logs = ?, finished_at = ? WHERE id = ?")
+      .run(str(result.commitSha || '', 100), str(result.logs || '', 2 * 1024 * 1024), now(), did);
     getDb().prepare("UPDATE instances SET status = 'running', version = ?, updated_at = ? WHERE id = ?").run(str(b.version || row.version, 100), now(), row.id);
     audit(req, 'instance.deploy', 'instance', row.id, { version: b.version });
     res.status(202).json({ deploymentId: did, status: 'success', result });
+  }));
+
+  // Roll back to a previous successful deployment by replaying its snapshot.
+  router.post('/:id/rollback/:deploymentId', asyncRoute(async (req, res) => {
+    const row = owned(req, req.params.id);
+    if (!row) throw notFound();
+    const target = getDb().prepare("SELECT * FROM deployments WHERE id = ? AND instance_id = ? AND status = 'success'")
+      .get(req.params.deploymentId, row.id);
+    if (!target) throw notFound('deployment_not_found');
+    const command = target.command || row.command;
+    const did = id('dep'); const ts = now();
+    getDb().prepare(`INSERT INTO deployments (id, instance_id, team_id, status, version, source, repo_url, ref, commit_sha, command, created_at)
+      VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)`)
+      .run(did, row.id, req.teamId, target.version, target.source, target.repo_url, target.ref, target.commit_sha, command, ts);
+    getDb().prepare("UPDATE instances SET status='deploying', updated_at=? WHERE id=?").run(ts, row.id);
+    try {
+      const result = await dispatch(row.node_id, 'instance.deploy', {
+        instanceId: row.id, teamId: row.team_id, name: row.name, image: row.image,
+        env: json(row.env_json, {}), ports: json(row.ports_json, []), volumes: json(row.volumes_json, []),
+        cpu: row.cpu_cores, memory: row.memory_mb, disk: row.disk_gb,
+        version: target.version, source: target.source, repoUrl: target.repo_url,
+        ref: target.ref, commitSha: target.commit_sha, command,
+      }, row.id);
+      getDb().prepare("UPDATE deployments SET status='success', logs=?, finished_at=? WHERE id=?")
+        .run(str(result.logs || '', 2 * 1024 * 1024), now(), did);
+      getDb().prepare("UPDATE instances SET status='running', version=?, updated_at=? WHERE id=?")
+        .run(target.version, now(), row.id);
+      audit(req, 'instance.rollback', 'instance', row.id, { deployment: target.id });
+      res.json({ ok: true, deploymentId: did, version: target.version });
+    } catch (error) {
+      getDb().prepare("UPDATE deployments SET status='failed', finished_at=? WHERE id=?").run(now(), did);
+      getDb().prepare("UPDATE instances SET status='error', updated_at=? WHERE id=?").run(now(), row.id);
+      throw error;
+    }
   }));
 
   router.get('/:id/metrics', asyncRoute(async (req, res) => {

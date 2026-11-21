@@ -11,10 +11,14 @@ if ! curl -fsS --max-time 3 http://127.0.0.1:5858/health >/dev/null 2>&1; then
   systemctl --user restart light-control.service 2>/dev/null || true
 fi
 
-# 2. Agent must report healthy; restart via our safe helper.
-if ! curl -fsS --max-time 3 http://127.0.0.1:5859/health >/dev/null 2>&1; then
-  echo "[watchdog] agent unhealthy — restarting"
-  sudo -n bash /home/ultim/.light/scripts/restart-agent.sh 2>/dev/null || true
+# 2. Agent restart is intentionally DISABLED by default. Starting Shade causes
+#    it to provision any queued work; enable only when intentional deployment
+#    is desired. Set LIGHT_AUTO_AGENT=1 to opt in.
+if [ "${LIGHT_AUTO_AGENT:-0}" = "1" ]; then
+  if ! curl -fsS --max-time 3 http://127.0.0.1:5859/health >/dev/null 2>&1; then
+    echo "[watchdog] agent unhealthy — restarting"
+    sudo -n bash /home/ultim/.light/scripts/restart-agent.sh 2>/dev/null || true
+  fi
 fi
 
 # 3. Recover commands stuck in_progress (agent died mid-execution).
@@ -31,7 +35,7 @@ EOF
 #    Only containers named lt-* are touched; infrastructure containers are safe.
 if command -v docker >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
   stopped=$(sudo -n docker ps -aq --filter 'name=^lt-' --filter 'status=exited' --filter 'status=created' --filter 'status=dead' 2>/dev/null | wc -l)
-  if [ "$stopped" -gt 10 ]; then
+  if [ "$stopped" -gt 2 ]; then
     echo "[watchdog] pruning $stopped stopped workload containers"
     sudo -n docker container prune -f >/dev/null 2>&1 || true
   fi
