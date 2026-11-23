@@ -88,7 +88,8 @@ function validate(env, requestedVersion) {
     image: custom ? custom.image : (at >= 0 ? ref.slice(0, at) : ref),
     digest: custom ? custom.digest : digest,
     imageRef: custom ? custom.imageRef : ref,
-    runtimeEnv: custom ? custom.runtimeEnv : {},
+    // default_env carries required runtime settings (e.g. Minecraft EULA=TRUE).
+    runtimeEnv: { ...json(env.default_env, {}), ...(custom ? custom.runtimeEnv : {}) },
     command: env.default_command || '',
     workingDir: env.working_dir || '/app',
     exposedPorts: json(env.exposed_ports, []),

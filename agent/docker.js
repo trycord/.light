@@ -307,6 +307,8 @@ export async function createInstance(payload) {
       : (payload.command || installResult?.startup || tpl.command || payload.defaultCommand || ''),
     workingDir: appTarget,
     env: { ...(DEFAULT_ENV[payload.environmentId] || {}), ...(payload.env || {}),
+      // Required runtime settings the platform always enforces.
+      ...(/\/minecraft|itzg\/minecraft/.test(String(image || '')) ? { EULA: 'TRUE' } : {}),
       ...loadCustomerEnv(appDir),
       ...(installResult?.env && !Array.isArray(installResult.env) ? installResult.env : {}),
       LIGHT_PORT: String((ports || [])[0]?.container || 3000) },

@@ -96,7 +96,7 @@ function renderAuth(mode='login') {
 const NAV=[
   {group:'Overview',items:[{v:'overview',label:'Dashboard',i:'monitoring'},{v:'activity',label:'Activity',i:'schedules'},{v:'notifications',label:'Notifications',i:'settings'}]},
   {group:'Hosting',items:[{v:'market',label:'Marketplace',i:'applications'},{v:'servers',label:'All services',i:'instances'},{v:'game',label:'Game servers',i:'game-servers'},{v:'web',label:'Applications',i:'applications'},{v:'websites',label:'Websites',i:'network'},{v:'database',label:'Databases',i:'storage'},{v:'domains',label:'Domains',i:'network'},{v:'backups',label:'Backups',i:'backups'},{v:'files',label:'Files',i:'storage'}]},
-  {group:'Account',items:[{v:'orders',label:'Orders',i:'schedules'},{v:'billing',label:'Billing & plans',i:'settings'},{v:'invoices',label:'Invoices',i:'storage'},{v:'payment-methods',label:'Payment methods',i:'security'},{v:'usage',label:'Usage & resources',i:'monitoring'}]},
+  {group:'Account',items:[{v:'orders',label:'Orders',i:'schedules'},{v:'billing',label:'Billing & plans',i:'settings'},{v:'credits',label:'Provisionary Credits',i:'settings'},{v:'invoices',label:'Invoices',i:'storage'},{v:'payment-methods',label:'Payment methods',i:'security'},{v:'usage',label:'Usage & resources',i:'monitoring'}]},
   {group:'Support',items:[{v:'support',label:'Support tickets',i:'security'},{v:'help',label:'Documentation',i:'settings',external:'/docs'}]},
   {group:'Settings',items:[{v:'settings',label:'Profile & preferences',i:'settings'},{v:'admin',label:'Administration',i:'security',admin:true}]},
 ];
@@ -115,12 +115,20 @@ function renderShell(){
       <button class="lt-btn lt-btn-ghost lt-btn-icon lt-sidebar-toggle" id="navToggle">☰</button>
       <div class="lt-breadcrumb"><span>${esc(brand.product||'.light')}</span><span class="sep">/</span><span class="cur" id="crumb">Dashboard</span></div>
       <div class="lt-topbar-spacer"></div>
+      <a href="#/credits" class="lt-credit-chip" id="creditChip" title="Provisionary Credits — click to view offers"><span class="lt-credit-ico">◎</span><span id="creditChipValue">$0.00</span></a>
       <div class="lt-global-search"><input id="globalSearch" placeholder="Search servers, domains…" aria-label="Search"></div>
       <button class="lt-icon-btn" data-theme-toggle title="Toggle theme" aria-label="Toggle theme">☀</button>
       <button class="lt-icon-btn" id="notifBtn" title="Notifications" style="position:relative">🔔<span class="lt-badge-count" id="notifCount" style="display:none">0</span></button>
       <a class="lt-icon-btn" href="/docs" title="Help">?</a>
       <div class="lt-user-menu"><button class="lt-btn lt-btn-ghost lt-btn-sm" id="userBtn">${esc(session.user.name||session.user.username||session.user.email)} ▾</button></div>
-    </header><main class="lt-content" id="view">${loading()}</main></div></div>`;
+    </header><main class="lt-content" id="view">${loading()}</main></div>
+    <nav class="lt-mobile-nav" aria-label="Mobile navigation">
+      <a href="#/overview" data-nav="overview" class="active"><i>◈</i>Home</a>
+      <a href="#/servers" data-nav="servers"><i>▤</i>Services</a>
+      <a href="#/market" data-nav="market"><i>◇</i>Market</a>
+      <a href="#/credits" data-nav="credits"><i>◎</i>Credits</a>
+      <a href="#/settings" data-nav="settings"><i>⚙</i>Account</a>
+    </nav></div>`;
   app.querySelector('#navToggle')?.addEventListener('click',()=>{const s=app.querySelector('#sidebar'),sc=app.querySelector('#scrim');const open=s.classList.toggle('is-open');sc.style.display=open?'block':'none';});
   app.querySelector('#scrim')?.addEventListener('click',()=>{app.querySelector('#sidebar').classList.remove('is-open');app.querySelector('#scrim').style.display='none';});
   app.querySelector('#userBtn').addEventListener('click',(e)=>{e.stopPropagation();const ex=app.querySelector('.lt-user-menu-panel');if(ex){ex.remove();return;}const p=document.createElement('div');p.className='lt-user-menu-panel';p.innerHTML=`<div class="lt-menu-label">${esc(session.user.email)}</div><a href="#/settings">Settings</a><a href="/admin" ${(session.permissions?.includes('*')||session.permissions?.includes('admin.access'))?'':'style="display:none"'}>Administration</a><a href="/">Public site</a><button id="logoutBtn">Sign out</button>`;app.querySelector('.lt-user-menu').appendChild(p);p.querySelector('#logoutBtn').addEventListener('click',async()=>{await api.logout().catch(()=>{});api.setToken('');session=null;renderAuth('login');});setTimeout(()=>{const h=(ev)=>{if(!ev.target.closest('.lt-user-menu')){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);});
@@ -185,7 +193,7 @@ async function navigate(){
     else app.innerHTML='<main class="lt-content" id="view"></main>';
   }
   setActive(v);stopPoll();currentView=v;currentParam=param;const view=app.querySelector('#view');if(!view)return;
-  const R={overview:renderOverview,activity:renderActivity,market:()=>renderMarketplace(),marketplace:()=>renderMarketplace(),servers:renderServers,game:()=>renderServers('game'),web:()=>renderServers('web'),websites:()=>renderServers('website'),database:()=>renderServers('database'),deployments:renderDeployments,domains:renderDomains,backups:renderBackups,schedules:renderSchedules,files:renderFiles,usage:renderUsage,orders:renderOrders,billing:renderBilling,invoices:renderInvoices,'payment-methods':renderPaymentMethods,notifications:renderNotifications,support:renderSupport,settings:renderSettings,admin:renderAdmin,server:()=>renderServer(param),verify:()=>renderVerify(query),reset:()=>renderReset(query)};
+  const R={overview:renderOverview,activity:renderActivity,market:()=>renderMarketplace(),marketplace:()=>renderMarketplace(),servers:renderServers,game:()=>renderServers('game'),web:()=>renderServers('web'),websites:()=>renderServers('website'),database:()=>renderServers('database'),deployments:renderDeployments,domains:renderDomains,backups:renderBackups,schedules:renderSchedules,files:renderFiles,usage:renderUsage,orders:renderOrders,billing:renderBilling,credits:()=>renderCredits(app.querySelector('#view')),invoices:renderInvoices,'payment-methods':renderPaymentMethods,notifications:renderNotifications,support:renderSupport,settings:renderSettings,admin:renderAdmin,server:()=>renderServer(param),verify:()=>renderVerify(query),reset:()=>renderReset(query)};
   view.innerHTML=loading();try{await (R[v]||renderOverview)();}catch(e){view.innerHTML=errState(e);}
 }
 
@@ -613,6 +621,16 @@ async function renderMarketplace(){
       </div></div>`).join('')}</div>`:empty('No products','Products will appear here once configured by an administrator.')}`;
   v.querySelectorAll('[data-cat]').forEach(b=>b.addEventListener('click',()=>{location.hash='#/market/'+b.dataset.cat;}));
   v.querySelector('#custom')?.addEventListener('click',()=>{location.href='/configure';});
+}
+
+async function renderCredits(v){
+  if(!v)return;
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Provisionary Credits</h1>
+    <p class="lt-page-subtitle">Temporary dollar-denominated credits — phased out when card payments launch</p></div>
+    <div class="lt-page-actions"><a class="lt-btn lt-btn-secondary" href="#/billing">Billing & plans</a></div></div>
+    ${section('Your balance','', '<div id="creditsBox"><div class="lt-loading"><span class="lt-spinner"></span></div></div>')}
+    ${section('How it works','',`<p class="lt-meta">Credit balances are held in dollars. Complete the small offers below to earn credits, then select <b>Pay with credits</b> at checkout. This system is temporary — when Stripe payments go live, credits will be phased out.</p>`)}`;
+  await loadCredits(v);
 }
 
 async function loadCredits(v){
