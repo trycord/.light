@@ -47,7 +47,7 @@ export function featuresRoutes() {
     // Same brute-force protection as the primary login route.
     const identity = String(email || '').toLowerCase().trim();
     const candidate = getDb().prepare('SELECT * FROM users WHERE email = ? OR lower(username) = ?').get(identity, identity);
-    if (candidate?.locked_until && candidate.locked_until > now()) throw unauthorized('account_locked');
+    if (candidate?.locked_until && candidate.locked_until > now()) throw unauthorized('This account is temporarily locked. Try again later or contact support.');
     let user;
     try { user = authenticate(email, password); }
     catch (error) {
@@ -61,7 +61,7 @@ export function featuresRoutes() {
     getDb().prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').run(user.id);
     const status = twofactor.status(user.id);
     if (status.enabled) {
-      if (!code || !twofactor.verify(user.id, str(code))) throw unauthorized('invalid_2fa_code');
+      if (!code || !twofactor.verify(user.id, str(code))) throw unauthorized('That verification code is incorrect. Please try again.');
     }
     res.json({ token: signToken(user), user: { id: user.id, email: user.email, name: user.name, role: user.role, teamId: user.team_id } });
   }));

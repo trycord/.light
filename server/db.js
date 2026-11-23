@@ -81,6 +81,25 @@ const TABLES = {
     amount INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'USD',
     status TEXT NOT NULL DEFAULT 'pending', provider TEXT NOT NULL DEFAULT '',
     reference TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`,
+  // Credit wallet (temporary payment method until Stripe replaces it).
+  credit_accounts: `CREATE TABLE IF NOT EXISTS credit_accounts (
+    team_id TEXT PRIMARY KEY, balance INTEGER NOT NULL DEFAULT 0,
+    lifetime_earned INTEGER NOT NULL DEFAULT 0, lifetime_spent INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  credit_transactions: `CREATE TABLE IF NOT EXISTS credit_transactions (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, type TEXT NOT NULL,
+    amount INTEGER NOT NULL, balance_after INTEGER NOT NULL, description TEXT NOT NULL DEFAULT '',
+    reference TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`,
+  offer_completions: `CREATE TABLE IF NOT EXISTS offer_completions (
+    user_id TEXT NOT NULL, team_id TEXT NOT NULL, offer_id TEXT NOT NULL,
+    completed_at INTEGER NOT NULL, PRIMARY KEY (user_id, offer_id))`,
+  friendships: `CREATE TABLE IF NOT EXISTS friendships (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, friend_email TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL)`,
+  ad_sessions: `CREATE TABLE IF NOT EXISTS ad_sessions (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, user_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', reward INTEGER NOT NULL DEFAULT 0,
+    provider TEXT NOT NULL DEFAULT 'local', created_at INTEGER NOT NULL, completed_at INTEGER)`,
   nodes: `CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, name TEXT NOT NULL, host TEXT NOT NULL,
     region TEXT NOT NULL DEFAULT 'local', version TEXT NOT NULL DEFAULT '1.0.0',

@@ -31,6 +31,7 @@ import { environmentsRoutes } from './api/environments.js';
 import { billingRoutes } from './api/billing.js';
 import { githubRoutes } from './api/github.js';
 import { featuresRoutes } from './api/features.js';
+import { creditsRoutes, adminCreditsRoutes } from './api/credits.js';
 import { notificationsRoutes } from './api/notifications.js';
 import { ticketsRoutes, adminTicketRoutes } from './api/tickets.js';
 import { analyticsRoutes } from './api/analytics.js';
@@ -112,9 +113,11 @@ api.use('/notifications', notificationsRoutes());
 api.use('/tickets', ticketsRoutes());
 api.use('/checkout', checkoutRoutes());
 api.use('/connect', connectRoutes());
+api.use('/credits', creditsRoutes());
 api.use('/admin', adminRoutes());
 api.use('/admin/tickets', adminTicketRoutes());
 api.use('/admin/analytics', analyticsRoutes());
+api.use('/admin/credits', adminCreditsRoutes());
 api.use('/agent', agentRoutes());
 api.get('/stats', requireAuth, statsRoutes());
 api.get('/me', requireAuth, asyncRoute(async (req, res) => {
@@ -197,15 +200,33 @@ function statusForError(error) {
   return 500;
 }
 
+/** Human-readable, non-technical message for unexpected failures — never "internal server error". */
+function friendlyMessage(status, error) {
+  if (error instanceof HttpError || error.message) {
+    // Pass through our own HttpError messages (already actionable) and known
+    // client errors. For unknown 500s, give the operator something to act on.
+    if (status < 500) return error.message;
+    const m = String(error.message || '');
+    if (/SQLITE|database|disk i\/o/i.test(m)) return 'A storage error occurred. Please try again or contact support.';
+    if (/docker|agent|node|ECONNREFUSED|ENOENT|fetch failed/i.test(m)) return 'The infrastructure agent is temporarily unavailable. Please retry in a moment.';
+    if (/timeout|ETIMEDOUT/i.test(m)) return 'The operation timed out. Please retry.';
+  }
+  if (status === 404) return 'The requested resource was not found.';
+  if (status === 409) return 'This action conflicts with the current state. Refresh and try again.';
+  if (status === 413) return 'The request is too large. Try a smaller file or request.';
+  if (status === 401) return 'Your session has expired. Please sign in again.';
+  if (status === 403) return 'You do not have permission to perform this action.';
+  return 'Something went wrong on our side. Please try again — if it persists, contact support with the request ID below.';
+}
+
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
   const status = statusForError(error);
-  const code = error.code && status !== 500 ? error.code : (status === 500 ? 'internal_error' : 'error');
+  const code = error.code || (status === 500 ? 'internal_error' : 'error');
   if (status >= 500) console.error(`[error] request=${req.id || '-'}`, error);
-  // 500 stays opaque, but actionable client errors carry the real message.
   res.status(status).json({
     error: code,
-    message: status === 500 ? 'internal server error' : (error.message || code),
+    message: friendlyMessage(status, error),
     requestId: req.id || undefined,
   });
 });

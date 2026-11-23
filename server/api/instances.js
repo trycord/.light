@@ -64,7 +64,7 @@ export function instancesRoutes() {
     // in the 1-65535 range. Additional ports are admin-allocated only.
     const ports = catalogPorts(runtime.exposedPorts);
     const volumes = normalizeVolumes(b.volumes);
-    const command = str(b.command || runtime.command, 1000);
+    const command = str(b.command || runtime.command, 8000);
     const env = { ...sanitizeEnv(b.env), ...(runtime.runtimeEnv || {}) };
     getDb().prepare(`
       INSERT INTO instances (id, team_id, node_id, name, category, type, status, image, command, version, env_json, ports_json, volumes_json, cpu_cores, memory_mb, disk_gb, environment_id, environment_version, source, created_at, updated_at)
@@ -112,7 +112,7 @@ export function instancesRoutes() {
     for (const key of ['name', 'command', 'category', 'type']) {
       if (b[key] !== undefined) {
         if (key === 'category' && !CATEGORIES.includes(b[key])) throw badRequest('invalid_category');
-        updates.push(`${key} = ?`); values.push(str(b[key], key === 'command' ? 1000 : 200));
+        updates.push(`${key} = ?`); values.push(str(b[key], key === 'command' ? 8000 : 200));
       }
     }
     if (b.env !== undefined) { updates.push('env_json = ?'); values.push(JSON.stringify(sanitizeEnv(b.env))); }
@@ -171,7 +171,7 @@ export function instancesRoutes() {
     getDb().prepare(`UPDATE instances SET environment_id = ?, environment_version = ?, image = ?, command = ?, version = ?, env_json = ?,
       status = 'pending', generation = ?, provision_attempts = COALESCE(provision_attempts,0)+1, updated_at = ? WHERE id = ?`)
       .run(runtime.environmentId, runtime.version, runtime.imageRef,
-        str(b.command || runtime.command, 1000), runtime.version, JSON.stringify(env), generation, ts, row.id);
+        str(b.command || runtime.command, 8000), runtime.version, JSON.stringify(env), generation, ts, row.id);
     const fresh = getDb().prepare('SELECT * FROM instances WHERE id = ?').get(row.id);
     queueCommand(row.node_id, 'instance.reprovision', { ...provisionPayload(fresh), generation, preserveData: true }, row.id);
     audit(req, 'instance.runtime.change', 'instance', row.id, { from: row.environment_id, to: runtime.environmentId, version: runtime.version });
@@ -245,7 +245,7 @@ export function instancesRoutes() {
     const did = id('dep');
     const ts = now();
     getDb().prepare('INSERT INTO deployments (id, instance_id, team_id, status, version, source, repo_url, ref, command, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(did, row.id, req.teamId, 'queued', str(b.version || row.version, 100), str(b.source || 'image', 20), str(b.repoUrl || '', 500), str(b.ref || 'main', 100), str(b.command || '', 1000), ts);
+      .run(did, row.id, req.teamId, 'queued', str(b.version || row.version, 100), str(b.source || 'image', 20), str(b.repoUrl || '', 500), str(b.ref || 'main', 100), str(b.command || '', 8000), ts);
     getDb().prepare("UPDATE instances SET status = 'deploying', updated_at = ? WHERE id = ?").run(ts, row.id);
     let result;
     try {
@@ -331,7 +331,7 @@ export function instancesRoutes() {
   router.post('/:id/console', asyncRoute(async (req, res) => {
     const row = owned(req, req.params.id);
     if (!row) throw notFound();
-    const command = str(req.body?.command, 1000);
+    const command = str(req.body?.command, 8000);
     if (!command) throw badRequest('command_required');
     if (row.status !== 'running') throw conflict('instance_not_running');
     const result = await dispatch(row.node_id, 'instance.exec', withContainerId(row, { command }), row.id);

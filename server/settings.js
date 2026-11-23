@@ -15,6 +15,9 @@ export const SETTINGS_SCHEMA = Object.freeze({
   ALLOW_SIGNUP: { section: 'general', label: 'Allow public sign-up', type: 'bool' },
   ALLOW_CUSTOM_PLANS: { section: 'general', label: 'Allow Build Your Own Plan', type: 'bool' },
   AUTO_DEPS_ENABLED: { section: 'runtime', label: 'Automatic dependency installation', type: 'bool', default: true },
+  // Credits (temporary until Stripe replaces it)
+  AD_CREDIT_REWARD: { section: 'credits', label: 'Credits per completed ad', type: 'number', default: 100 },
+  AD_COOLDOWN_SECONDS: { section: 'credits', label: 'Seconds between ads', type: 'number', default: 30 },
   // Node topology — lets an operator link a second machine from settings
   NODE_ROLE: { section: 'nodes', label: 'Node role (primary / subjunct)', type: 'select', options: ['primary', 'subjunct'], default: 'primary' },
   SUBJUNT_CONTROL_URL: { section: 'nodes', label: 'Primary control plane URL (subjunct nodes)', type: 'text' },

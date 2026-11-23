@@ -418,8 +418,17 @@ async function renderServer(id){
     tv.querySelector('#nf').addEventListener('click',async()=>{const d=await modal('New file',field('Name','name','text','','required')+textarea('Content','content',''),{confirm:'Create'});if(d){await api.writeFile(id,{path:f.path+'/'+d.name,content:d.content||''});renderServer(id);}});
     tv.querySelector('#nd').addEventListener('click',async()=>{const d=await modal('New folder',field('Name','name','text','','required'),{confirm:'Create'});if(d){await api.writeFile(id,{op:'mkdir',path:f.path+'/'+d.name});renderServer(id);}});
   }else if(tab==='configuration'||tab==='startup'){
+    const defaultCmd={
+      java:`java -Xms128M -Xmx${i.memoryMb}M -jar server.jar nogui`, bedrock:'./bedrock_server',
+      node:'npm start', 'node-baked':'npm start', bun:'bun run start', deno:'deno run --allow-net --allow-env main.ts',
+      python:'python main.py', go:'go run .', rust:'./application', php:'php -S 0.0.0.0:8080 -t public',
+      ruby:'bundle exec ruby app.rb', dotnet:'dotnet run', static:'', discord:'node index.js'
+    }[i.environmentId] || '';
+    const hint=i.command||defaultCmd;
     tv.innerHTML=section(tab==='configuration'?'Configuration':'Startup settings','',`<p class="lt-meta" style="margin-bottom:12px">Runtime: ${esc(i.environmentId||'—')} ${esc(i.environmentVersion||'')} · ${i.cpuCores} vCPU · ${i.memoryMb} MB RAM · ${i.diskGb} GB disk (set by your plan)</p>
-      <form id="sf">${field('Startup command','command','text',i.command)}${textarea('Environment (KEY=value)','env',Object.entries(i.env||{}).map(([k,x])=>k+'='+x).join('\n'))}<button class="lt-btn lt-btn-primary" type="submit">Save</button></form>`);
+      <form id="sf">${textarea('Startup command (full shell supported — install steps, &&, env vars)','command',hint)}
+      <p class="lt-meta" style="margin:4px 0 12px">Runs inside your container from <code>/home/container</code>. You can chain setup and start commands, e.g. <code>npm install && npm start</code>. Applies on restart.</p>
+      ${textarea('Environment (KEY=value)','env',Object.entries(i.env||{}).map(([k,x])=>k+'='+x).join('\n'))}<button class="lt-btn lt-btn-primary" type="submit">Save</button></form>`);
     tv.querySelector('#sf').addEventListener('submit',async(e)=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());const env={};for(const l of String(d.env||'').split('\n')){const m=l.match(/^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/);if(m)env[m[1]]=m[2];}try{await api.updateInstance(id,{command:d.command,env});toast('Saved — restart to apply','success');renderServer(id);}catch(err){toast(err.message,'error');}});
   }else if(tab==='monitoring'){
     const series=metrics.metrics.slice(-60);
@@ -606,6 +615,33 @@ async function renderMarketplace(){
   v.querySelector('#custom')?.addEventListener('click',()=>{location.href='/configure';});
 }
 
+async function loadCredits(v){
+  const box=v.querySelector('#creditsBox');if(!box)return;
+  try{
+    const c=await api.credits();
+    box.innerHTML=`<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+      <span style="font-size:32px;font-weight:800;color:var(--lt-ember-500);letter-spacing:-.04em">$${(c.balance/100).toFixed(2)}</span>
+      <span class="lt-meta">${esc(c.label||'Provisionary Credits')}</span></div>
+      <p class="lt-meta" style="margin-bottom:14px">${esc(c.note||'')}</p>
+      <div class="lt-grid lt-grid-2">${(c.offers||[]).map(o=>`<div class="lt-card" style="padding:14px">
+        <div style="font-weight:700">${esc(o.title)} <span class="lt-badge lt-badge-ember" style="margin-left:6px">${esc(o.rewardLabel||'$'+(o.reward/100).toFixed(2))}</span></div>
+        <p class="lt-meta" style="margin:6px 0 10px">${esc(o.description)}</p>
+        ${o.available?`<button class="lt-btn lt-btn-secondary lt-btn-sm" data-offer="${esc(o.id)}">Claim</button>`:`<span class="lt-badge lt-badge-success">Claimed</span>`}
+      </div>`).join('')}</div>
+      <div class="lt-field" style="margin-top:16px"><label>Add a friend on .light</label>
+        <div class="lt-row"><input class="lt-input" id="friendEmail" placeholder="friend@example.com"><button class="lt-btn lt-btn-primary lt-btn-sm" id="addFriendBtn">Add friend</button></div>
+        <p class="lt-meta">Adding a friend unlocks the "Add a friend" credit offer.</p></div>`;
+    box.querySelectorAll('[data-offer]').forEach(b=>b.addEventListener('click',async()=>{
+      try{const r=await api.completeOffer(b.dataset.offer);toast(`Claimed ${esc(b.dataset.offer.replace(/-/g,' '))} — $${(r.reward/100).toFixed(2)} credits`,'success');loadCredits(v);}
+      catch(e){toast(e.message,'error');}
+    }));
+    box.querySelector('#addFriendBtn')?.addEventListener('click',async()=>{
+      const email=box.querySelector('#friendEmail').value.trim();if(!email){toast('Enter an email','warning');return;}
+      try{await api.addFriend(email);toast('Friend added','success');loadCredits(v);}catch(e){toast(e.message,'error');}
+    });
+  }catch(e){box.innerHTML=`<p class="lt-meta">${esc(e.message)}</p>`;}
+}
+
 async function renderBilling(){
   const v=app.querySelector('#view');let sub={},plan=null,history=[],byop=false;
   try{const [s,h,p]=await Promise.all([api.subscription(),api.billingHistory(),api.pricing()]);sub=s.subscription||{};plan=s.plan;history=h.transactions||[];byop=!!p.config?.customPlansEnabled;}catch{}
@@ -616,7 +652,9 @@ async function renderBilling(){
         <div class="lt-meta" style="margin-top:14px">Status: ${badge(sub.status||'active')} · Price: $${((sub.priceMonthly||0)/100).toFixed(2)}/${sub.currency||'USD'}</div>`)}
       ${section('Available plans','Click to switch plans',`<div id="planList"><div class="lt-loading"><span class="lt-spinner"></span></div></div>`)}
       ${section('Billing history','',history.length?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Description</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${history.map(t=>`<tr><td class="lt-td-strong">${esc(t.description)}</td><td class="lt-td-mono">$${(t.amount/100).toFixed(2)} ${esc(t.currency)}</td><td>${badge(t.status)}</td><td>${fmtTime(t.createdAt)}</td></tr>`).join('')}</tbody></table></div>`:empty('No transactions','Plan activations and payments will appear here.'))}
+      ${section('Provisionary Credits','Earn credits by completing small offers — used in place of Stripe for now','<div id="creditsBox"><div class="lt-loading"><span class="lt-spinner"></span></div></div>')}
     </div>`;
+   loadCredits(v);
   v.querySelector('#browse').addEventListener('click',()=>{location.hash='#/market';});
   v.querySelector('#custom')?.addEventListener('click',()=>{location.href='/configure';});
   // load plans for switching

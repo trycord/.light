@@ -23,9 +23,9 @@ export function verifyToken(token) {
     // bubble makes the global error handler return a 500 for a bad or expired
     // bearer token — translate to a proper 401 instead.
     if (error instanceof jwt.JsonWebTokenError || error instanceof jwt.NotBeforeError) {
-      throw unauthorized('invalid_token');
+      throw unauthorized('Your session is no longer valid. Please sign in again.');
     }
-    if (error instanceof jwt.TokenExpiredError) throw unauthorized('token_expired');
+    if (error instanceof jwt.TokenExpiredError) throw unauthorized('Your session has expired. Please sign in again.');
     throw error;
   }
 }
@@ -46,7 +46,7 @@ export function requireAuth(req, res, next) {
     const payload = verifyToken(token);
     const user = getDb().prepare('SELECT * FROM users WHERE id = ? AND status = ?').get(payload.sub, 'active');
     if (!user) throw unauthorized();
-    if ((payload.tv || 0) !== (user.token_version || 0)) throw unauthorized('session_expired');
+    if ((payload.tv || 0) !== (user.token_version || 0)) throw unauthorized('Your session has expired. Please sign in again.');
     req.user = user;
     req.teamId = user.team_id;
     req.impersonatedBy = payload.imp || null;
@@ -66,9 +66,9 @@ export function requireAdmin(req, res, next) {
 export function requireNode(req, res, next) {
   try {
     const token = nodeToken(req);
-    if (!token) throw unauthorized('node_token_required');
+    if (!token) throw unauthorized('A valid node token is required.');
     const node = getDb().prepare('SELECT * FROM nodes WHERE token = ?').get(token);
-    if (!node) throw unauthorized('invalid_node_token');
+    if (!node) throw unauthorized('Node authentication failed.');
     req.node = node;
     next();
   } catch (error) { next(error); }
@@ -90,9 +90,9 @@ export function authenticate(identity, password) {
   const value = String(identity ?? '').toLowerCase().trim();
   if (!value) throw badRequest('invalid_identity');
   const user = getDb().prepare('SELECT * FROM users WHERE email = ? OR lower(username) = ?').get(value, value);
-  if (!user || user.status !== 'active' || !verifyPassword(password, user.password_hash)) throw unauthorized('invalid_credentials');
+  if (!user || user.status !== 'active' || !verifyPassword(password, user.password_hash)) throw unauthorized('Incorrect email or password.');
   // Email verification is only enforced when email infrastructure is enabled.
-  if (config.email?.enabled && !user.email_verified) throw unauthorized('email_not_verified');
+  if (config.email?.enabled && !user.email_verified) throw unauthorized('Please verify your email address before signing in.');
   getDb().prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now(), user.id);
   return user;
 }

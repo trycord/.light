@@ -71,7 +71,7 @@ export function authRoutes() {
     const db = getDb();
     const identity = String(email || '').toLowerCase().trim();
     const user = db.prepare('SELECT * FROM users WHERE email = ? OR lower(username) = ?').get(identity, identity);
-    if (user && user.locked_until && user.locked_until > now()) throw unauthorized('account_locked');
+    if (user && user.locked_until && user.locked_until > now()) throw unauthorized('This account is temporarily locked. Try again later or contact support.');
     let authed;
     try { authed = authenticate(email, password); }
     catch (error) {

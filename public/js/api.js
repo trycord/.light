@@ -26,7 +26,19 @@ async function request(path, options = {}) {
       setToken('');
       window.dispatchEvent(new CustomEvent('lt:unauthorized', { detail: body }));
     }
-    const error = new Error(body.message || body.error || `Request failed (${response.status})`);
+    // Never surface internal codes (plan_memory_exceeded, backend_unavailable…)
+    // in a toast. The server sends a friendly `message`; fall back to a plain
+    // human phrase, never the raw `error` code.
+    const friendly = body.message || {
+      400:'Please check the information you entered and try again.',
+      401:'Your session has expired. Please sign in again.',
+      403:'You do not have permission to do that.',
+      404:'That item could not be found.',
+      409:'That conflicts with the current state. Refresh and try again.',
+      413:'That request is too large.',
+      429:'Too many attempts. Please wait a moment and try again.',
+    }[response.status] || 'Something went wrong. Please try again.';
+    const error = new Error(friendly);
     error.status = response.status;
     error.code = body.error;
     throw error;
@@ -182,6 +194,10 @@ const api = {
   restartSystem: () => request('/api/admin/system/restart', { method: 'POST', body: { confirm: 'RESTART' } }),
   updateAdminSettings: (data) => request('/api/admin/settings', { method: 'PATCH', body: { settings: data } }),
   interlinkNode: (data) => request('/api/admin/nodes/interlink', { method: 'POST', body: data }),
+  credits: () => request('/api/credits'),
+  completeOffer: (offerId) => request(`/api/credits/offers/${encodeURIComponent(offerId)}/complete`, { method: 'POST', body: {} }),
+  friends: () => request('/api/credits/friends'),
+  addFriend: (email) => request('/api/credits/friends', { method: 'POST', body: { email } }),
 
   // Backwards-compatible aliases used by the legacy standalone pages.
   getNodes: () => request('/api/nodes'),

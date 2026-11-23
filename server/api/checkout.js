@@ -37,6 +37,21 @@ export function checkoutRoutes() {
       try { provisionOrder(paid.order.id); }
       catch (error) { console.error('[checkout] free order provisioning failed:', error); }
     }
+    // Credits are the temporary payment method until Stripe is enabled.
+    // `payWithCredits` opts in; without it an order simply awaits payment.
+    if (created && order.total > 0 && b.payWithCredits) {
+      const credits = await import('../credits.js');
+      try {
+        credits.spend(req.teamId, order.total, `Order ${order.id}`, order.id);
+        const paid = markOrderPaid(order.id, { provider: 'credits', reference: order.id });
+        try { provisionOrder(paid.order.id); }
+        catch (error) { console.error('[checkout] credit order provisioning failed:', error.message); }
+        addOrderEvent(order.id, 'paid', 'Paid with credits');
+      } catch (error) {
+        markOrderFailed(order.id, 'insufficient_credits');
+        throw badRequest('You do not have enough credits for this order.');
+      }
+    }
     if (created && order.total > 0 && stripeEnabled()) {
       try {
         const session = await createCheckout({
