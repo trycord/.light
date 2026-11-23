@@ -251,8 +251,11 @@ body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; 
 .lt-credit-ico { font-size:13px; }
 
 /* ---------- Mobile: real layouts, not shrunken desktop ---------- */
+/* Mobile nav is JS/CSS gated: only shown when the device is actually mobile. */
 .lt-mobile-nav { display: none !important; }
 @media (max-width: 640px) {
+  html[data-mobile='true'] .lt-mobile-nav { display: flex !important; }
+  html[data-mobile='true'] .lt-main, html[data-mobile='true'] .admin-content { padding-bottom:84px; }
   .lt-topbar { flex-wrap:wrap; height:auto; min-height:56px; padding:8px 12px; gap:8px; }
   .lt-topbar .lt-breadcrumb { order:1; flex:1; }
   .lt-topbar .lt-credit-chip { order:2; }
@@ -269,14 +272,13 @@ body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; 
   .lt-table tr { border:1px solid var(--lt-border); border-radius:11px; margin-bottom:10px; padding:8px 11px; }
   .lt-table td { border:0; display:flex; justify-content:space-between; gap:12px; padding:7px 2px; text-align:right; }
   .lt-table td::before { content:attr(data-label); color:var(--lt-text-muted); font-size:11px; font-weight:700; text-transform:uppercase; text-align:left; }
-  .lt-mobile-nav { display:flex !important; position:fixed; bottom:0; left:0; right:0; z-index:70;
+  html[data-mobile='true'] .lt-mobile-nav { position:fixed; bottom:0; left:0; right:0; z-index:70;
     background:var(--lt-glass-bg-strong); backdrop-filter:blur(18px); border-top:1px solid var(--nv-line);
     padding:6px 6px calc(6px + env(safe-area-inset-bottom)); justify-content:space-around; }
-  .lt-mobile-nav a { display:grid; place-items:center; gap:2px; min-width:52px; padding:6px;
+  html[data-mobile='true'] .lt-mobile-nav a { display:grid; place-items:center; gap:2px; min-width:52px; padding:6px;
     color:var(--lt-text-muted); font-size:10px; font-weight:700; border-radius:10px; text-decoration:none; }
-  .lt-mobile-nav a i { font-style:normal; font-size:18px; }
-  .lt-mobile-nav a.active { color:var(--lt-ember-500); background:var(--lt-ember-alpha-08); }
-  .lt-main, .admin-content { padding-bottom:84px; }
+  html[data-mobile='true'] .lt-mobile-nav a i { font-style:normal; font-size:18px; }
+  html[data-mobile='true'] .lt-mobile-nav a.active { color:var(--lt-ember-500); background:var(--lt-ember-alpha-08); }
   .lt-input, .lt-select, .lt-textarea { font-size:16px; }
   .lt-btn { min-height:40px; }
   .fm-grid { grid-template-columns:36px 1fr 70px; }

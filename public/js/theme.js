@@ -34,6 +34,17 @@ export function setTheme(mode) {
   } catch { /* storage unavailable */ }
 }
 
+// Mobile detection — tag the document so CSS can gate mobile-only UI (bottom
+// nav, card-style tables, wrapped topbar) regardless of viewport-only tricks.
+function detectMobile() {
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  const narrow = window.innerWidth <= 640;
+  const touch = navigator.maxTouchPoints > 0;
+  document.documentElement.setAttribute('data-mobile', String((coarse || touch) && narrow));
+}
+detectMobile();
+window.addEventListener('resize', detectMobile, { passive: true });
+
 // Initialise from saved choice (or system), then follow OS changes while in system mode.
 applyTheme(getThemeMode());
 if (window.matchMedia) {
