@@ -283,6 +283,11 @@ const TABLES = {
     type TEXT NOT NULL DEFAULT 'info', title TEXT NOT NULL,
     message TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '{}',
     read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
+  // Vanity aliases: clean (name).trycord.dev hostnames for game servers/databases.
+  aliases: `CREATE TABLE IF NOT EXISTS aliases (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, instance_id TEXT NOT NULL,
+    alias TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'pending',
+    tunnel_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
   dependency_installs: `CREATE TABLE IF NOT EXISTS dependency_installs (
     id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, team_id TEXT,
     ok INTEGER NOT NULL DEFAULT 0, command TEXT NOT NULL DEFAULT '',

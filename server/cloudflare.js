@@ -138,6 +138,79 @@ export async function dnsUsage() {
   return { used, limit: 200, remaining: 200 - used };
 }
 
+/** Provision a vanity alias (name.trycord.dev) pointing at a service's tunnel. */
+export async function provisionAlias(aliasRow) {
+  if (!isCloudflareConfigured()) return { status: 'configuration_required' };
+  const c = cloudflareConfig();
+  const instance = getDb().prepare('SELECT * FROM instances WHERE id = ?').get(aliasRow.instance_id);
+  if (!instance) throw new Error('instance_not_found');
+  const domainRow = getDb().prepare("SELECT * FROM domains WHERE instance_id = ? AND tunnel_status = 'provisioned' ORDER BY created_at DESC LIMIT 1").get(instance.id);
+  const tunnelId = domainRow?.tunnel_id || aliasRow.tunnel_id;
+  const hostname = aliasRow.alias;
+  if (tunnelId) {
+    const target = `${tunnelId}.cfargotunnel.com`;
+    const existing = await cf(`/zones/${c.zoneId}/dns_records?name=${encodeURIComponent(hostname)}&type=CNAME`).catch(() => []);
+    if (Array.isArray(existing) && existing.length) {
+      if (existing[0].content !== target) await cf(`/zones/${c.zoneId}/dns_records/${existing[0].id}`, { method: 'PATCH', body: { name: hostname, type: 'CNAME', content: target, proxied: true, ttl: 1 } });
+    } else {
+      await cf(`/zones/${c.zoneId}/dns_records`, { method: 'POST', body: { name: hostname, type: 'CNAME', content: target, proxied: true, ttl: 1 } });
+    }
+    await cf(`/accounts/${c.accountId}/cfd_tunnel/${tunnelId}/configurations`, {
+      method: 'PUT', body: { config: { ingress: [
+        { hostname, service: serviceTarget(instance) },
+        { service: 'http_status:404' },
+      ] } },
+    });
+  }
+  getDb().prepare("UPDATE aliases SET status='active', tunnel_id=?, updated_at=? WHERE id=?").run(tunnelId || null, now(), aliasRow.id);
+  return { status: 'active', hostname, tunnelId };
+}
+
+export async function removeAlias(aliasRow) {
+  if (!isCloudflareConfigured()) return;
+  const c = cloudflareConfig();
+  const records = await cf(`/zones/${c.zoneId}/dns_records?name=${encodeURIComponent(aliasRow.alias)}&type=CNAME`).catch(() => []);
+  for (const r of (Array.isArray(records) ? records : [])) await cf(`/zones/${c.zoneId}/dns_records/${r.id}`, { method: 'DELETE' }).catch(() => {});
+}
+
+/**
+ * Game servers and databases are addressed with SRV records so clients connect
+ * to a clean hostname without knowing the randomized port. The target is the
+ * service's own subdomain (which has a CNAME to its tunnel).
+ * e.g. _minecraft._tcp.mc.example.com -> 0 5 25565 mc.example.com
+ */
+const SRV_SPECS = {
+  'minecraft-vanilla': { prefix: '_minecraft._tcp', port: 25565 },
+  'minecraft-paper': { prefix: '_minecraft._tcp', port: 25565 },
+  'minecraft-purpur': { prefix: '_minecraft._tcp', port: 25565 },
+  'minecraft-spigot': { prefix: '_minecraft._tcp', port: 25565 },
+  'minecraft-fabric': { prefix: '_minecraft._tcp', port: 25565 },
+  'minecraft-forge': { prefix: '_minecraft._tcp', port: 25565 },
+  'minecraft-neoforge': { prefix: '_minecraft._tcp', port: 25565 },
+  'minecraft-bedrock': { prefix: '_minecraft._tcp', port: 19132 },
+  postgres: { prefix: '_postgres._tcp', port: 5432 },
+  mariadb: { prefix: '_mysql._tcp', port: 3306 },
+  mongodb: { prefix: '_mongodb._tcp', port: 27017 },
+  redis: { prefix: '_redis._tcp', port: 6379 },
+};
+
+async function ensureSrv(hostname, packageId, instance) {
+  const spec = SRV_SPECS[packageId];
+  if (!spec) return null;
+  const c = cloudflareConfig();
+  const name = `${spec.prefix}.${hostname}`;
+  const content = `0 5 ${spec.port} ${hostname}`;
+  const existing = await cf(`/zones/${c.zoneId}/dns_records?name=${encodeURIComponent(name)}&type=SRV`).catch(() => []);
+  if (Array.isArray(existing) && existing.length) {
+    if (existing[0].content !== content) {
+      await cf(`/zones/${c.zoneId}/dns_records/${existing[0].id}`, { method: 'PATCH', body: { name, type: 'SRV', content, ttl: 1 } });
+    }
+  } else {
+    await cf(`/zones/${c.zoneId}/dns_records`, { method: 'POST', body: { name, type: 'SRV', content, ttl: 1 } });
+  }
+  return { name, content };
+}
+
 /** Publish the hostname -> internal service route into the tunnel's ingress. */
 async function publishIngress(tunnelId, hostname, instance) {
   const c = cloudflareConfig();
@@ -221,6 +294,12 @@ export async function provisionDomainRoute(domainRow, req) {
       }
     } catch (error) { dnsStatus = `dns_failed: ${error.message.slice(0, 100)}`; console.error('[cloudflare] DNS:', dnsStatus); }
     const route = { hostname, service: serviceTarget(instance) };
+    // Game servers and databases also get an SRV record for clean client
+    // discovery (Minecraft, Postgres, MySQL, Mongo, Redis, …).
+    try {
+      const srv = await ensureSrv(hostname, instance.package_id, instance);
+      if (srv) route.srv = srv;
+    } catch (error) { console.error('[cloudflare] SRV:', error.message); }
     getDb().prepare("UPDATE domains SET tunnel_id=?, tunnel_status=?, ssl_status=?, updated_at=? WHERE id=?")
       .run(tunnel.id, dnsStatus === 'ok' ? 'provisioned' : 'dns_required', dnsStatus === 'ok' ? 'active' : 'pending', now(), domainRow.id);
 
@@ -235,7 +314,7 @@ export async function provisionDomainRoute(domainRow, req) {
     }, instance.id);
 
     if (req) audit(req, 'cloudflare.tunnel.provision', 'domain', domainRow.id, { hostname, tunnelId: tunnel.id });
-    return { status: 'provisioned', tunnelId: tunnel.id, hostname, service: route.service };
+    return { status: 'provisioned', tunnelId: tunnel.id, hostname, service: route.service, srv: route.srv || null };
   } catch (error) {
     getDb().prepare("UPDATE domains SET tunnel_status=?, updated_at=? WHERE id=?")
       .run(`failed: ${error.message.slice(0, 120)}`, now(), domainRow.id);
