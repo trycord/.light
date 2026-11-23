@@ -554,8 +554,9 @@ function seed() {
       {'1.21.4':'itzg/minecraft-server:java21'},'',['25565'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,featured:1,order:23,lifecycle:['start','stop','restart','backup','restore']}),
     E('minecraft-bedrock','Minecraft Bedrock','game','Minecraft Bedrock Edition server','◆',['latest'],'latest',
       'itzg/minecraft-bedrock-server','',['19132/udp'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,order:24,lifecycle:['start','stop','restart','backup','restore']}),
-    E('discord-bot','Discord Bot','general','Discord bots and background workers','◇',['node','python'],'node',
-      {node:'node:22-bookworm',python:'python:3.12-slim-bookworm'},'npm start',[],{build:1,pm:['npm'],featured:1,order:25}),
+    E('discord-bot','Discord Bot','general','Discord bots with Discord.js preinstalled','◇',['node'],'node',
+      {node:'trycd/trycord-light:baked'},'npm start',[],{build:1,pm:['npm'],featured:1,order:25,
+        env:{NODE_ENV:'production'}}),
     E('static-site','Static Site','web','Static websites served by Nginx','◇',['latest'],'latest',
       'nginx:bookworm','',['80'],{dir:'/usr/share/nginx/html',featured:1,order:26}),
     // Custom .light application image: the real Trycord platform, built from
@@ -565,7 +566,7 @@ function seed() {
     // packages start without npm install at boot.
     E('node-baked','Node.js (baked deps)','runtime','Node.js with Discord.js, Express and common modules preinstalled','◈',['22'],'22',
       {22:'trycd/trycord-light:baked'},'node index.js',['3000'],
-      {env:{NODE_ENV:'production',NODE_PATH:'/opt/light/prebaked/node_modules'},featured:1,order:27}),
+      {env:{NODE_ENV:'production'},featured:1,order:27}),
     E('trycord','Trycord','app','Trycord community platform (custom Debian image)','◆',['7.2.0'],'7.2.0',
       { '7.2.0':'trycd/light-trycord:1.0.0' },'node src/server.js',['9971'],
       { dir:'/app/backend', healthcheck:{ path:'/api/health' },
@@ -619,8 +620,15 @@ function seed() {
     db.prepare("UPDATE software_packages SET runtime_id='node-baked', startup_template='node index.js', updated_at=? WHERE id='discord'").run(ts);
     db.prepare('INSERT OR IGNORE INTO package_versions (id, package_id, version, download_url, runtime_version, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(id('pver'), 'discord', '1', '', '22', 'published', ts);
-    db.prepare("UPDATE environments SET default_env=?, status='published' WHERE id='discord-bot'").run(JSON.stringify({NODE_ENV:'production',NODE_PATH:'/opt/light/prebaked/node_modules'}));
+    db.prepare("UPDATE environments SET image=?, version_images=?, default_env=?, status='published' WHERE id='discord-bot'")
+      .run('trycd/trycord-light:baked', JSON.stringify({node:'trycd/trycord-light:baked'}), JSON.stringify({NODE_ENV:'production'}));
     db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('baked_deps_runtime', ?)").run(ts);
+  }
+
+  if (!db.prepare("SELECT name FROM migrations WHERE name = 'discord_baked_image'").get()) {
+    db.prepare("UPDATE environments SET image=?, version_images=?, default_command='node index.js', updated_at=? WHERE id='discord-bot'")
+      .run('trycd/trycord-light:baked', JSON.stringify({node:'trycd/trycord-light:baked'}), ts);
+    db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('discord_baked_image', ?)").run(ts);
   }
 
   // Official Trycord release (only when a real image is configured by the operator).

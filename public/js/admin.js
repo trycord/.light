@@ -107,8 +107,20 @@ async function render(v){
   stopPoll();currentView=v;const view=root.querySelector('#aView');if(!view)return;
   const R={dashboard:dashboard,analytics:analytics,customers:customers,orders:orders,packages:packages,compatibility:compatibility,system:system,support:support,services:services,products:products,plans:plans,environments:environments,nodes:nodes,deployments:deployments,subscriptions:subscriptions,transactions:transactions,pricing:pricing,domains:domains,backups:backups,audit:audit,notifications:notifications,roles:roles,settings:settings};
   view.innerHTML=loading();try{await (R[v]||dashboard)();}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;}}
-function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
-function poll(fn,ms=15000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&admin)fn().catch(()=>{});},ms);}
+let pollVisibleHandler=null;
+function stopPoll(){
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+  if(pollVisibleHandler){document.removeEventListener('visibilitychange',pollVisibleHandler);pollVisibleHandler=null;}
+}
+function poll(fn,ms=15000){
+  stopPoll();
+  pollTimer=setInterval(()=>{
+    if(document.hidden||!currentView||!admin)return;
+    fn().catch(()=>{});
+  },ms);
+  pollVisibleHandler=()=>{if(!document.hidden&&currentView&&admin)fn().catch(()=>{});};
+  document.addEventListener('visibilitychange',pollVisibleHandler);
+}
 
 /* ---------- views ---------- */
 async function dashboard(){

@@ -15,6 +15,9 @@
   body{background:var(--lt-bg);color:var(--lt-text);font-family:var(--lt-font)}
   .fm-wrap{max-width:1180px;margin:0 auto;padding:20px}
   .fm-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(300px,1fr);gap:16px;align-items:start}
+  .fm-grid.editing{grid-template-columns:1fr}
+  .fm-grid.editing > :first-child{display:none}
+  .fm-editor{min-height:calc(100vh - 260px);resize:none}
   .fm-drop{border:2px dashed var(--lt-border);border-radius:12px;padding:26px;text-align:center;color:var(--lt-text-muted);transition:.15s;cursor:pointer}
   .fm-drop.is-over{border-color:var(--lt-ember-500);background:rgba(255,77,36,.07);color:var(--lt-text)}
   .fm-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-bottom:1px solid var(--lt-border);font-size:13px}
@@ -74,7 +77,8 @@ function renderShell() {
       </div>
     </div>
     <div class="lt-card"><div class="lt-card-header"><div><h3 class="lt-h3">Editor</h3><div class="lt-meta" id="fmEditPath">no file selected</div></div>
-      <button class="lt-btn lt-btn-primary lt-btn-sm" id="fmSave">Save</button></div>
+      <div style="display:flex;gap:8px"><button class="lt-btn lt-btn-ghost lt-btn-sm" id="fmEditorFull">Full width</button>
+      <button class="lt-btn lt-btn-primary lt-btn-sm" id="fmSave">Save</button></div></div>
       <div class="lt-card-body"><textarea class="fm-editor" id="fmEditor" placeholder="Select a file to edit its contents"></textarea></div></div>
   </div>`;
 
@@ -90,6 +94,7 @@ function renderShell() {
     await api.writeFile(instanceId, { op: 'mkdir', path: join(name) }); await load();
   });
   document.getElementById('fmSave').addEventListener('click', saveEditor);
+  document.getElementById('fmEditorFull').addEventListener('click', () => document.querySelector('.fm-grid').classList.toggle('editing'));
   setupDrop();
 }
 
@@ -151,6 +156,7 @@ async function load() {
   } catch (e) { list.innerHTML = `<div class="lt-error">${esc(e.message)}</div>`; }
 }
 function openEditor(p, content) {
+  document.querySelector('.fm-grid').classList.add('editing');
   document.getElementById('fmEditPath').textContent = p;
   document.getElementById('fmEditor').value = content;
   document.getElementById('fmEditor').dataset.path = p;

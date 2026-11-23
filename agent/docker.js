@@ -182,7 +182,9 @@ export function buildContainerConfig(payload) {
       NetworkMode: networkName(teamId || 'default'),
       PortBindings: portBindings,
       Binds: binds,
-      RestartPolicy: { Name: 'unless-stopped', MaximumRetryCount: 0 },
+      // Restart on failure with a cap. Clean exits (e.g. a bot missing its
+      // token) must not loop forever; repeated crashes stop after N attempts.
+      RestartPolicy: { Name: 'on-failure', MaximumRetryCount: 5 },
       Memory: Math.max(128, Number(memory) || 512) * 1024 * 1024,
       MemorySwap: -1,
       NanoCpus: Math.max(1, Number(cpu) || 1) * 1e9,
@@ -335,7 +337,9 @@ export function buildTunnelConfig({ domainId, token, hostname, tunnelId, image }
       'lt.tunnel-id': String(tunnelId || '').slice(0, 100) },
     HostConfig: {
       NetworkMode: 'host',
-      RestartPolicy: { Name: 'unless-stopped', MaximumRetryCount: 0 },
+      // Restart on failure with a cap. Clean exits (e.g. a bot missing its
+      // token) must not loop forever; repeated crashes stop after N attempts.
+      RestartPolicy: { Name: 'on-failure', MaximumRetryCount: 5 },
       Memory: 128 * 1024 * 1024, MemorySwap: -1, NanoCpus: 0.25e9,
       PidsLimit: 128, CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges:true'], Init: true,
     },

@@ -200,6 +200,18 @@ body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; 
   .lt-modal-footer .lt-btn { width: 100%; }
 }
 
+/* ---------- Render performance: skip offscreen table rows / list items ---------- */
+.lt-table tbody tr, .lt-card, .mkt-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+/* Keep visible rows interactive immediately */
+.lt-table tbody tr:hover { content-visibility: visible; }
+
+/* ---------- Smooth, subtle view transition ---------- */
+@keyframes nv-view-in { from { opacity: .55; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+#view > *, #aView > * { animation: nv-view-in .18s var(--lt-ease-out) both; }
+
 /* ---------- Reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

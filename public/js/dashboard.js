@@ -156,8 +156,23 @@ async function openNotifPanel(anchor){
   setTimeout(()=>{const h=(ev)=>{if(!p.contains(ev.target)&&!anchor.contains(ev.target)){p.remove();document.removeEventListener('click',h);}};document.addEventListener('click',h);},0);
 }
 function setActive(v){app.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===v));const labels={overview:'Dashboard',activity:'Activity',market:'Marketplace',servers:'All services',game:'Game servers',web:'Applications',websites:'Websites',database:'Databases',deployments:'Deployments',domains:'Domains',backups:'Backups',schedules:'Schedules',files:'Files',usage:'Usage & resources',orders:'Orders',billing:'Billing & plans',invoices:'Invoices','payment-methods':'Payment methods',notifications:'Notifications',support:'Support tickets',help:'Documentation',settings:'Profile & preferences',admin:'Administration',server:'Server',verify:'Verify',reset:'Reset'};const c=app.querySelector('#crumb');if(c)c.textContent=labels[v]||v;}
-function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
-function poll(fn,ms=8000){stopPoll();pollTimer=setInterval(()=>{if(currentView&&session)fn().catch(()=>{});},ms);}
+let pollVisibleHandler=null;
+function stopPoll(){
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+  if(pollVisibleHandler){document.removeEventListener('visibilitychange',pollVisibleHandler);pollVisibleHandler=null;}
+}
+function poll(fn,ms=10000){
+  stopPoll();
+  pollTimer=setInterval(()=>{
+    // Skip work when the tab is hidden — no point hammering the API for a
+    // view nobody is looking at.
+    if(document.hidden||!currentView||!session)return;
+    fn().catch(()=>{});
+  },ms);
+  // Refresh once immediately when the tab becomes visible again.
+  pollVisibleHandler=()=>{if(!document.hidden&&currentView&&session)fn().catch(()=>{});};
+  document.addEventListener('visibilitychange',pollVisibleHandler);
+}
 function parseHash(){const raw=(location.hash||'#/overview').replace(/^#\/?/,'');const [p,q]=raw.split('?');const [v,param]=p.split('/');return{v:v||'overview',param,query:new URLSearchParams(q||'')};}
 
 /* ---------- router ---------- */

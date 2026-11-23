@@ -160,7 +160,14 @@ function prune() {
   getDb().prepare('DELETE FROM metric_samples WHERE ts < ?').run(now() - 6 * 60 * 60 * 1000);
 }
 function pruneLogs() {
-  getDb().prepare('DELETE FROM logs WHERE ts < ?').run(now() - 24 * 60 * 60 * 1000);
+  const db = getDb();
+  db.prepare('DELETE FROM logs WHERE ts < ?').run(now() - 24 * 60 * 60 * 1000);
+  // Hard cap: a crash-looping workload can emit thousands of lines per minute.
+  // Age-based pruning alone is too slow to protect the control plane.
+  const total = db.prepare('SELECT COUNT(*) c FROM logs').get().c;
+  if (total > 200000) {
+    db.prepare('DELETE FROM logs WHERE id IN (SELECT id FROM logs ORDER BY ts ASC LIMIT ?)').run(total - 150000);
+  }
 }
 function parse(value) { try { return JSON.parse(value || '{}'); } catch { return {}; } }
 
