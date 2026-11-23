@@ -15,6 +15,11 @@ export const SETTINGS_SCHEMA = Object.freeze({
   ALLOW_SIGNUP: { section: 'general', label: 'Allow public sign-up', type: 'bool' },
   ALLOW_CUSTOM_PLANS: { section: 'general', label: 'Allow Build Your Own Plan', type: 'bool' },
   AUTO_DEPS_ENABLED: { section: 'runtime', label: 'Automatic dependency installation', type: 'bool', default: true },
+  // Node topology — lets an operator link a second machine from settings
+  NODE_ROLE: { section: 'nodes', label: 'Node role (primary / subjunct)', type: 'select', options: ['primary', 'subjunct'], default: 'primary' },
+  SUBJUNT_CONTROL_URL: { section: 'nodes', label: 'Primary control plane URL (subjunct nodes)', type: 'text' },
+  SUBJUNT_NODE_TOKEN: { section: 'nodes', label: 'Node token from primary (subjunct nodes)', type: 'secret' },
+  SUBJUNT_NODE_NAME: { section: 'nodes', label: 'This node name (subjunct nodes)', type: 'text' },
   // Payments
   STRIPE_SECRET_KEY: { section: 'payments', label: 'Stripe secret key', type: 'secret' },
   STRIPE_WEBHOOK_SECRET: { section: 'payments', label: 'Stripe webhook secret (thin V2)', type: 'secret' },

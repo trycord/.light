@@ -1,5 +1,18 @@
 // SHADE — official .light infrastructure agent configuration.
-// Supports SHADE_* variables; falls back to legacy NODE_*/agent vars.
+// Auto-detects .env files in common locations so no token/env var is required
+// to boot; explicit environment variables always win.
+import dotenv from 'dotenv';
+import fs from 'fs';
+for (const file of [
+  process.env.SHADE_ENV_FILE,
+  `${process.env.SHADE_DATA_DIR || process.env.AGENT_DATA_DIR || '/var/lib/light-shade'}/.env`,
+  '/etc/light/agent.env',
+  `${process.cwd()}/.env`,
+  '/app/.env',
+]) {
+  if (file && fs.existsSync(file)) dotenv.config({ path: file, quiet: true });
+}
+
 const port = parseInt(process.env.SHADE_PORT || process.env.AGENT_PORT || process.env.PORT || '5859', 10);
 const host = process.env.SHADE_HOST || process.env.HOST || '0.0.0.0';
 

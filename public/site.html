@@ -36,12 +36,6 @@ const nav = `<a class="mkt-skip" href="#main">Skip to content</a><nav class="mkt
   <button class="mkt-burger" id="burger" aria-label="Open menu" aria-expanded="false">☰</button>
 </div></nav>`;
 
-const services = [
-  { name:'web-gateway', sub:'node:22-bookworm · 2 vCPU · running', meter:'72%' },
-  { name:'survival-mc', sub:'paper 1.21.4 · 4 GB · running', meter:'58%' },
-  { name:'gateway-bot', sub:'python 3.12 · 512 MB · running', meter:'34%' },
-];
-
 const hero = `<section class="mp-hero"><div class="mp-hero-grid">
   <div class="mp-reveal in">
     <span class="mp-badge"><span class="pulse"></span> Universal hosting · Powered by Shade</span>
@@ -56,12 +50,14 @@ const hero = `<section class="mp-hero"><div class="mp-hero-grid">
       <div><b>Your</b><span>domain & SSL</span></div>
     </div>
   </div>
-  <div class="mp-console mp-reveal in" aria-hidden="true">
-    <div class="mp-console-bar"><div class="dots"><i></i><i></i><i></i></div><span class="title">shade · node-01</span><span class="live">● all systems nominal</span></div>
-    <div class="mp-console-body">
-      ${services.map(s=>`<div class="mp-svc"><span class="led"></span><div><div class="name">${esc(s.name)}</div><div class="sub">${esc(s.sub)}</div></div><div class="meter"><i style="width:${s.meter}"></i></div></div>`).join('')}
+  <div class="mp-console mp-reveal in">
+    <div class="mp-console-bar"><div class="dots"><i></i><i></i><i></i></div><span class="title">how it works</span><span class="live">● infrastructure, handled</span></div>
+    <div class="mp-console-body" style="gap:12px">
+      <div class="mp-svc" style="grid-template-columns:auto 1fr"><span class="led" style="background:var(--lt-ember-500);box-shadow:0 0 12px var(--lt-ember-500)"></span><div><div class="name">01 · Pick your product</div><div class="sub">Game server, website, bot or database — choose what to host</div></div></div>
+      <div class="mp-svc" style="grid-template-columns:auto 1fr"><span class="led" style="background:var(--lt-mineral);box-shadow:0 0 12px var(--lt-mineral)"></span><div><div class="name">02 · Shade provisions</div><div class="sub">Isolated Debian container, plan-granted resources, runtime installed</div></div></div>
+      <div class="mp-svc" style="grid-template-columns:auto 1fr"><span class="led"></span><div><div class="name">03 · Manage & monitor</div><div class="sub">Console, files, domains, backups and live metrics from one panel</div></div></div>
     </div>
-    <div class="mp-console-foot"><span>3 workloads · 1 node</span><span>health checks passing</span></div>
+    <div class="mp-console-foot"><span>No Docker knowledge required</span><span>powered by Shade</span></div>
   </div>
 </div></section>`;
 
@@ -69,13 +65,9 @@ const catalogue = `<section class="mkt-section mp-reveal" id="products"><div cla
   <span class="mp-kicker">Hosting marketplace</span>
   <h2 class="mp-h2">Find the right place for your workload.</h2>
   <p class="mp-p">Every product is a real hosted service with predefined plans. Pick one and ${product} provisions it automatically.</p>
-</div><div class="mkt-grid">${(products.length ? products : [
-  { name:'Web applications', slug:'webapp', shortDescription:'Node, Python, Go and more', icon:'◈' },
-  { name:'Game servers', slug:'minecraft', shortDescription:'Minecraft and community favourites', icon:'◆' },
-  { name:'Databases', slug:'database', shortDescription:'Managed PostgreSQL, MySQL and Redis', icon:'▤' },
-]).map(p=>`<a class="mp-card" href="/product?id=${esc(p.slug||p.id)}" style="text-decoration:none;color:inherit">
+</div><div class="mkt-grid">${products.length ? products.map(p=>`<a class="mp-card" href="/product?id=${esc(p.slug||p.id)}" style="text-decoration:none;color:inherit">
   <div class="mp-ico">${esc(p.icon||'◈')}</div><h3>${esc(p.name)}</h3><p>${esc(p.shortDescription||'')}</p>
-  <span class="mp-link">Explore plans →</span></a>`).join('')}</div></section>`;
+  <span class="mp-link">Explore plans →</span></a>`).join('') : '<p class="lt-meta">Products are being prepared. Check back shortly.</p>'}</div></section>`;
 
 const strip = `<section class="mp-strip"><div class="mp-strip-grid">
   <div><span>Debian</span><b>Every workload</b></div>
@@ -100,11 +92,11 @@ const flow = `<section class="mkt-section mp-reveal"><div class="mkt-split">
 const pricing = `<section class="mkt-section mp-reveal" id="pricing"><div class="mp-section-head">
   <span class="mp-kicker">Plans</span><h2 class="mp-h2">Simple plans. Real allocations.</h2>
   <p class="mp-p">Resources are granted by your plan — not configured in a browser.</p></div>
-  <div class="mkt-grid">${(plans.length?plans:[{name:'Free',memoryMb:512,cpuCores:1,diskGb:4,priceMonthly:0,id:'free'}]).slice(0,4).map(p=>`<div class="mp-card" style="${p.featured?'border-color:var(--lt-border-ember)':''}">
+  <div class="mkt-grid">${plans.length?plans.slice(0,4).map(p=>`<div class="mp-card" style="${p.featured?'border-color:var(--lt-border-ember)':''}">
     ${p.featured?'<span class="mp-kicker">Featured</span>':''}
     <h3 style="margin-top:10px">${esc(p.name)}</h3><div style="font-size:28px;font-weight:800;color:var(--lt-ember-500);margin:10px 0;letter-spacing:-.04em">${p.priceMonthly?'$'+(p.priceMonthly/100).toFixed(0)+'<small style="font-size:13px;font-weight:500;color:var(--lt-text-muted)">/mo</small>':'Free'}</div>
     <p>${esc(p.memoryMb)} MB RAM · ${esc(p.cpuCores)} vCPU · ${esc(p.diskGb)} GB storage</p>
-    <a class="mp-link" href="/checkout?plan=${encodeURIComponent(p.id)}">Choose ${esc(p.name)} →</a></div>`).join('')}</div>
+    <a class="mp-link" href="/checkout?plan=${encodeURIComponent(p.id)}">Choose ${esc(p.name)} →</a></div>`).join('') : '<p class="lt-meta">No plans are published yet.</p>'}</div>
   <p style="margin-top:18px"><a class="mp-btn mp-btn-ghost" href="/configure">Build your own plan</a></p>
 </section>`;
 

@@ -388,10 +388,11 @@ async function system(){
 async function settings(){
   const view=root.querySelector('#aView');let s={};
   try{s=(await api.adminSettings()).settings||{};}catch(e){view.innerHTML=`<div class="lt-error">${esc(e.message)}</div>`;return;}
-  const sections={general:'General & platform',payments:'Payments',cloudflare:'Cloudflare tunnels',mail:'Email / mail delivery',proxy:'Reverse proxy & TLS',runtime:'Runtime image'};
+  const sections={general:'General & platform',nodes:'Node topology',payments:'Payments',cloudflare:'Cloudflare tunnels',mail:'Email / mail delivery',proxy:'Reverse proxy & TLS',runtime:'Runtime image'};
   const fieldFor=(k,m)=>{
     const v=m.value??'';
     if(m.type==='bool')return `<label class="lt-auth-terms"><input type="checkbox" name="${esc(k)}" ${String(v)==='true'?'checked':''}> ${esc(m.label)}</label>`;
+    if(m.type==='select')return `<div class="lt-field"><label>${esc(m.label)}</label><select class="lt-select" name="${esc(k)}">${(m.options||[]).map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
     return fld(m.label,k,m.type==='secret'?'password':'text',v,m.type==='secret'?'autocomplete="new-password"':'');
   };
   view.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Platform settings</h1>
@@ -403,7 +404,17 @@ async function settings(){
       return keys.length?panel(title,'',keys.map(([k,m])=>fieldFor(k,m)).join('')):'';
     }).join('')}
     </form>
+    ${panel('Link a subjunct node','',`<p class="lt-meta">Add a second machine as a Shade node. It will receive its own token and a ready-to-run command — no environment editing needed.</p>
+      <div class="lt-row" style="margin-top:10px"><input class="lt-input" id="interlinkName" placeholder="node name (e.g. big-machine)">
+      <button class="lt-btn lt-btn-secondary" id="interlinkBtn">Generate join command</button></div>
+      <pre id="interlinkOut" class="lt-code-block" style="display:none;margin-top:12px;white-space:pre-wrap"></pre>`)}
     <p class="lt-meta" style="margin-top:12px">Ownership attribution is embedded in the software and cannot be changed here. All settings apply immediately — no restart required.</p>`;
+   view.querySelector('#interlinkBtn')?.addEventListener('click',async()=>{
+     const name=view.querySelector('#interlinkName').value.trim();if(!name){toast('Enter a node name','warning');return;}
+     try{const r=await api.interlinkNode({name});const out=view.querySelector('#interlinkOut');out.style.display='block';out.textContent=r.dockerRun;
+       toast('Node registered — copy the command to your second machine','success');}
+     catch(e){toast(e.message,'error');}
+   });
   view.querySelector('#saveSettings').addEventListener('click',async()=>{
     const form=view.querySelector('#settingsForm');const values={};
     for(const el of form.elements){if(!el.name)continue;values[el.name]=el.type==='checkbox'?el.checked:el.value;}

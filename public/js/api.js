@@ -181,6 +181,7 @@ const api = {
   adminSystem: () => request('/api/admin/system'),
   restartSystem: () => request('/api/admin/system/restart', { method: 'POST', body: { confirm: 'RESTART' } }),
   updateAdminSettings: (data) => request('/api/admin/settings', { method: 'PATCH', body: { settings: data } }),
+  interlinkNode: (data) => request('/api/admin/nodes/interlink', { method: 'POST', body: data }),
 
   // Backwards-compatible aliases used by the legacy standalone pages.
   getNodes: () => request('/api/nodes'),

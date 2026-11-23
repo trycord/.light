@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { spawn } from 'child_process';
+import crypto from 'crypto';
 import { getDb } from '../db.js';
 import { requireAdmin, signToken } from '../auth.js';
 import { requireRealAdmin, hasPermission, requirePermission, PERMISSIONS, isValidPermission } from '../permissions.js';
@@ -7,7 +8,7 @@ import { queueCommand } from '../commands.js';
 import { provisionPayload } from './instances.js';
 import { viewOrder, markOrderPaid, addOrderEvent } from '../orders.js';
 import { provisionOrder, retryOrder } from '../provisioning.js';
-import { publicSettings, updateSettings } from '../settings.js';
+import { publicSettings, updateSettings, get } from '../settings.js';
 import { audit } from '../audit.js';
 import { asyncRoute, badRequest, forbidden, notFound, conflict, id, now, str, int, num, json } from '../util.js';
 
@@ -280,6 +281,32 @@ export function adminRoutes() {
     // All settings are read live from the in-process cache on every request —
     // no restart needed for any config change.
     res.json({ settings, appliedImmediately: true });
+  }));
+
+  /* ---------- Node interlink / join config ---------- */
+  router.post('/nodes/interlink', requirePermission('nodes.write'), asyncRoute(async (req, res) => {
+    const name = str(req.body?.name || req.body?.nodeName || '', 100);
+    if (!name) throw badRequest('name_required');
+    const token = `n_tok_${crypto.randomBytes(24).toString('hex')}`;
+    // Prefer the actual request host so interlink works on any deployment,
+    // falling back to the configured public URL only if_HOST is unavailable.
+    const controlUrl = (req.get('host') ? `${req.protocol}://${req.get('host')}` : String(get('CONTROL_BASE_URL') || '')).replace(/\/$/, '');
+    getDb().prepare(`INSERT INTO nodes (id, token, name, host, region, version, status, cpu_cores, memory_mb, disk_gb, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '1.0.0', 'offline', ?, ?, ?, ?, ?)`)
+      .run(id('node'), token, name, str(req.body?.host || name, 200), str(req.body?.region || 'local', 80),
+        int(req.body?.cpuCores, 4), int(req.body?.memoryMb, 8192), int(req.body?.diskGb, 100), now(), now());
+    audit(req, 'admin.node.interlink', 'node', name, {});
+    res.json({
+      nodeName: name,
+      env: {
+        NODE_ENV: 'production',
+        SHADE_NODE_ID: name,
+        SHADE_NODE_NAME: name,
+        SHADE_NODE_TOKEN: token,
+        SHADE_CONTROL_PLANE_URL: controlUrl,
+        SHADE_DOCKER_HOST: 'unix:///var/run/docker.sock',
+      },
+      dockerRun: `docker run -d --name light-shade-${name} --restart unless-stopped \\\n  -v /var/run/docker.sock:/var/run/docker.sock \\\n  -e SHADE_NODE_ID=${name} -e SHADE_NODE_NAME=${name} \\\n  -e SHADE_NODE_TOKEN=${token} \\\n  -e SHADE_CONTROL_PLANE_URL=${controlUrl} \\\n  trycd/trycord-light:shade`,
+    });
   }));
 
   /* ---------- Orders & provisioning ---------- */

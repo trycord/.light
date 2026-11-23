@@ -7,6 +7,22 @@ import { scaffold, DEFAULT_ENV } from './scaffolds.js';
 import { installPackage } from './packages.js';
 import { detectProject, installDependencies, verifyNodeModules } from './dependencies.js';
 
+/** Read a customer `.env` from /home/container without exposing host paths. */
+function loadCustomerEnv(dir) {
+  const out = {};
+  try {
+    const text = fs.readFileSync(path.join(dir, '.env'), 'utf8');
+    for (const line of text.split('\n')) {
+      const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!m) continue;
+      let value = m[2].trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+      out[m[1]] = value;
+    }
+  } catch { /* no .env */ }
+  return out;
+}
+
 let docker;
 export function dockerOptions(host = config.dockerHost) {
   const value = String(host || '').trim();
@@ -35,13 +51,24 @@ export function ensureDirs() {
 export function containerName(instanceId) { return `lt-${instanceId.replace(/[^A-Za-z0-9_-]/g, '')}`; }
 export function networkName(teamId) { return `lt-net-${String(teamId).replace(/[^A-Za-z0-9_-]/g, '')}`; }
 
-/** Deterministic private subnet per team, outside Docker's default address pools. */
+/**
+ * Deterministic private subnet per team. Tries several RFC1918 ranges so it
+ * works on machines where Docker's default pools (and common 10.231.x) are
+ * already occupied by other workloads.
+ */
 export function teamSubnet(teamId, offset = 0) {
   const value = String(teamId || 'default');
   let hash = 0;
   for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  const third = 20 + ((hash + offset) % 220);
-  return `10.231.${third}.0/24`;
+  const n = (hash + offset * 7919) >>> 0;
+  const base = process.env.LIGHT_NET_BASE || 'auto';
+  if (base === '10') return `10.${60 + (n % 180)}.${(n >> 8) % 256}.0/24`;
+  if (base === '172') return `172.${16 + (n % 16)}.${(n >> 8) % 256}.0/24`;
+  // auto: rotate across 10.x, 172.16-31.x, 192.168.x by attempt
+  const range = offset % 3;
+  if (range === 0) return `10.${60 + (n % 180)}.${(n >> 8) % 256}.0/24`;
+  if (range === 1) return `172.${16 + (n % 16)}.${(n >> 8) % 256}.0/24`;
+  return `192.168.${n % 256}.0/24`;
 }
 
 async function ensureNetwork(teamId) {
@@ -50,7 +77,7 @@ async function ensureNetwork(teamId) {
   // Explicit subnets avoid exhausting Docker's predefined address pools when
   // many teams are provisioned on one node.
   let lastError;
-  for (let attempt = 0; attempt < 24; attempt++) {
+  for (let attempt = 0; attempt < 120; attempt++) {
     const subnet = teamSubnet(teamId, attempt);
     try {
       return await getDocker().createNetwork({
@@ -280,6 +307,7 @@ export async function createInstance(payload) {
       : (payload.command || installResult?.startup || tpl.command || payload.defaultCommand || ''),
     workingDir: appTarget,
     env: { ...(DEFAULT_ENV[payload.environmentId] || {}), ...(payload.env || {}),
+      ...loadCustomerEnv(appDir),
       ...(installResult?.env && !Array.isArray(installResult.env) ? installResult.env : {}),
       LIGHT_PORT: String((ports || [])[0]?.container || 3000) },
   };

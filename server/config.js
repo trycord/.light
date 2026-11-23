@@ -84,8 +84,10 @@ const config = {
 if (config.env === 'production' && config.jwtSecret === 'dev-insecure-jwt-secret-change-me') {
   throw new Error('JWT_SECRET must be set in production');
 }
+// NODE_TOKEN is optional: autoSecrets() generates and persists one when unset,
+// so a fresh deployment never needs a hand-written token just to boot.
 if (config.env === 'production' && !config.nodeToken) {
-  throw new Error('NODE_TOKEN must be set in production');
+  console.warn('[.light] NODE_TOKEN was not provided; using the auto-generated token from data/.secrets.json');
 }
 
 // Validate email config only when enabled (fail fast with clear message).

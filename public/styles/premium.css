@@ -200,6 +200,33 @@ body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; 
   .lt-modal-footer .lt-btn { width: 100%; }
 }
 
+/* ---------- Restrained glass: depth without the generic SaaS look ---------- */
+.lt-card, .mkt-card, .site-plan, .admin-stat, .lt-stat-card, .mp-card {
+  background: var(--lt-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+[data-theme='light'] .lt-card, [data-theme='light'] .mkt-card,
+[data-theme='light'] .site-plan, [data-theme='light'] .admin-stat,
+[data-theme='light'] .lt-stat-card, [data-theme='light'] .mp-card {
+  background: rgba(255, 255, 255, .72);
+}
+[data-theme='dark'] .lt-card, [data-theme='dark'] .mkt-card,
+[data-theme='dark'] .site-plan, [data-theme='dark'] .admin-stat,
+[data-theme='dark'] .lt-stat-card, [data-theme='dark'] .mp-card {
+  background: rgba(18, 22, 29, .72);
+}
+
+/* Professional dashboard: tighter, calmer, more deliberate */
+.lt-topbar, .admin-topbar { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.lt-sidebar, .admin-sidebar { background: var(--lt-glass-bg-strong); backdrop-filter: blur(14px); }
+.lt-page-title { font-size: clamp(22px, 2vw, 28px); }
+.lt-stat-card { border-radius: 12px; }
+.lt-stat-card .num { font-size: 26px; background: linear-gradient(180deg, var(--lt-text), var(--lt-text-secondary)); -webkit-background-clip: text; background-clip: text; }
+.lt-table-wrap { background: var(--lt-glass-bg); backdrop-filter: blur(10px); border-radius: 12px; }
+.lt-chart, .lt-kpi { background: var(--lt-glass-bg); backdrop-filter: blur(10px); }
+.lt-nav-item.active { box-shadow: inset 3px 0 0 var(--lt-ember-500); }
+
 /* ---------- Render performance: skip offscreen table rows / list items ---------- */
 .lt-table tbody tr, .lt-card, .mkt-card {
   content-visibility: auto;

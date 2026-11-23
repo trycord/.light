@@ -23,8 +23,11 @@ function checkCapacity(teamId, snapshot) {
   const memory = Number(snapshot.memoryMb) || 512;
   const disk = Number(snapshot.diskGb) || 4;
   if (usage.instances + 1 > instances) throw conflict('plan_instance_limit');
-  if (usage.memoryMb + memory > memory) throw conflict('plan_memory_exceeded');
-  if (usage.diskGb + disk > disk) throw conflict('plan_disk_exceeded');
+  // Each granted instance receives the plan's per-instance memory/disk. The
+  // team's total budget is therefore per-instance amount × instance count.
+  // (Comparing against just `memory` meant the second service always failed.)
+  if (usage.memoryMb + memory > memory * instances) throw conflict('plan_memory_exceeded');
+  if (usage.diskGb + disk > disk * instances) throw conflict('plan_disk_exceeded');
 }
 
 /** Provision the service attached to a paid order. Safe to call repeatedly. */
