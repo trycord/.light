@@ -52,6 +52,24 @@ export function checkoutRoutes() {
         throw badRequest('You do not have enough credits for this order.');
       }
     }
+    // Crypto: decentralized, no KYC. An awaiting payment is created and the
+    // background watcher provisions once the on-chain transfer confirms.
+    if (created && order.total > 0 && b.payWithCrypto) {
+      const crypto = await import('../crypto.js');
+      try {
+        const pay = crypto.createPayment({ teamId: req.teamId, userId: req.user.id,
+          kind: 'order', referenceId: order.id, amountCents: order.total });
+        addOrderEvent(order.id, 'payment_processing', `Awaiting ${pay.token} payment on ${pay.network}`);
+        checkoutUrl = null;
+        return res.status(201).json({
+          order: viewOrder(getOrder(order.id, req.teamId)), checkoutUrl: null,
+          requiresPayment: true, providerConfigured: true,
+          cryptoPayment: pay,
+        });
+      } catch (error) {
+        throw badRequest(error.message);
+      }
+    }
     if (created && order.total > 0 && stripeEnabled()) {
       try {
         const session = await createCheckout({

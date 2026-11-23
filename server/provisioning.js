@@ -83,6 +83,12 @@ export function provisionOrder(orderId) {
     const command = imageBased ? '' : (snapshot.command || (software?.startupTemplate
       ? software.startupTemplate.replace('${memoryMb}', String(memory)) : runtime.command) || '');
     const env = { ...(runtime.runtimeEnv || {}), ...(software ? json(order.package_config, {}) : {}) };
+    // Minecraft images auto-download the exact version on boot via VERSION.
+    // Never let the image default to "latest" (which can need a newer Java).
+    if (software && /^minecraft-/.test(software.id || '') && software.version) {
+      env.VERSION = software.version;
+      env.EULA = 'TRUE';
+    }
     const portSpecs = software?.ports?.length ? software.ports : runtime.exposedPorts;
     const portsFromCatalog = (portSpecs || []).map((p) => {
       const value = typeof p === 'object' ? String(p.container ?? p.port ?? '') : String(p);

@@ -200,6 +200,8 @@ const api = {
   completeOffer: (offerId) => request(`/api/credits/offers/${encodeURIComponent(offerId)}/complete`, { method: 'POST', body: {} }),
   friends: () => request('/api/credits/friends'),
   addFriend: (email) => request('/api/credits/friends', { method: 'POST', body: { email } }),
+  cryptoStatus: () => request('/api/crypto/status'),
+  subscribeCrypto: (data) => request('/api/crypto/subscribe', { method: 'POST', body: data }),
 
   // Backwards-compatible aliases used by the legacy standalone pages.
   getNodes: () => request('/api/nodes'),

@@ -32,6 +32,7 @@ import { billingRoutes } from './api/billing.js';
 import { githubRoutes } from './api/github.js';
 import { featuresRoutes } from './api/features.js';
 import { creditsRoutes, adminCreditsRoutes } from './api/credits.js';
+import { cryptoRoutes, adminCryptoRoutes } from './api/crypto.js';
 import { notificationsRoutes } from './api/notifications.js';
 import { ticketsRoutes, adminTicketRoutes } from './api/tickets.js';
 import { analyticsRoutes } from './api/analytics.js';
@@ -114,10 +115,12 @@ api.use('/tickets', ticketsRoutes());
 api.use('/checkout', checkoutRoutes());
 api.use('/connect', connectRoutes());
 api.use('/credits', creditsRoutes());
+api.use('/crypto', cryptoRoutes());
 api.use('/admin', adminRoutes());
 api.use('/admin/tickets', adminTicketRoutes());
 api.use('/admin/analytics', analyticsRoutes());
 api.use('/admin/credits', adminCreditsRoutes());
+api.use('/admin/crypto', adminCryptoRoutes());
 api.use('/agent', agentRoutes());
 api.get('/stats', requireAuth, statsRoutes());
 api.get('/me', requireAuth, asyncRoute(async (req, res) => {
@@ -237,6 +240,20 @@ function start() {
   initDb();
   server.listen(config.port, config.host, () => console.log(`[.light] control plane listening on http://${config.host}:${config.port}`));
   const scheduleTimer = setInterval(() => { try { runSchedules(); } catch (error) { console.error('[schedules]', error); } }, 60000);
+  // Watch the public chain for crypto payments; confirm + provision on match.
+  import('./crypto-payments.js').then(async ({ watch }) => {
+    const { markOrderPaid, addOrderEvent } = await import('./orders.js');
+    const { provisionOrder } = await import('./provisioning.js');
+    const tick = () => watch(async (p) => {
+      if (p.kind === 'order') {
+        const paid = markOrderPaid(p.reference_id, { provider: 'crypto', reference: p.tx_hash || p.id });
+        addOrderEvent(p.reference_id, 'paid', `Crypto payment confirmed on-chain (${p.tx_hash || ''})`);
+        try { provisionOrder(paid.order.id); } catch (e) { console.error('[crypto] provision:', e.message); }
+      }
+    }).catch(() => {});
+    setInterval(tick, 30000); tick();
+  }).catch(() => {});
+
   // Reconcile DB state with reported Docker reality every 2 minutes.
   import('./reconcile.js').then(({ reconcileWorkloads }) => {
     setInterval(() => { try { reconcileWorkloads().catch((e) => console.error('[reconcile]', e)); } catch (e) { console.error('[reconcile]', e); } }, 120000);

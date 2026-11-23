@@ -178,7 +178,7 @@ function poll(fn,ms=10000){
     fn().catch(()=>{});
   },ms);
   // Refresh once immediately when the tab becomes visible again.
-  pollVisibleHandler=()=>{if(!document.hidden&&currentView&&session)fn().catch(()=>{});};
+  pollVisibleHandler=()=>{if(!document.hidden&&currentView&&session){fn().catch(()=>{});loadCreditChip();}};
   document.addEventListener('visibilitychange',pollVisibleHandler);
 }
 function parseHash(){const raw=(location.hash||'#/overview').replace(/^#\/?/,'');const [p,q]=raw.split('?');const [v,param]=p.split('/');return{v:v||'overview',param,query:new URLSearchParams(q||'')};}
@@ -193,6 +193,14 @@ async function navigate(){
     else app.innerHTML='<main class="lt-content" id="view"></main>';
   }
   setActive(v);stopPoll();currentView=v;currentParam=param;const view=app.querySelector('#view');if(!view)return;
+  // Navigation progress: a thin ember line sweeps across the top of the
+  // content so every route change feels intentional.
+  const navBar=document.querySelector('.lt-nav-progress');
+  if(navBar){navBar.classList.remove('is-running');void navBar.offsetWidth;navBar.classList.add('is-running');}
+  if(!document.querySelector('.lt-nav-progress')){
+    const bar=document.createElement('div');bar.className='lt-nav-progress';
+    document.body.appendChild(bar);bar.classList.add('is-running');
+  }
   const R={overview:renderOverview,activity:renderActivity,market:()=>renderMarketplace(),marketplace:()=>renderMarketplace(),servers:renderServers,game:()=>renderServers('game'),web:()=>renderServers('web'),websites:()=>renderServers('website'),database:()=>renderServers('database'),deployments:renderDeployments,domains:renderDomains,backups:renderBackups,schedules:renderSchedules,files:renderFiles,usage:renderUsage,orders:renderOrders,billing:renderBilling,credits:()=>renderCredits(app.querySelector('#view')),invoices:renderInvoices,'payment-methods':renderPaymentMethods,notifications:renderNotifications,support:renderSupport,settings:renderSettings,admin:renderAdmin,server:()=>renderServer(param),verify:()=>renderVerify(query),reset:()=>renderReset(query)};
   view.innerHTML=loading();try{await (R[v]||renderOverview)();}catch(e){view.innerHTML=errState(e);}
 }
@@ -221,7 +229,7 @@ async function boot(){
     // while the session request is in flight; replace it once it resolves.
     if(!session) session={user:{email:'…',name:'Loading…'},permissions:[],teamId:''};
     renderShell();
-    session=await api.me();renderShell();
+    session=await api.me();renderShell();loadCreditChip();loadCreditChip();
     const selectedPlan=new URLSearchParams(location.search).get('plan');
     if(selectedPlan&&await checkoutPlan(selectedPlan)){await loadUnread();return;}
     await navigate();await loadUnread();
@@ -628,6 +636,34 @@ async function renderMarketplace(){
   v.querySelector('#custom')?.addEventListener('click',()=>{location.href='/configure';});
 }
 
+async function loadCryptoBox(v){
+  const box=v.querySelector('#cryptoBox');if(!box)return;
+  try{
+    const s=await api.cryptoStatus();
+    if(!s.enabled){box.innerHTML='<p class="lt-meta">Crypto payments are not enabled on this platform yet.</p>';return;}
+    const pl=(await api.plans()).plans||[];
+    box.innerHTML=`<p class="lt-meta">Pay ${esc(s.token)} on ${esc(s.network)} to ${esc(s.wallet||'the platform wallet')}. We detect transfers on-chain automatically.</p>
+      <div class="lt-row" style="margin-top:10px"><select class="lt-select" id="cryptoPlan">${pl.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} — $${((p.priceMonthly||0)/100).toFixed(2)}/mo</option>`).join('')}</select>
+      <button class="lt-btn lt-btn-primary lt-btn-sm" id="cryptoSubBtn">Subscribe with crypto</button></div>
+      <p class="lt-meta" id="cryptoSubResult" style="margin-top:8px"></p>`;
+    box.querySelector('#cryptoSubBtn').addEventListener('click',async()=>{
+      const planId=box.querySelector('#cryptoPlan').value;
+      try{const r=await api.subscribeCrypto({planId,interval:'monthly'});
+        box.querySelector('#cryptoSubResult').innerHTML=r.payment
+          ? `Send <b>${esc(r.payment.amount)} ${esc(r.payment.token)}</b> on ${esc(r.payment.network)} to <code>${esc(r.payment.address)}</code>. We'll activate your subscription once confirmed.`
+          : esc(r.message||'Plan activated.');
+        toast('Crypto subscription started','success');
+      }catch(e){toast(e.message,'error');}
+    });
+  }catch(e){box.innerHTML=`<p class="lt-meta">${esc(e.message)}</p>`;}
+}
+
+async function loadCreditChip(){
+  const el=document.getElementById('creditChipValue');if(!el)return;
+  try{const c=await api.credits();el.textContent='$'+(c.balance/100).toFixed(2);}
+  catch{el.textContent='—';}
+}
+
 async function renderCredits(v){
   if(!v)return;
   v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Provisionary Credits</h1>
@@ -668,7 +704,7 @@ async function loadCredits(v){
 async function renderBilling(){
   const v=app.querySelector('#view');let sub={},plan=null,history=[],byop=false;
   try{const [s,h,p]=await Promise.all([api.subscription(),api.billingHistory(),api.pricing()]);sub=s.subscription||{};plan=s.plan;history=h.transactions||[];byop=!!p.config?.customPlansEnabled;}catch{}
-  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Plans & Billing</h1><p class="lt-page-subtitle">Your current plan, usage and billing history</p></div>
+  v.innerHTML=`<div class="lt-page-header"><div><h1 class="lt-page-title">Plans & Billing</h1><p class="lt-page-subtitle">Your current plan, usage and billing history · pay with credits or on-chain crypto (no KYC)</p></div>
     <div class="lt-page-actions"><button class="lt-btn lt-btn-secondary" id="browse">Browse plans</button>${byop?'<button class="lt-btn lt-btn-primary" id="custom">Build your own plan</button>':''}</div></div>
     <div class="lt-grid lt-grid-2">
       ${section('Current plan',sub.source==='custom'?'Custom configuration':(plan?.name||'Free'),`<div class="lt-grid lt-grid-3">${[['RAM',(plan?.memoryMb||sub.customConfig?.memoryMb||512)+' MB'],['CPU',(plan?.cpuCores||sub.customConfig?.cpuCores||1)+' cores'],['Storage',(plan?.diskGb||sub.customConfig?.diskGb||4)+' GB']].map(([l,x])=>`<div><div class="lt-meta">${l}</div><div style="font-weight:700;font-size:18px">${x}</div></div>`).join('')}</div>
@@ -676,8 +712,9 @@ async function renderBilling(){
       ${section('Available plans','Click to switch plans',`<div id="planList"><div class="lt-loading"><span class="lt-spinner"></span></div></div>`)}
       ${section('Billing history','',history.length?`<div class="lt-table-wrap"><table class="lt-table"><thead><tr><th>Description</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>${history.map(t=>`<tr><td class="lt-td-strong">${esc(t.description)}</td><td class="lt-td-mono">$${(t.amount/100).toFixed(2)} ${esc(t.currency)}</td><td>${badge(t.status)}</td><td>${fmtTime(t.createdAt)}</td></tr>`).join('')}</tbody></table></div>`:empty('No transactions','Plan activations and payments will appear here.'))}
       ${section('Provisionary Credits','Earn credits by completing small offers — used in place of Stripe for now','<div id="creditsBox"><div class="lt-loading"><span class="lt-spinner"></span></div></div>')}
+      ${section('Subscribe with crypto','Decentralized, on-chain, no identity required','<div id="cryptoBox"><p class="lt-meta">Checking crypto availability…</p></div>')}
     </div>`;
-   loadCredits(v);
+   loadCredits(v); loadCryptoBox(v);
   v.querySelector('#browse').addEventListener('click',()=>{location.hash='#/market';});
   v.querySelector('#custom')?.addEventListener('click',()=>{location.href='/configure';});
   // load plans for switching

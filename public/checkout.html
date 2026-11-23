@@ -110,6 +110,7 @@ function render() {
           <div style="display:flex;justify-content:space-between"><span class="site-muted">Billing</span><span>${interval === 'yearly' ? 'Yearly' : 'Monthly'}</span></div>
           <div style="display:flex;justify-content:space-between;border-top:1px solid var(--lt-border);padding-top:12px;font-size:18px"><span>Total</span><b>${money(p.price ?? p.priceYearly ?? p.priceMonthly, p.currency)}</b></div>
         </div>
+        <div id="creditPayBox" style="margin:12px 0"></div>
         <button class="lt-btn lt-btn-primary" id="placeOrder" style="width:100%">Place order</button>
         <p class="lt-meta" style="margin-top:10px;text-align:center">Payments are processed by the configured provider. No service is created until payment is confirmed.</p>
       </div>
@@ -152,6 +153,14 @@ function render() {
     pkgSelect.addEventListener('change', syncPackage);
     root.querySelector('#packageVersion').addEventListener('change', syncRuntime);
   }
+  // Payment methods: Provisionary Credits (temporary) and on-chain crypto (no KYC).
+  if (api.token()) Promise.all([api.credits().catch(()=>({})), api.cryptoStatus().catch(()=>({enabled:false}))]).then(([c,crypto]) => {
+    const box = root.querySelector('#creditPayBox'); if (!box) return;
+    box.innerHTML = `
+      <label class="lt-auth-terms" style="margin:0"><input type="radio" name="payMethod" value="credits" ${c.balance >= (p.price || 0) ? '' : 'disabled'}> Pay with Provisionary Credits <span class="lt-badge lt-badge-ember" style="margin-left:4px">$${((c.balance||0) / 100).toFixed(2)} available</span></label>
+      ${crypto.enabled ? `<label class="lt-auth-terms" style="margin:6px 0 0"><input type="radio" name="payMethod" value="crypto"> Pay with crypto <span class="lt-badge lt-badge-neutral" style="margin-left:4px">${esc(crypto.token||'crypto')} on ${esc(crypto.network||'chain')} · no KYC</span></label>` : ''}
+      <p class="lt-meta" style="margin:6px 0 0">Crypto payments are verified on-chain — no account or identity required.</p>`;
+  }).catch(() => {});
   root.querySelector('#placeOrder').addEventListener('click', placeOrder);
 }
 
@@ -186,8 +195,20 @@ async function placeOrder() {
       config,
       serviceName: root.querySelector('#serviceName').value,
       idempotencyKey: state.key,
+      payWithCredits: root.querySelector('[name=payMethod]:checked')?.value === 'credits',
+      payWithCrypto: root.querySelector('[name=payMethod]:checked')?.value === 'crypto',
     });
     sessionStorage.removeItem('lt_checkout_key');
+    if (r.cryptoPayment) {
+      root.querySelector('#orderStatus').innerHTML = `<div class="site-plan" style="padding:22px">
+        <h3>Send your crypto payment</h3>
+        <p class="site-muted">Send <b>${esc(r.cryptoPayment.amount)} ${esc(r.cryptoPayment.token)}</b> on ${esc(r.cryptoPayment.network)} to:</p>
+        <pre class="lt-code-block" style="user-select:all">${esc(r.cryptoPayment.address)}</pre>
+        <p class="lt-meta">${esc(r.cryptoPayment.note)}</p>
+        <p class="lt-meta">We watch the chain automatically — your service starts once the transfer confirms. No account or KYC needed.</p>
+      </div>`;
+      return;
+    }
     if (r.checkoutUrl) { location.href = r.checkoutUrl; return; }
     // Free orders provision immediately — show the live provisioning status.
     if (r.order.instanceId) { location.href = `/order/${r.order.id}`; return; }

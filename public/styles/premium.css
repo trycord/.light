@@ -285,6 +285,29 @@ body { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; 
   .fm-grid > :nth-child(3) { display:none; }
 }
 
+/* ---------- Route transitions: polished navigation ---------- */
+.lt-nav-progress {
+  position:fixed; top:0; left:0; height:2px; width:0; z-index:1000; pointer-events:none;
+  background:linear-gradient(90deg, var(--lt-ember-500), var(--lt-magma, #ff7847));
+  box-shadow:0 0 12px var(--lt-ember-alpha-48);
+}
+.lt-nav-progress.is-running { animation:lt-nav-sweep .55s var(--lt-ease-out) forwards; }
+@keyframes lt-nav-sweep { 0%{width:0;opacity:1} 60%{width:75%} 100%{width:100%;opacity:0} }
+
+/* Nav links: animated active marker + smooth hover */
+.lt-nav-item, .admin-nav-item { position:relative; overflow:hidden; }
+.lt-nav-item::before, .admin-nav-item::before {
+  content:""; position:absolute; left:0; top:50%; transform:translateY(-50%) scaleY(0);
+  width:3px; height:60%; border-radius:99px; background:var(--lt-ember-500);
+  transition:transform .2s var(--lt-ease-out);
+}
+.lt-nav-item.active::before, .admin-nav-item.active::before { transform:translateY(-50%) scaleY(1); }
+.lt-nav-item .lt-icon, .admin-nav-item .lt-icon { transition:transform .2s var(--lt-ease-out); }
+.lt-nav-item:hover .lt-icon, .admin-nav-item:hover .lt-icon { transform:scale(1.12); }
+
+/* Breadcrumb + topbar links fade in */
+.lt-breadcrumb .cur { animation:nv-view-in .2s var(--lt-ease-out) both; }
+
 /* ---------- Reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

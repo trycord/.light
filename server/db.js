@@ -283,6 +283,14 @@ const TABLES = {
     type TEXT NOT NULL DEFAULT 'info', title TEXT NOT NULL,
     message TEXT NOT NULL DEFAULT '', data TEXT NOT NULL DEFAULT '{}',
     read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
+  // On-chain crypto payments (decentralized, no KYC).
+  crypto_payments: `CREATE TABLE IF NOT EXISTS crypto_payments (
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, user_id TEXT,
+    kind TEXT NOT NULL DEFAULT 'order', reference_id TEXT NOT NULL,
+    amount INTEGER NOT NULL, token TEXT NOT NULL, network TEXT NOT NULL,
+    address TEXT NOT NULL, expected_raw TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'awaiting', tx_hash TEXT, confirmations INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
   // Vanity aliases: clean (name).trycord.dev hostnames for game servers/databases.
   aliases: `CREATE TABLE IF NOT EXISTS aliases (
     id TEXT PRIMARY KEY, team_id TEXT NOT NULL, instance_id TEXT NOT NULL,
@@ -574,8 +582,16 @@ function seed() {
       {7:'redis:7-bookworm'},'',['6379'],{dir:'/data',storage:persistent,featured:1,order:21,lifecycle:['start','stop','restart','backup','restore']}),
     E('valkey','Valkey','database','Valkey open-source Redis alternative','▤',['8'],'8',
       {8:'valkey/valkey:8-bookworm'},'',['6379'],{dir:'/data',storage:persistent,order:22,lifecycle:['start','stop','restart','backup','restore']}),
-    E('minecraft-java','Minecraft Java','game','Minecraft Java Edition server','◆',['1.21.4'],'1.21.4',
-      {'1.21.4':'itzg/minecraft-server:java21'},'',['25565'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,featured:1,order:23,lifecycle:['start','stop','restart','backup','restore']}),
+    E('minecraft-java','Minecraft Java','game','Minecraft Java Edition server','◆',
+      ['1.20.6','1.21.1','1.21.4','1.21.8','1.22.0'],'1.21.4',
+      {
+        '1.20.6':'itzg/minecraft-server:java17',
+        '1.21.1':'itzg/minecraft-server:java21',
+        '1.21.4':'itzg/minecraft-server:java21',
+        '1.21.8':'itzg/minecraft-server:java21',
+        '1.22.0':'itzg/minecraft-server:java25',
+      },'',['25565'],
+      {dir:'/data',env:{EULA:'TRUE'},storage:persistent,featured:1,order:23,lifecycle:['start','stop','restart','backup','restore']}),
     E('minecraft-bedrock','Minecraft Bedrock','game','Minecraft Bedrock Edition server','◆',['latest'],'latest',
       'itzg/minecraft-bedrock-server','',['19132/udp'],{dir:'/data',env:{EULA:'TRUE'},storage:persistent,order:24,lifecycle:['start','stop','restart','backup','restore']}),
     E('discord-bot','Discord Bot','general','Discord bots with Discord.js preinstalled','◇',['node'],'node',
@@ -647,6 +663,31 @@ function seed() {
     db.prepare("UPDATE environments SET image=?, version_images=?, default_env=?, status='published' WHERE id='discord-bot'")
       .run('trycd/trycord-light:baked', JSON.stringify({node:'trycd/trycord-light:baked'}), JSON.stringify({NODE_ENV:'production'}));
     db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('baked_deps_runtime', ?)").run(ts);
+  }
+
+  if (!db.prepare("SELECT name FROM migrations WHERE name = 'minecraft_pin_version'").get()) {
+    // Pin Minecraft to a Java-21-compatible version. Newer releases (26.x)
+    // require Java 25 (class 69) and crash on the java21 image.
+    db.prepare("UPDATE environments SET default_env=?, version_images=?, image=?, versions=?, updated_at=? WHERE id='minecraft-java'")
+      .run(JSON.stringify({EULA:'TRUE'}), JSON.stringify({
+        '1.20.6':'itzg/minecraft-server:java17','1.21.1':'itzg/minecraft-server:java21',
+        '1.21.4':'itzg/minecraft-server:java21','1.21.8':'itzg/minecraft-server:java21',
+        '1.22.0':'itzg/minecraft-server:java25',
+      }), 'itzg/minecraft-server:java21', JSON.stringify(['1.20.6','1.21.1','1.21.4','1.21.8','1.22.0']), ts);
+    // Pin existing workloads to a Java-compatible version, no "latest".
+    db.prepare("UPDATE instances SET env_json=json_set(COALESCE(env_json,'{}'), '$.VERSION', COALESCE(json_extract(env_json,'$.VERSION'),'1.21.4')) WHERE environment_id LIKE '%minecraft%' OR package_id LIKE 'minecraft-%'").run();
+    // Extra auto-download versions for every Minecraft package family.
+    for (const pkg of ['minecraft-vanilla','minecraft-paper','minecraft-purpur','minecraft-spigot','minecraft-fabric','minecraft-forge','minecraft-neoforge']) {
+      for (const [v, j] of [['1.21.8','21'],['1.22.0','25']]) {
+        db.prepare('INSERT OR IGNORE INTO package_versions (id, package_id, version, download_url, runtime_version, status, created_at) VALUES (?,?,?,?,?,?,?)')
+          .run(id('pver'), pkg, v, '', j, 'published', ts);
+      }
+    }
+    for (const pkg of ['minecraft-vanilla','minecraft-paper','minecraft-purpur','minecraft-spigot','minecraft-fabric','minecraft-forge']) {
+      db.prepare('UPDATE software_packages SET versions=? WHERE id=?').run(JSON.stringify(['1.20.6','1.21.1','1.21.4','1.21.8','1.22.0']), pkg);
+    }
+    db.prepare('UPDATE software_packages SET versions=? WHERE id=?').run(JSON.stringify(['1.21.1','1.21.4','1.21.8','1.22.0']), 'minecraft-neoforge');
+    db.prepare("INSERT INTO migrations (name, applied_at) VALUES ('minecraft_pin_version', ?)").run(ts);
   }
 
   if (!db.prepare("SELECT name FROM migrations WHERE name = 'discord_baked_image'").get()) {
